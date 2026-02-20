@@ -1,0 +1,30 @@
+{
+  "name": "neo-n3-nft-platform",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Neo NFT会员卡平台: 批量创建会员卡、权益卡、签到卡并支持懒铸造领取",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @platform/neo-sdk && npm run build --workspace @platform/api && npm run build --workspace @platform/web",
+    "dev": "npm run dev --workspace @platform/api",
+    "dev:web": "npm run dev --workspace @platform/web",
+    "dev:api": "npm run dev --workspace @platform/api",
+    "clean:contract:artifacts": "rm -f contracts/multi-tenant-nft-platform/build/*.nef contracts/multi-tenant-nft-platform/build/*.manifest.json contracts/solidity/build/*.nef contracts/solidity/build/*.manifest.json",
+    "build:contract:csharp": "rm -f contracts/multi-tenant-nft-platform/build/*.nef contracts/multi-tenant-nft-platform/build/*.manifest.json && ./tools/nccs contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.csproj -o contracts/multi-tenant-nft-platform/build --base-name MultiTenantNftPlatform --optimize=All --debug=None",
+    "build:contract:solidity": "rm -f contracts/solidity/build/*.nef contracts/solidity/build/*.manifest.json && cargo run --manifest-path ~/git/neo-solidity/Cargo.toml --bin neo-solc -- contracts/solidity/MultiTenantNftPlatform.sol -I ~/git/neo-solidity/devpack -O2 --contract MultiTenantNftPlatform -o contracts/solidity/build/MultiTenantNftPlatform",
+    "build:contract:rust": "~/git/neo-llvm/scripts/build_contract.sh contracts/rust-multi-tenant-nft-platform MultiTenantNftPlatformRust",
+    "check:contract:nep": "node tools/verify-nep-compliance.js",
+    "verify:contracts": "npm run build:contract:csharp && npm run build:contract:solidity && npm run build:contract:rust && npm run check:contract:nep",
+    "test:testnet": "node scripts/testnet-flow.mjs",
+    "smoke:e2e": "node scripts/smoke-e2e.mjs",
+    "lint": "npm run lint --workspaces",
+    "format": "npm run format --workspaces",
+    "check": "npm run typecheck --workspaces"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

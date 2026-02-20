@@ -1,0 +1,22 @@
+{
+  "name": "@platform/neo-sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'No lint configured for neo-sdk'",
+    "format": "echo 'No format step for neo-sdk'"
+  },
+  "dependencies": {
+    "@cityofzion/neon-js": "^5.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}

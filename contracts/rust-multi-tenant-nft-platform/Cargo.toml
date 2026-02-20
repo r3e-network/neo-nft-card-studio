@@ -1,0 +1,21 @@
+[package]
+name = "multi-tenant-nft-platform-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-tenant NFT platform contract for Neo N3 (neo-llvm toolchain)"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+neo-devpack = { path = "../../../neo-llvm/rust-devpack", default-features = false }
+
+[workspace]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

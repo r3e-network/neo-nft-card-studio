@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+coverage
+.DS_Store
+*.log
+.env
+.env.local
+apps/api/data/*.db
+apps/api/data/*.db-*
+contracts/multi-tenant-nft-platform/bin
+contracts/multi-tenant-nft-platform/obj
+contracts/rust-multi-tenant-nft-platform/target
+tools/nccs
+.serena/
+tools/.store/
+*.tsbuildinfo
