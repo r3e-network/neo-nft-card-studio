@@ -69,6 +69,7 @@ cp .env.example .env
   - 可选覆盖：`VITE_NEO_CONTRACT_HASH_MAINNET/TESTNET/PRIVATE`
   - 可选覆盖：`VITE_API_BASE_URL_MAINNET/TESTNET/PRIVATE`
 - 读请求说明：合约只读调用默认使用“钱包网络对应 RPC（若钱包暴露 rpcUrl）或该网络预设 RPC”；写请求始终走钱包 `invoke`。
+- 安全兜底：当钱包已连接但无法识别网络（`unknown`）时，前端会 fail-closed，拒绝继续发起链请求，避免误落到默认网络。
 - 主网注意：若钱包在 mainnet，必须提供 `VITE_NEO_CONTRACT_HASH_MAINNET`，否则前端会拒绝执行合约调用（避免误用测试网 hash）。
 - `INDEXER_ENABLE_EVENTS`: 是否启用事件索引（`rust` 方言建议按需开启）
 - `NEOFS_*`: NeoFS 网关与 URI 解析配置（支持 `neofs://<container>/<object>`）
