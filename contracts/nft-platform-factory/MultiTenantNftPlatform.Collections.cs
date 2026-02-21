@@ -157,6 +157,30 @@ public partial class MultiTenantNftPlatform
         }
 
         PutCollectionContractTemplate(nefFile, manifest);
+        ClearCollectionContractTemplateNameSegments();
+    }
+
+    public static void setCollectionContractTemplateNameSegments(string manifestPrefix, string templateNameBase, string manifestSuffix)
+    {
+        AssertPlatformContractMode();
+        if (!Runtime.CheckWitness(GetContractOwner()))
+        {
+            throw new Exception("No authorization");
+        }
+
+        if (manifestPrefix.Length == 0 || templateNameBase.Length == 0 || manifestSuffix.Length == 0)
+        {
+            throw new Exception("Template name segments must not be empty");
+        }
+
+        if (!HasCollectionContractTemplateStored())
+        {
+            throw new Exception("Template NEF/manifest not configured");
+        }
+
+        string reconstructedManifest = manifestPrefix + templateNameBase + manifestSuffix;
+        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateManifest, reconstructedManifest);
+        SetCollectionContractTemplateNameSegments(manifestPrefix, templateNameBase, manifestSuffix);
     }
 
     public static void clearCollectionContractTemplate()
@@ -227,13 +251,14 @@ public partial class MultiTenantNftPlatform
 
         ByteString templateNef = GetCollectionContractTemplateNef();
         string templateManifest = GetCollectionContractTemplateManifest();
+        string scopedTemplateManifest = BuildScopedTemplateManifest(collectionId, templateManifest);
 
         object[] deployData =
         [
             Runtime.ExecutingScriptHash,
         ];
 
-        Contract deployed = ContractManagement.Deploy(templateNef, templateManifest, deployData);
+        Contract deployed = ContractManagement.Deploy(templateNef, scopedTemplateManifest, deployData);
         Contract.Call(
             deployed.Hash,
             "initializeDedicatedCollection",

@@ -57,6 +57,9 @@ public partial class MultiTenantNftPlatform : SmartContract
     private static readonly byte[] PrefixCollectionContract = [0x14];
     private static readonly byte[] PrefixCollectionContractTemplateNef = [0x15];
     private static readonly byte[] PrefixCollectionContractTemplateManifest = [0x16];
+    private static readonly byte[] PrefixCollectionContractTemplateManifestPrefix = [0x30];
+    private static readonly byte[] PrefixCollectionContractTemplateNameBase = [0x31];
+    private static readonly byte[] PrefixCollectionContractTemplateManifestSuffix = [0x32];
     private static readonly byte[] PrefixOwnerDedicatedCollection = [0x17];
     private static readonly byte[] PrefixCollectionDropConfig = [0x18];
     private static readonly byte[] PrefixCollectionDropWhitelist = [0x19];

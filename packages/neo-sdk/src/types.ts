@@ -73,6 +73,12 @@ export interface SetCollectionContractTemplateRequest {
   manifest: string;
 }
 
+export interface SetCollectionContractTemplateNameSegmentsRequest {
+  manifestPrefix: string;
+  templateNameBase: string;
+  manifestSuffix: string;
+}
+
 export interface DeployCollectionContractFromTemplateRequest {
   collectionId: ByteStringHex;
   extraData?: string | number | boolean | null | Array<unknown> | Record<string, unknown>;

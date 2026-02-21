@@ -33,7 +33,7 @@ contracts/
 - **网络选择**：前端以钱包当前网络为准（主网/测试网/私链），签名与交易广播由钱包 provider 执行；平台不代替钱包发交易。
 
 核心能力：
-- 平台工厂（非 NEP11）：`createCollection` / `createCollectionAndDeployFromTemplate` / `setCollectionContractTemplate` / `deployCollectionContractFromTemplate` / `getCollectionContract`
+- 平台工厂（非 NEP11）：`createCollection` / `createCollectionAndDeployFromTemplate` / `setCollectionContractTemplate` / `setCollectionContractTemplateNameSegments` / `deployCollectionContractFromTemplate` / `getCollectionContract`
 - 独立 NFT 合约（NEP11）：`mint` / `transfer` / `burn` / `tokenURI` / `ownerOf` / `balanceOf` / `tokens` / `tokensOf`
 - 发行规则与会员能力（全方言核心）：`configureDrop` / `claimDrop` / `configureCheckInProgram` / `checkIn`
 - 钱包侧统计/会员查询（C# 专属合约 / Solidity / Rust）：`getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`
@@ -201,12 +201,14 @@ npm run verify:contracts
 ## 8. 模板化配置部署（无需用户编译）
 
 推荐流程：
-1. 平台 owner 调用 `setCollectionContractTemplate(nef, manifest)` 一次配置模板（推荐使用 `MultiTenantNftTemplate.deploy.manifest.json`，并给 `name` 增加唯一后缀）。
-2. 用户直接调用 `createCollectionAndDeployFromTemplate(...)`（推荐），一笔交易完成创建+独立合约部署。
-3. 或者先 `createCollection` 再 `deployCollectionContractFromTemplate(collectionId, extraData)`（兼容路径，同样受 `1 钱包 1 专属合约` 约束）。
-4. 通过 `getCollectionContract(collectionId)` 或 `getOwnerDedicatedCollectionContract(owner)` 查询已部署 hash。
-5. 专属合约内部仅允许绑定集合操作；跨集合 `collectionId` 调用会直接拒绝。
-6. `initializeDedicatedCollection` 仅接受 owner 出签并受初始化器合约哈希校验；SDK 对 `extraData` 的对象/数组会自动序列化为 JSON 字符串再作为 `Any` 传入，部署后会同步写入工厂 `getCollectionDeployExtraData` 与专属合约 `getDedicatedExtraData`。
+1. 平台 owner 调用 `setCollectionContractTemplate(nef, manifest)` 一次配置模板（推荐使用 `MultiTenantNftTemplate.deploy.manifest.json`）。
+2. 平台 owner 继续调用 `setCollectionContractTemplateNameSegments(manifestPrefix, templateNameBase, manifestSuffix)` 配置 manifest 名称片段（用于部署时自动注入 `-col-<collectionId>` 唯一后缀）。
+3. 用户直接调用 `createCollectionAndDeployFromTemplate(...)`（推荐），一笔交易完成创建+独立合约部署。
+4. 或者先 `createCollection` 再 `deployCollectionContractFromTemplate(collectionId, extraData)`（兼容路径，同样受 `1 钱包 1 专属合约` 约束）。
+5. 通过 `getCollectionContract(collectionId)` 或 `getOwnerDedicatedCollectionContract(owner)` 查询已部署 hash。
+6. 专属合约内部仅允许绑定集合操作；跨集合 `collectionId` 调用会直接拒绝。
+7. 工厂会在部署时按 `collectionId` 自动改写模板 manifest `name`（例如 `...-col-123`），避免多次部署产生合约哈希冲突。
+8. `initializeDedicatedCollection` 仅接受 owner 出签并受初始化器合约哈希校验；SDK 对 `extraData` 的对象/数组会自动序列化为 JSON 字符串再作为 `Any` 传入，部署后会同步写入工厂 `getCollectionDeployExtraData` 与专属合约 `getDedicatedExtraData`。
 
 ## 9. API 概览
 

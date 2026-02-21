@@ -88,6 +88,7 @@ const FACTORY_REQUIRED_METHODS = [
   "createCollection",
   "createCollectionAndDeployFromTemplate",
   "setCollectionContractTemplate",
+  "setCollectionContractTemplateNameSegments",
   "clearCollectionContractTemplate",
   "hasCollectionContractTemplate",
   "getCollectionContractTemplateDigest",
@@ -491,6 +492,10 @@ function checkCsharpDedicatedInitializationHardening(errors) {
     path.join(repoRoot, "contracts/nft-platform-factory/MultiTenantNftPlatform.Collections.cs"),
     "utf8",
   );
+  const factoryInternal = fs.readFileSync(
+    path.join(repoRoot, "contracts/nft-platform-factory/MultiTenantNftPlatform.Internal.cs"),
+    "utf8",
+  );
 
   if (!/object\[\]\s+values\s*=\s*\(object\[\]\)data;/.test(templateLifecycle)
     || !/\(values\.Length == 1 \|\| values\.Length == 13\)/.test(templateLifecycle)
@@ -508,8 +513,15 @@ function checkCsharpDedicatedInitializationHardening(errors) {
   }
 
   if (!/Runtime\.ExecutingScriptHash/.test(factoryCollections)
-    || !/ContractManagement\.Deploy\(templateNef,\s*templateManifest,\s*deployData\)/.test(factoryCollections)) {
-    errors.push("CSharp source: factory deploy should pass its own script hash into template deploy data");
+    || !/ContractManagement\.Deploy\(templateNef,\s*scopedTemplateManifest,\s*deployData\)/.test(factoryCollections)
+    || !/BuildScopedTemplateManifest\(collectionId,\s*templateManifest\)/.test(factoryCollections)) {
+    errors.push("CSharp source: factory deploy should scope template manifest name per collection and pass its own script hash into deploy data");
+  }
+
+  if (!/BuildScopedTemplateManifest\(/.test(factoryInternal)
+    || !/HasCollectionContractTemplateNameSegmentsStored\(\)/.test(factoryInternal)
+    || !/return manifestPrefix \+ scopedName \+ manifestSuffix;/.test(factoryInternal)) {
+    errors.push("CSharp source: factory should provide BuildScopedTemplateManifest helper");
   }
 }
 

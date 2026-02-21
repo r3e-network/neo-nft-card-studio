@@ -42,6 +42,15 @@ function main(): void {
     templateInvoke.operation === "deployCollectionContractFromTemplate",
     "Template deploy operation mismatch",
   );
+  const templateSegmentsInvoke = csharp.buildSetCollectionContractTemplateNameSegmentsInvoke({
+    manifestPrefix: '{"name":"',
+    templateNameBase: "MultiTenantNftTemplate",
+    manifestSuffix: '"}',
+  });
+  assert(
+    templateSegmentsInvoke.operation === "setCollectionContractTemplateNameSegments",
+    "Template manifest-name segments operation mismatch",
+  );
 
   const createAndDeployInvoke = csharp.buildCreateCollectionAndDeployFromTemplateInvoke({
     name: "Smoke",

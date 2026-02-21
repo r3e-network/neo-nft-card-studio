@@ -109,6 +109,104 @@ public partial class MultiTenantNftPlatform
     {
         Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateNef);
         Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateManifest);
+        ClearCollectionContractTemplateNameSegments();
+    }
+
+    private static void SetCollectionContractTemplateNameSegments(string manifestPrefix, string templateNameBase, string manifestSuffix)
+    {
+        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateManifestPrefix, manifestPrefix);
+        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateNameBase, templateNameBase);
+        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateManifestSuffix, manifestSuffix);
+    }
+
+    private static void ClearCollectionContractTemplateNameSegments()
+    {
+        Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateManifestPrefix);
+        Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateNameBase);
+        Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateManifestSuffix);
+    }
+
+    private static bool HasCollectionContractTemplateNameSegmentsStored()
+    {
+        return Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateManifestPrefix) is not null
+            && Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateNameBase) is not null
+            && Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateManifestSuffix) is not null;
+    }
+
+    private static string GetCollectionContractTemplateManifestPrefix()
+    {
+        ByteString value = Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateManifestPrefix);
+        if (value is null || value.Length == 0)
+        {
+            throw new Exception("Collection contract template manifest prefix not configured");
+        }
+
+        return (string)value;
+    }
+
+    private static string GetCollectionContractTemplateNameBase()
+    {
+        ByteString value = Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateNameBase);
+        if (value is null || value.Length == 0)
+        {
+            throw new Exception("Collection contract template name base not configured");
+        }
+
+        return (string)value;
+    }
+
+    private static string GetCollectionContractTemplateManifestSuffix()
+    {
+        ByteString value = Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateManifestSuffix);
+        if (value is null || value.Length == 0)
+        {
+            throw new Exception("Collection contract template manifest suffix not configured");
+        }
+
+        return (string)value;
+    }
+
+    private static string BuildScopedTemplateManifest(ByteString collectionId, string fallbackManifest)
+    {
+        if (!HasCollectionContractTemplateNameSegmentsStored())
+        {
+            return fallbackManifest;
+        }
+
+        if (collectionId is null || collectionId.Length == 0)
+        {
+            throw new Exception("Invalid collection id");
+        }
+
+        string manifestPrefix = GetCollectionContractTemplateManifestPrefix();
+        string templateNameBase = GetCollectionContractTemplateNameBase();
+        string manifestSuffix = GetCollectionContractTemplateManifestSuffix();
+
+        if (manifestPrefix.Length == 0 || templateNameBase.Length == 0 || manifestSuffix.Length == 0)
+        {
+            throw new Exception("Template manifest name segments are invalid");
+        }
+
+        string scopedName = BuildScopedTemplateManifestName(templateNameBase, collectionId);
+        return manifestPrefix + scopedName + manifestSuffix;
+    }
+
+    private static string BuildScopedTemplateManifestName(string baseName, ByteString collectionId)
+    {
+        const int maxManifestNameLength = 200;
+        string suffix = "-col-" + ((string)collectionId);
+        if (baseName.Length + suffix.Length > maxManifestNameLength)
+        {
+            int keepLength = maxManifestNameLength - suffix.Length;
+            if (keepLength <= 0)
+            {
+                throw new Exception("Collection id suffix is too long for manifest name");
+            }
+
+            baseName = baseName.Substring(0, keepLength);
+        }
+
+        return baseName + suffix;
     }
 
     private static bool HasCollectionContractTemplateStored()

@@ -16,6 +16,7 @@ import type {
   SetDropWhitelistBatchRequest,
   SetDropWhitelistRequest,
   SetCollectionContractTemplateRequest,
+  SetCollectionContractTemplateNameSegmentsRequest,
   SetCollectionOperatorRequest,
   TransferRequest,
   WalletInvokeRequest,
@@ -664,6 +665,24 @@ export class NeoNftPlatformClient {
       scriptHash: this.config.contractHash,
       operation: "setCollectionContractTemplate",
       args: [byteArrayHexArg(payload.nefFileHex), stringArg(payload.manifest)],
+    };
+  }
+
+  buildSetCollectionContractTemplateNameSegmentsInvoke(
+    payload: SetCollectionContractTemplateNameSegmentsRequest,
+  ): WalletInvokeRequest {
+    if (this.dialect !== "csharp") {
+      throw new Error("setCollectionContractTemplateNameSegments is only available for csharp dialect");
+    }
+
+    return {
+      scriptHash: this.config.contractHash,
+      operation: "setCollectionContractTemplateNameSegments",
+      args: [
+        stringArg(payload.manifestPrefix),
+        stringArg(payload.templateNameBase),
+        stringArg(payload.manifestSuffix),
+      ],
     };
   }
 

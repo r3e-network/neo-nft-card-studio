@@ -61,6 +61,43 @@ function idToByteArrayHex(input) {
   return utf8ToHex(value);
 }
 
+function splitManifestNameSegments(manifestText) {
+  const match = /"name"\s*:\s*"([^"]*)"/.exec(manifestText);
+  if (!match || typeof match.index !== "number") {
+    throw new Error('Template manifest does not contain a top-level "name" field');
+  }
+
+  const templateNameBase = match[1];
+  const quotedName = `"${templateNameBase}"`;
+  const nameTokenIndex = manifestText.indexOf(quotedName, match.index);
+  if (nameTokenIndex < 0) {
+    throw new Error("Failed to locate manifest name value token");
+  }
+
+  const manifestPrefix = manifestText.slice(0, nameTokenIndex + 1);
+  const manifestSuffix = manifestText.slice(nameTokenIndex + quotedName.length - 1);
+  return {
+    manifestPrefix,
+    templateNameBase,
+    manifestSuffix,
+  };
+}
+
+function buildScopedTemplateManifestName(baseName, collectionId) {
+  const suffix = `-col-${collectionId}`;
+  const maxManifestNameLength = 200;
+  if (baseName.length + suffix.length <= maxManifestNameLength) {
+    return `${baseName}${suffix}`;
+  }
+
+  const keepLength = maxManifestNameLength - suffix.length;
+  if (keepLength <= 0) {
+    throw new Error("Collection id suffix is too long for manifest name");
+  }
+
+  return `${baseName.slice(0, keepLength)}${suffix}`;
+}
+
 function byteArrayParamFromHex(hexValue) {
   return sc.ContractParam.byteArray(u.HexString.fromHex(hexValue, true));
 }
@@ -330,6 +367,7 @@ async function main() {
     tokenId: null,
     checkInProofTokenId: null,
     deployedCollectionContractHash: null,
+    deployedCollectionContractName: null,
     dedicatedIsolation: null,
   };
 
@@ -383,6 +421,22 @@ async function main() {
     ],
   );
   summary.txids.setTemplate = templateInvoke.txid;
+
+  const manifestNameSegments = splitManifestNameSegments(deployArtifacts.templateManifestText);
+  console.log("[testnet] setCollectionContractTemplateNameSegments");
+  const templateSegmentsInvoke = await invokeAndWait(
+    "setCollectionContractTemplateNameSegments",
+    platform,
+    rpcClient,
+    deployedHash,
+    "setCollectionContractTemplateNameSegments",
+    [
+      sc.ContractParam.string(manifestNameSegments.manifestPrefix),
+      sc.ContractParam.string(manifestNameSegments.templateNameBase),
+      sc.ContractParam.string(manifestNameSegments.manifestSuffix),
+    ],
+  );
+  summary.txids.setTemplateNameSegments = templateSegmentsInvoke.txid;
 
   const suffix = Date.now().toString().slice(-6);
   if (process.env.TESTNET_CREATE_ONLY === "1") {
@@ -450,6 +504,18 @@ async function main() {
   if (!summary.deployedCollectionContractHash || typeof summary.deployedCollectionContractHash !== "string") {
     throw new Error("Failed to locate deployed collection contract hash in CollectionContractDeployed event");
   }
+  const deployedCollectionState = await waitForContractState(rpcClient, summary.deployedCollectionContractHash);
+  const expectedScopedManifestName = buildScopedTemplateManifestName(
+    manifestNameSegments.templateNameBase,
+    collectionId,
+  );
+  const actualScopedManifestName = deployedCollectionState?.manifest?.name ?? "";
+  if (actualScopedManifestName !== expectedScopedManifestName) {
+    throw new Error(
+      `Scoped manifest name mismatch. expected='${expectedScopedManifestName}', actual='${actualScopedManifestName}'`,
+    );
+  }
+  summary.deployedCollectionContractName = actualScopedManifestName;
 
   const collectionContract = new experimental.SmartContract(
     u.HexString.fromHex(summary.deployedCollectionContractHash),
