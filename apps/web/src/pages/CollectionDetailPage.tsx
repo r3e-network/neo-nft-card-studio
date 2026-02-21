@@ -447,12 +447,13 @@ export function CollectionDetailPage() {
       let resolvedContractHashForGhostMeta = fetchedCollection.contractHash ?? "";
       if (isCsharpDialect) {
         const client = getPlatformClient();
-        const [templateReady, collectionContractHash] = await Promise.all([
+        const [templateReady, templateSegmentsReady, collectionContractHash] = await Promise.all([
           client.hasCollectionContractTemplate(),
+          client.hasCollectionContractTemplateNameSegments().catch(() => false),
           client.getCollectionContract(collectionId),
         ]);
 
-        setTemplateConfigured(templateReady);
+        setTemplateConfigured(templateReady && templateSegmentsReady);
         const indexedContractHash = fetchedCollection.contractHash ?? "";
         if (collectionContractHash && !isZeroUInt160Hex(collectionContractHash)) {
           setDeployedCollectionContractHash(collectionContractHash);

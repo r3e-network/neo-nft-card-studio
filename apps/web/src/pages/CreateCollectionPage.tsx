@@ -80,6 +80,17 @@ export function CreateCollectionPage() {
       }
 
       const client = getPlatformClient();
+      if (contractDialect === "csharp") {
+        const [templateReady, templateSegmentsReady] = await Promise.all([
+          client.hasCollectionContractTemplate(),
+          client.hasCollectionContractTemplateNameSegments().catch(() => false),
+        ]);
+
+        if (!templateReady || !templateSegmentsReady) {
+          throw new Error(t("create.err_template_not_ready"));
+        }
+      }
+
       const payload =
         contractDialect === "csharp"
           ? (() => {
