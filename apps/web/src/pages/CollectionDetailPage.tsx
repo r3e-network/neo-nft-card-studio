@@ -354,6 +354,7 @@ export function CollectionDetailPage() {
   const runtimeDialect = useRuntimeContractDialect();
   const isRustDialect = runtimeDialect === "rust";
   const isCsharpDialect = runtimeDialect === "csharp";
+  const supportsWalletLevelStats = !isCsharpDialect;
   const hasDedicatedContract = Boolean(
     deployedCollectionContractHash && !isZeroUInt160Hex(deployedCollectionContractHash),
   );
@@ -510,7 +511,6 @@ export function CollectionDetailPage() {
     const loadProgramState = async () => {
       try {
         const client = getActionClient();
-        const supportsWalletLevelStats = !isCsharpDialect;
         const [dropConfigRaw, dropStatsRaw, checkInProgramRaw, checkInStatsRaw, membershipRaw] = await Promise.all([
           client.getDropConfig(collection.collectionId).catch(() => null),
           supportsWalletLevelStats && wallet.address
@@ -1925,6 +1925,9 @@ export function CollectionDetailPage() {
             {dropConfigForm.whitelistRequired ? ` | ${t("detail.drop_stats_allowance")}: ${dropWalletStats.whitelistAllowance}` : ""}
           </p>
         ) : null}
+        {!supportsWalletLevelStats ? (
+          <p className="hint">{t("detail.wallet_stats_not_supported")}</p>
+        ) : null}
 
         <form className="form-grid" onSubmit={claimDrop}>
           {isRustDialect ? (
@@ -1999,6 +2002,9 @@ export function CollectionDetailPage() {
           <p className="hint">
             {t("detail.check_in_count")}: {checkInWalletStats.checkInCount} | {t("detail.check_in_remaining")}: {formatDropRemaining(checkInWalletStats.remainingCheckIns)}
           </p>
+        ) : null}
+        {!supportsWalletLevelStats ? (
+          <p className="hint">{t("detail.wallet_stats_not_supported")}</p>
         ) : null}
 
         <form className="form-grid" onSubmit={submitCheckIn}>

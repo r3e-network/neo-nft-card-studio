@@ -76,6 +76,7 @@ Template runtime management:
 - `checkIn(...) -> object[]`
 - `initializeDedicatedCollection(...)`
 - `burn(tokenId)`
+- C# Template intentionally keeps a reduced wallet-query surface (no `getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`), while keeping NEP-11/NEP-24 runtime methods complete.
 
 Runtime deploy semantics:
 - Primary mode: factory contract deploys dedicated NFT template contracts.
@@ -110,7 +111,7 @@ Type model:
 - `collectionId: uint256`
 - `tokenId: bytes32`
 
-Semantics are aligned with C# for collection/mint/transfer/burn/operator/query/royalty APIs, and also include lazy mint drop methods:
+Semantics are aligned with C# for collection/mint/transfer/burn/operator/query/royalty APIs, and Solidity also exposes wallet-level drop/membership query helpers:
 - `configureDrop`
 - `setDropWhitelist`
 - `setDropWhitelistBatch`
@@ -188,4 +189,4 @@ Automated checks run in `verify:contracts`:
   - Verifies C# Template / Solidity / Rust shared method surface (including rust signer-bridge arity rules).
   - Verifies shared event declarations for indexer compatibility.
   - Verifies unified `symbol = MNFTP`.
-  - Verifies `getCollection` / `getToken` return layout consistency (ID in first position).
+  - Verifies Solidity query return layout (`getCollection` / `getToken` return ID in first position).

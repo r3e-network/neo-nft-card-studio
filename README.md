@@ -35,7 +35,9 @@ contracts/
 核心能力：
 - 平台工厂（非 NEP11）：`createCollection` / `createCollectionAndDeployFromTemplate` / `setCollectionContractTemplate` / `deployCollectionContractFromTemplate` / `getCollectionContract`
 - 独立 NFT 合约（NEP11）：`mint` / `transfer` / `burn` / `tokenURI` / `ownerOf` / `balanceOf` / `tokens` / `tokensOf`
-- 发行规则与会员能力：`configureDrop` / `claimDrop` / `configureCheckInProgram` / `checkIn` / `getMembershipStatus`
+- 发行规则与会员能力（全方言核心）：`configureDrop` / `claimDrop` / `configureCheckInProgram` / `checkIn`
+- 钱包侧统计/会员查询（Solidity / Rust）：`getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`
+- C# 专属模板合约刻意保持精简读取面（不暴露钱包侧统计查询），以降低部署载荷复杂度并保持模板部署稳定性。
 
 风控行为：
 - `paused = true` 时禁止 `mint` 与 `transfer`。
