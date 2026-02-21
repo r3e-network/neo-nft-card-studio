@@ -83,6 +83,7 @@ Runtime deploy semantics:
 - Isolation mode: platform owner sets one template (`setCollectionContractTemplate`), then collection owner deploys own dedicated contract instance by config (`deployCollectionContractFromTemplate`).
 - Dedicated-user mode: creator can directly execute `createCollectionAndDeployFromTemplate` to ensure one real independent NFT contract is created in the same transaction.
 - Dedicated contract hard isolation: runtime stores a bound `collectionId`; all public methods with `collectionId` must match it, and platform-level methods (`createCollection*`, template admin/deploy) are blocked.
+- Dedicated init hardening: `initializeDedicatedCollection` requires both owner witness and configured initializer-contract permission (when set by factory deploy data).
 - Deploy hash collision protection: when configuring template, use a unique template manifest `name` per factory deployment (the testnet flow script auto-appends a suffix).
 - User side does not need to compile or upload custom `nef/manifest`.
 

@@ -24,7 +24,7 @@ public partial class MultiTenantNftPlatform
         if (data is not null)
         {
             object[] values = (object[])data;
-            if (values.Length > 0)
+            if ((values.Length == 1 || values.Length == 13) && values.Length > 0)
             {
                 UInt160 initializerContract = (UInt160)values[0];
                 if (initializerContract.IsValid)

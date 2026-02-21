@@ -34,6 +34,11 @@ public partial class MultiTenantNftPlatform
             throw new Exception("Invalid owner");
         }
 
+        if (!Runtime.CheckWitness(owner))
+        {
+            throw new Exception("No authorization");
+        }
+
         UInt160 contractOwner = GetContractOwner();
         if (owner != contractOwner)
         {

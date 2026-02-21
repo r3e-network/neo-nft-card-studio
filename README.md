@@ -206,6 +206,7 @@ npm run verify:contracts
 3. 或者先 `createCollection` 再 `deployCollectionContractFromTemplate(collectionId, extraData)`（兼容路径，同样受 `1 钱包 1 专属合约` 约束）。
 4. 通过 `getCollectionContract(collectionId)` 或 `getOwnerDedicatedCollectionContract(owner)` 查询已部署 hash。
 5. 专属合约内部仅允许绑定集合操作；跨集合 `collectionId` 调用会直接拒绝。
+6. `initializeDedicatedCollection` 仅接受 owner 出签并受初始化器合约哈希校验；SDK 对 `extraData` 的对象/数组会自动序列化为 JSON 字符串再作为 `Any` 传入。
 
 ## 9. API 概览
 

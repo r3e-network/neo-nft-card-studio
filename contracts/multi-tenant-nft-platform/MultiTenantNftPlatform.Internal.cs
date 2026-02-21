@@ -353,38 +353,74 @@ public partial class MultiTenantNftPlatform
             return;
         }
 
-        object[] values = (object[])data;
-        if (values.Length < 12)
+        try
+        {
+            object[] values = (object[])data;
+            int offset = values.Length == 13 ? 1 : 0;
+            if (values.Length < offset + 12)
+            {
+                return;
+            }
+
+            ByteString collectionId = (ByteString)values[offset];
+            if (collectionId is null || collectionId.Length == 0)
+            {
+                return;
+            }
+
+            UInt160 owner = (UInt160)values[offset + 1];
+            if (!owner.IsValid)
+            {
+                return;
+            }
+
+            string name = (string)values[offset + 2];
+            string tokenSymbol = (string)values[offset + 3];
+            string description = (string)values[offset + 4];
+            string baseUri = (string)values[offset + 5];
+            BigInteger maxSupply = (BigInteger)values[offset + 6];
+            BigInteger minted = (BigInteger)values[offset + 7];
+            BigInteger royaltyBps = (BigInteger)values[offset + 8];
+            bool transferable = (bool)values[offset + 9];
+            bool paused = (bool)values[offset + 10];
+            BigInteger createdAt = (BigInteger)values[offset + 11];
+
+            ValidateCollectionInputs(name, tokenSymbol, description, baseUri, maxSupply, royaltyBps);
+            if (minted < 0 || (maxSupply > 0 && minted > maxSupply))
+            {
+                return;
+            }
+
+            if (createdAt < 0)
+            {
+                return;
+            }
+
+            CollectionState state = new CollectionState
+            {
+                Owner = owner,
+                Name = name,
+                Symbol = tokenSymbol,
+                Description = description,
+                BaseUri = baseUri,
+                MaxSupply = maxSupply,
+                Minted = minted,
+                RoyaltyBps = royaltyBps,
+                Transferable = transferable,
+                Paused = paused,
+                CreatedAt = createdAt,
+            };
+
+            PutCollectionState(collectionId, state);
+            CollectionMintCounter().Put(collectionId, state.Minted);
+            SetDedicatedContractMode(collectionId);
+            Storage.Put(Storage.CurrentContext, PrefixContractOwner, state.Owner);
+            EmitCollectionUpserted(collectionId, state);
+        }
+        catch
         {
             return;
         }
-
-        ByteString collectionId = (ByteString)values[0];
-        if (collectionId is null || collectionId.Length == 0)
-        {
-            return;
-        }
-
-        CollectionState state = new CollectionState
-        {
-            Owner = (UInt160)values[1],
-            Name = (string)values[2],
-            Symbol = (string)values[3],
-            Description = (string)values[4],
-            BaseUri = (string)values[5],
-            MaxSupply = (BigInteger)values[6],
-            Minted = (BigInteger)values[7],
-            RoyaltyBps = (BigInteger)values[8],
-            Transferable = (bool)values[9],
-            Paused = (bool)values[10],
-            CreatedAt = (BigInteger)values[11],
-        };
-
-        PutCollectionState(collectionId, state);
-        CollectionMintCounter().Put(collectionId, state.Minted);
-        SetDedicatedContractMode(collectionId);
-        Storage.Put(Storage.CurrentContext, PrefixContractOwner, state.Owner);
-        EmitCollectionUpserted(collectionId, state);
     }
 
     private static TokenState GetTokenState(ByteString tokenId)

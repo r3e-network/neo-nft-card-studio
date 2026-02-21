@@ -78,6 +78,20 @@ function toIntegerLike(value: string | number, fallback = 0): number {
   return Math.trunc(parsed);
 }
 
+function normalizeExtraDataArg(
+  value: string | number | boolean | null | Array<unknown> | Record<string, unknown> | undefined,
+): string | number | boolean | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  return JSON.stringify(value);
+}
+
 export function stringArg(value: string): ContractArgument {
   return {
     type: "String",
@@ -440,7 +454,7 @@ export class NeoNftPlatformClient {
         integerArg(payload.maxSupply),
         integerArg(payload.royaltyBps),
         boolArg(payload.transferable),
-        { type: "Any", value: payload.extraData ?? null },
+        { type: "Any", value: normalizeExtraDataArg(payload.extraData) },
       ],
     };
   }
@@ -675,7 +689,7 @@ export class NeoNftPlatformClient {
     return {
       scriptHash: this.config.contractHash,
       operation: "deployCollectionContractFromTemplate",
-      args: [toByteArrayArg(payload.collectionId), { type: "Any", value: payload.extraData ?? null }],
+      args: [toByteArrayArg(payload.collectionId), { type: "Any", value: normalizeExtraDataArg(payload.extraData) }],
     };
   }
 

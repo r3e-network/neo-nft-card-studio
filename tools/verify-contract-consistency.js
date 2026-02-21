@@ -442,6 +442,40 @@ function checkSymbolConsistency(errors) {
   }
 }
 
+function checkCsharpDedicatedInitializationHardening(errors) {
+  const templateLifecycle = fs.readFileSync(
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Lifecycle.cs"),
+    "utf8",
+  );
+  const templateCollections = fs.readFileSync(
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Collections.cs"),
+    "utf8",
+  );
+  const factoryCollections = fs.readFileSync(
+    path.join(repoRoot, "contracts/nft-platform-factory/MultiTenantNftPlatform.Collections.cs"),
+    "utf8",
+  );
+
+  if (!/object\[\]\s+values\s*=\s*\(object\[\]\)data;/.test(templateLifecycle)
+    || !/\(values\.Length == 1 \|\| values\.Length == 13\)/.test(templateLifecycle)
+    || !/UInt160\s+initializerContract\s*=\s*\(UInt160\)values\[0\];/.test(templateLifecycle)) {
+    errors.push("CSharp source: template _deploy should safely parse initializer contract from deploy data");
+  }
+
+  if (!/Runtime\.CheckWitness\(owner\)/.test(templateCollections)) {
+    errors.push("CSharp source: initializeDedicatedCollection should require owner witness");
+  }
+
+  if (!/Runtime\.CallingScriptHash != initializerContract/.test(templateCollections)) {
+    errors.push("CSharp source: initializeDedicatedCollection should gate calls by configured initializer contract");
+  }
+
+  if (!/Runtime\.ExecutingScriptHash/.test(factoryCollections)
+    || !/ContractManagement\.Deploy\(templateNef,\s*templateManifest,\s*deployData\)/.test(factoryCollections)) {
+    errors.push("CSharp source: factory deploy should pass its own script hash into template deploy data");
+  }
+}
+
 function checkQueryLayoutConsistency(errors) {
   const solidity = fs.readFileSync(
     path.join(repoRoot, "contracts/solidity/src/NftQueryLogic.sol"),
@@ -580,6 +614,7 @@ function main() {
 
   checkSharedMethods(methodMaps, errors);
   checkCsharpRoleSplitSource(errors);
+  checkCsharpDedicatedInitializationHardening(errors);
   checkSymbolConsistency(errors);
   checkQueryLayoutConsistency(errors);
   checkRustStringStorageConsistency(errors);
