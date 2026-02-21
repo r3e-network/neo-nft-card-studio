@@ -165,7 +165,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
 
         const result = await invokeNeoWallet(payload);
-        return (result.txid ?? result.transaction ?? "").toString();
+        const rawTxId = (result.txid ?? result.transaction ?? result.txId ?? result.transactionId ?? "").toString().trim();
+        if (!rawTxId) {
+          throw new Error("Wallet invoke succeeded but no transaction id was returned. Please check wallet history.");
+        }
+
+        if (!/^(?:0x)?[0-9a-fA-F]{64}$/.test(rawTxId)) {
+          throw new Error("Wallet returned an invalid transaction id format. Please check wallet history.");
+        }
+
+        return rawTxId.startsWith("0x") || rawTxId.startsWith("0X")
+          ? `0x${rawTxId.slice(2)}`
+          : `0x${rawTxId}`;
       },
     }),
     [address, network, isConnecting, isReady, syncWalletSession],

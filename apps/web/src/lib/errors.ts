@@ -2,6 +2,8 @@ import type { TFunction } from "i18next";
 
 const UNKNOWN_WALLET_NETWORK_MESSAGE = "Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.";
 const WALLET_SESSION_UNAVAILABLE_MESSAGE = "Wallet session is unavailable. Please reconnect wallet.";
+const WALLET_TXID_MISSING_MESSAGE = "Wallet invoke succeeded but no transaction id was returned. Please check wallet history.";
+const WALLET_TXID_INVALID_MESSAGE = "Wallet returned an invalid transaction id format. Please check wallet history.";
 
 function normalizeNetworkLabel(value: string): string {
   const normalized = value.trim().toLowerCase();
@@ -23,6 +25,14 @@ export function toUserErrorMessage(t: TFunction, error: unknown): string {
 
   if (message === WALLET_SESSION_UNAVAILABLE_MESSAGE) {
     return t("app.err_wallet_session_unavailable");
+  }
+
+  if (message === WALLET_TXID_MISSING_MESSAGE) {
+    return t("app.err_wallet_txid_missing");
+  }
+
+  if (message === WALLET_TXID_INVALID_MESSAGE) {
+    return t("app.err_wallet_txid_invalid");
   }
 
   const contractHashMatch = message.match(

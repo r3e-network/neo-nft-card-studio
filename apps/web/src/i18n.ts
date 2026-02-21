@@ -29,6 +29,8 @@ const resources = {
                 rpc_url_missing: "Missing RPC URL for {{network}}. Please set {{env}}.",
                 err_wallet_network_unknown: "Wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.",
                 err_wallet_session_unavailable: "Wallet session is unavailable. Please reconnect wallet.",
+                err_wallet_txid_missing: "Wallet did not return a transaction ID. Please confirm in wallet history.",
+                err_wallet_txid_invalid: "Wallet returned an invalid transaction ID format. Please confirm in wallet history.",
                 install_wallet_required: "No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.",
                 generic_error: "Request failed. Please check wallet/network and try again."
             },
@@ -323,6 +325,8 @@ const resources = {
                 rpc_url_missing: "{{network}} 缺少 RPC 节点配置，请设置 {{env}}。",
                 err_wallet_network_unknown: "钱包网络无法识别，请切换到主网/测试网后重新连接。",
                 err_wallet_session_unavailable: "钱包会话不可用，请重新连接钱包。",
+                err_wallet_txid_missing: "钱包未返回交易 ID，请到钱包交易记录中确认。",
+                err_wallet_txid_invalid: "钱包返回的交易 ID 格式无效，请到钱包交易记录中确认。",
                 install_wallet_required: "未检测到 Neo N3 钱包，请安装 NeoLine、O3 或 OneGate。",
                 generic_error: "请求失败，请检查钱包与网络后重试。"
             },

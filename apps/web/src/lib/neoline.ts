@@ -127,6 +127,7 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
 }
 
 let cachedProvider: NeoLineN3Provider | null = null;
+const enableAttemptedProviders = new WeakSet<object>();
 
 export function getNeoProvider(): NeoLineN3Provider | null {
   if (cachedProvider) {
@@ -220,31 +221,71 @@ function normalizeAccount(value: unknown): NeoLineAccount | null {
 }
 
 function normalizeInvokeResult(value: unknown): NeoLineInvokeResult {
+  const normalizeTxId = (candidate: string): string => {
+    const trimmed = candidate.trim();
+    if (!/^(?:0x)?[0-9a-fA-F]{64}$/.test(trimmed)) {
+      return "";
+    }
+
+    return trimmed.startsWith("0x") || trimmed.startsWith("0X")
+      ? `0x${trimmed.slice(2)}`
+      : `0x${trimmed}`;
+  };
+
+  const extractTxId = (input: unknown, depth = 0): string => {
+    if (depth > 4 || input === null || input === undefined) {
+      return "";
+    }
+
+    if (typeof input === "string") {
+      return normalizeTxId(input);
+    }
+
+    if (Array.isArray(input)) {
+      for (const item of input) {
+        const found = extractTxId(item, depth + 1);
+        if (found) {
+          return found;
+        }
+      }
+      return "";
+    }
+
+    const record = asRecord(input);
+    if (!record) {
+      return "";
+    }
+
+    const txidKeys = ["txid", "txId", "transaction", "transactionId", "hash"];
+    for (const key of txidKeys) {
+      const candidate = record[key];
+      if (typeof candidate === "string") {
+        const normalized = normalizeTxId(candidate);
+        if (normalized) {
+          return normalized;
+        }
+      }
+    }
+
+    const nestedKeys = ["result", "data", "payload", "response"];
+    for (const key of nestedKeys) {
+      const found = extractTxId(record[key], depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+
+    return "";
+  };
+
+  const txid = extractTxId(value);
   if (typeof value === "string") {
-    return { txid: value };
+    return txid ? { txid } : {};
   }
 
   const record = asRecord(value);
   if (!record) {
-    return {};
-  }
-
-  const txid =
-    typeof record.txid === "string"
-      ? record.txid
-      : typeof record.txId === "string"
-        ? record.txId
-        : typeof record.transaction === "string"
-          ? record.transaction
-          : typeof record.transactionId === "string"
-            ? record.transactionId
-            : undefined;
-
-  if (!txid) {
-    const nestedTx = extractAddress(record.result);
-    if (nestedTx) {
-      return { ...record, txid: nestedTx };
-    }
+    return txid ? { txid } : {};
   }
 
   return {
@@ -469,10 +510,17 @@ async function requestProvider(
 }
 
 async function ensureProviderEnabled(provider: NeoLineN3Provider): Promise<void> {
-  const enabled = await tryCallProviderMethod(provider, "enable");
-  if (enabled !== undefined) {
+  const providerRecord = asRecord(provider);
+  if (!providerRecord || typeof providerRecord.enable !== "function") {
     return;
   }
+
+  if (enableAttemptedProviders.has(providerRecord)) {
+    return;
+  }
+
+  enableAttemptedProviders.add(providerRecord);
+  await (providerRecord.enable as () => Promise<unknown>).call(provider);
 }
 
 async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<NeoLineAccount | null> {
@@ -529,6 +577,10 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
     throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
   }
 
+  const providerRecord = asRecord(provider);
+  if (providerRecord && typeof providerRecord.enable === "function") {
+    enableAttemptedProviders.delete(providerRecord);
+  }
   await ensureProviderEnabled(provider);
 
   const account = await readAccountFromProvider(provider);
@@ -568,7 +620,11 @@ export async function getNeoWalletNetwork(): Promise<NeoWalletNetwork> {
     };
   }
 
-  await ensureProviderEnabled(provider);
+  try {
+    await ensureProviderEnabled(provider);
+  } catch {
+    // Some wallets reject background enable() calls but still expose network info.
+  }
 
   const attempts: unknown[] = [];
   const directNetwork = await tryCallProviderMethod(provider, "getNetwork");
@@ -639,6 +695,10 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
     throw new Error("No Neo N3 wallet found.");
   }
 
+  const providerRecord = asRecord(provider);
+  if (providerRecord && typeof providerRecord.enable === "function") {
+    enableAttemptedProviders.delete(providerRecord);
+  }
   await ensureProviderEnabled(provider);
 
   const invokeResult = await tryCallProviderMethod(provider, "invoke", payload);
