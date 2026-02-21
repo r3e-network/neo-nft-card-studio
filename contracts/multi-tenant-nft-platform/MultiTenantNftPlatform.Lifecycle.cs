@@ -20,7 +20,19 @@ public partial class MultiTenantNftPlatform
         Transaction tx = Runtime.Transaction;
         Storage.Put(Storage.CurrentContext, PrefixContractOwner, tx.Sender);
         Storage.Put(Storage.CurrentContext, PrefixTotalSupply, 0);
-        Storage.Put(Storage.CurrentContext, PrefixCollectionIdCounter, 0);
+
+        if (data is not null)
+        {
+            object[] values = (object[])data;
+            if (values.Length > 0)
+            {
+                UInt160 initializerContract = (UInt160)values[0];
+                if (initializerContract.IsValid)
+                {
+                    Storage.Put(Storage.CurrentContext, PrefixInitializerContract, initializerContract);
+                }
+            }
+        }
 
         TryInitializeCollectionFromDeployData(data);
     }
@@ -41,20 +53,30 @@ public partial class MultiTenantNftPlatform
     }
 
     [Safe]
-    public static string symbol() => "MNFTP";
+    public static string symbol()
+    {
+        AssertDedicatedContractMode();
+        return "MNFTP";
+    }
 
     [Safe]
-    public static byte decimals() => 0;
+    public static byte decimals()
+    {
+        AssertDedicatedContractMode();
+        return 0;
+    }
 
     [Safe]
     public static BigInteger totalSupply()
     {
+        AssertDedicatedContractMode();
         return ReadBigInteger(Storage.CurrentContext, PrefixTotalSupply);
     }
 
     [Safe]
     public static BigInteger balanceOf(UInt160 owner)
     {
+        AssertDedicatedContractMode();
         if (!owner.IsValid)
         {
             throw new Exception("Invalid owner");
@@ -66,6 +88,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static UInt160 ownerOf(ByteString tokenId)
     {
+        AssertDedicatedContractMode();
         ByteString owner = TokenOwners().Get(tokenId);
         if (owner is null)
         {

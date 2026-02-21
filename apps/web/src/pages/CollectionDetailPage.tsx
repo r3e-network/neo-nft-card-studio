@@ -384,15 +384,13 @@ export function CollectionDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [fetchedCollection, fetchedTokens, ghostMeta, neoFsMetaResponse] = await Promise.all([
+      const [fetchedCollection, fetchedTokens, neoFsMetaResponse] = await Promise.all([
         fetchCollection(collectionId),
         fetchCollectionTokens(collectionId),
-        fetchGhostMarketMeta(),
         fetchNeoFsMeta().catch(() => null),
       ]);
       setCollection(fetchedCollection);
       setTokens(fetchedTokens);
-      setGhostMarket(ghostMeta);
       setNeoFsMeta(neoFsMetaResponse);
       setSettingsForm(createSettingsForm(fetchedCollection));
       setMetadataByTokenId({});
@@ -425,6 +423,7 @@ export function CollectionDetailPage() {
       );
       setResolvedTokenUriById(Object.fromEntries(resolvedTokenEntries));
 
+      let resolvedContractHashForGhostMeta = fetchedCollection.contractHash ?? "";
       if (isCsharpDialect) {
         const client = getPlatformClient();
         const [templateReady, collectionContractHash] = await Promise.all([
@@ -436,15 +435,25 @@ export function CollectionDetailPage() {
         const indexedContractHash = fetchedCollection.contractHash ?? "";
         if (collectionContractHash && !isZeroUInt160Hex(collectionContractHash)) {
           setDeployedCollectionContractHash(collectionContractHash);
+          resolvedContractHashForGhostMeta = collectionContractHash;
         } else if (indexedContractHash && !isZeroUInt160Hex(indexedContractHash)) {
           setDeployedCollectionContractHash(indexedContractHash);
+          resolvedContractHashForGhostMeta = indexedContractHash;
         } else {
           setDeployedCollectionContractHash("");
+          resolvedContractHashForGhostMeta = "";
         }
       } else {
         setTemplateConfigured(false);
         setDeployedCollectionContractHash("");
       }
+
+      const ghostMeta = await fetchGhostMarketMeta(
+        resolvedContractHashForGhostMeta && !isZeroUInt160Hex(resolvedContractHashForGhostMeta)
+          ? resolvedContractHashForGhostMeta
+          : undefined,
+      );
+      setGhostMarket(ghostMeta);
     } catch (err) {
       if (isRustDialect) {
         const fallbackCollection = createRustFallbackCollection(collectionId, t("detail.rust_fallback_description"));
@@ -490,18 +499,28 @@ export function CollectionDetailPage() {
       return;
     }
 
+    if (isCsharpDialect && !hasDedicatedContract) {
+      setDropWalletStats(null);
+      setCheckInWalletStats(null);
+      setMembershipStatus(null);
+      return;
+    }
+
     let cancelled = false;
     const loadProgramState = async () => {
       try {
         const client = getActionClient();
+        const supportsWalletLevelStats = !isCsharpDialect;
         const [dropConfigRaw, dropStatsRaw, checkInProgramRaw, checkInStatsRaw, membershipRaw] = await Promise.all([
           client.getDropConfig(collection.collectionId).catch(() => null),
-          wallet.address ? client.getDropWalletStats(collection.collectionId, wallet.address).catch(() => null) : Promise.resolve(null),
+          supportsWalletLevelStats && wallet.address
+            ? client.getDropWalletStats(collection.collectionId, wallet.address).catch(() => null)
+            : Promise.resolve(null),
           client.getCheckInProgram(collection.collectionId).catch(() => null),
-          wallet.address
+          supportsWalletLevelStats && wallet.address
             ? client.getCheckInWalletStats(collection.collectionId, wallet.address).catch(() => null)
             : Promise.resolve(null),
-          wallet.address
+          supportsWalletLevelStats && wallet.address
             ? client.getMembershipStatus(collection.collectionId, wallet.address).catch(() => null)
             : Promise.resolve(null),
         ]);
@@ -572,6 +591,14 @@ export function CollectionDetailPage() {
       tokenId: "",
     });
   }, [ghostMarket, collectionId, hasDedicatedContract, deployedCollectionContractHash]);
+
+  const requireDedicatedContractForCsharp = (): boolean => {
+    if (isCsharpDialect && !hasDedicatedContract) {
+      setError(t("detail.err_dedicated_contract_required"));
+      return false;
+    }
+    return true;
+  };
 
   const updateCollectionSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -703,9 +730,13 @@ export function CollectionDetailPage() {
       return;
     }
 
+    if (!requireDedicatedContractForCsharp()) {
+      return;
+    }
+
     try {
       setWorking(true);
-      const client = getPlatformClient();
+      const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildBatchMintInvoke({
           collectionId,
@@ -790,6 +821,10 @@ export function CollectionDetailPage() {
       return;
     }
 
+    if (!requireDedicatedContractForCsharp()) {
+      return;
+    }
+
     const startAt = Number(dropConfigForm.startAt || "0");
     const endAt = Number(dropConfigForm.endAt || "0");
     const perWalletLimit = Number(dropConfigForm.perWalletLimit || "0");
@@ -833,6 +868,10 @@ export function CollectionDetailPage() {
 
     if (!collection) {
       setError(t("detail.err_collection_not_found"));
+      return;
+    }
+
+    if (!requireDedicatedContractForCsharp()) {
       return;
     }
 
@@ -892,6 +931,10 @@ export function CollectionDetailPage() {
 
     if (!collection) {
       setError(t("detail.err_collection_not_found"));
+      return;
+    }
+
+    if (!requireDedicatedContractForCsharp()) {
       return;
     }
 
@@ -989,6 +1032,10 @@ export function CollectionDetailPage() {
       return;
     }
 
+    if (!requireDedicatedContractForCsharp()) {
+      return;
+    }
+
     try {
       setWorking(true);
       const client = getActionClient();
@@ -1029,6 +1076,10 @@ export function CollectionDetailPage() {
 
     if (!collection) {
       setError(t("detail.err_collection_not_found"));
+      return;
+    }
+
+    if (!requireDedicatedContractForCsharp()) {
       return;
     }
 
@@ -1566,7 +1617,7 @@ export function CollectionDetailPage() {
                   {working ? t("detail.submitting") : t("detail.btn_mint")}
                 </button>
                 {isCsharpDialect && (
-                  <button className="btn btn-secondary" type="button" disabled={working} onClick={() => {
+                  <button className="btn btn-secondary" type="button" disabled={working || !hasDedicatedContract} onClick={() => {
                     const amount = window.prompt(t("detail.prompt_batch_size"), "10");
                     if (amount && !isNaN(Number(amount))) {
                       batchMint(Number(amount));

@@ -10,6 +10,7 @@ apps/api/data/*.db
 apps/api/data/*.db-*
 contracts/multi-tenant-nft-platform/bin
 contracts/multi-tenant-nft-platform/obj
+contracts/multi-tenant-nft-platform/build-size-test
 contracts/rust-multi-tenant-nft-platform/target
 tools/nccs
 .serena/

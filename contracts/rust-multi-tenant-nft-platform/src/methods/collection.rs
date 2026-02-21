@@ -35,6 +35,21 @@ impl MultiTenantNftPlatformRust {
             return 0;
         }
 
+        let name = string_ref(name_ref);
+        let symbol = string_ref(symbol_ref);
+        let description = string_ref(description_ref);
+        let base_uri = string_ref(base_uri_ref);
+        if name.as_str().is_empty()
+            || name.len() > 80
+            || symbol.as_str().is_empty()
+            || symbol.len() > 12
+            || description.len() > 512
+            || base_uri.as_str().is_empty()
+            || base_uri.len() > 512
+        {
+            return 0;
+        }
+
         let Some(storage) = storage_context() else {
             return 0;
         };
@@ -52,17 +67,17 @@ impl MultiTenantNftPlatformRust {
 
         if !write_i64(&storage, KEY_COLLECTION_COUNTER, collection_id)
             || !write_i64(&storage, &collection_field_key(collection_id, FIELD_OWNER), creator_id)
-            || !write_i64(&storage, &collection_field_key(collection_id, FIELD_NAME_REF), name_ref)
-            || !write_i64(&storage, &collection_field_key(collection_id, FIELD_SYMBOL_REF), symbol_ref)
-            || !write_i64(
+            || !write_string_field(&storage, &collection_field_key(collection_id, FIELD_NAME_REF), &name)
+            || !write_string_field(&storage, &collection_field_key(collection_id, FIELD_SYMBOL_REF), &symbol)
+            || !write_string_field(
                 &storage,
                 &collection_field_key(collection_id, FIELD_DESC_REF),
-                description_ref,
+                &description,
             )
-            || !write_i64(
+            || !write_string_field(
                 &storage,
                 &collection_field_key(collection_id, FIELD_BASE_URI_REF),
-                base_uri_ref,
+                &base_uri,
             )
             || !write_i64(
                 &storage,
@@ -88,6 +103,7 @@ impl MultiTenantNftPlatformRust {
             return 0;
         }
 
+        emit_collection_upserted(&storage, collection_id);
         collection_id
     }
 
@@ -134,14 +150,20 @@ impl MultiTenantNftPlatformRust {
             return false;
         }
 
-        write_i64(
+        let description = string_ref(description_ref);
+        let base_uri = string_ref(base_uri_ref);
+        if description.len() > 512 || base_uri.len() > 512 {
+            return false;
+        }
+
+        let updated = write_string_field(
             &storage,
             &collection_field_key(collection_id, FIELD_DESC_REF),
-            description_ref,
-        ) && write_i64(
+            &description,
+        ) && write_string_field(
             &storage,
             &collection_field_key(collection_id, FIELD_BASE_URI_REF),
-            base_uri_ref,
+            &base_uri,
         ) && write_i64(
             &storage,
             &collection_field_key(collection_id, FIELD_ROYALTY_BPS),
@@ -151,6 +173,13 @@ impl MultiTenantNftPlatformRust {
             &collection_field_key(collection_id, FIELD_TRANSFERABLE),
             transferable,
         ) && write_bool(&storage, &collection_field_key(collection_id, FIELD_PAUSED), paused)
+        ;
+
+        if updated {
+            emit_collection_upserted(&storage, collection_id);
+        }
+
+        updated
     }
 
     #[neo_method(
@@ -181,7 +210,11 @@ impl MultiTenantNftPlatformRust {
             return false;
         }
 
-        write_bool(&storage, &operator_key(collection_id, operator_id), enabled)
+        let updated = write_bool(&storage, &operator_key(collection_id, operator_id), enabled);
+        if updated {
+            emit_collection_operator_updated(&storage, collection_id, operator_id, enabled);
+        }
+        updated
     }
 
     #[neo_method(name = "isCollectionOperator", safe, param_types = ["ByteArray", "Hash160"])]

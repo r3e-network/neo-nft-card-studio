@@ -142,7 +142,7 @@ export class IndexerService {
     return this.eventsEnabled;
   }
 
-  async getContractManifestSummary(): Promise<
+  async getContractManifestSummary(contractHash?: string): Promise<
     | {
         supportedStandards: string[];
         methods: Array<{
@@ -154,7 +154,7 @@ export class IndexerService {
     | null
   > {
     try {
-      const state = (await this.rpc.getContractState()) as RawContractState;
+      const state = (await this.rpc.getContractState(contractHash)) as RawContractState;
       const manifest = state?.manifest;
       if (!manifest) {
         return null;

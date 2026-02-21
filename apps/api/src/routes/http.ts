@@ -76,6 +76,16 @@ function evaluateGhostMarketCompatibility(input: {
   const reasons: GhostMarketCompatibilityIssue[] = [];
   const warnings: GhostMarketCompatibilityIssue[] = [];
   const standards = new Set(input.supportedStandards.map((entry) => entry.toUpperCase()));
+  const isFactoryContract = !!findMethod(input.methods, "deployCollectionContractFromTemplate")
+    && !findMethod(input.methods, "ownerOf")
+    && !findMethod(input.methods, "tokenURI");
+
+  if (isFactoryContract) {
+    reasons.push({
+      code: "factory_contract_not_nft",
+      message: "This contract is an NFT deployment factory, not an NFT asset contract.",
+    });
+  }
 
   if (!standards.has("NEP-11")) {
     reasons.push({
@@ -319,6 +329,19 @@ function readNetworkQueryValue(input: unknown): string | null {
 
   if (Array.isArray(input)) {
     return readNetworkQueryValue(input[0]);
+  }
+
+  return null;
+}
+
+function readContractHashQueryValue(input: unknown): string | null {
+  if (typeof input === "string") {
+    const value = input.trim();
+    return value.length > 0 ? value : null;
+  }
+
+  if (Array.isArray(input)) {
+    return readContractHashQueryValue(input[0]);
   }
 
   return null;
@@ -734,9 +757,11 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/meta/ghostmarket",
-    withNetworkContext(async (context, _req, res) => {
-      const contractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
-      const manifestSummary = await context.indexer.getContractManifestSummary();
+    withNetworkContext(async (context, req, res) => {
+      const platformContractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
+      const contractHash = requestedContractHash ? normalizeContractHash(requestedContractHash) : platformContractHash;
+      const manifestSummary = await context.indexer.getContractManifestSummary(contractHash);
 
       const compatibility = evaluateGhostMarketCompatibility({
         dialect: context.config.NEO_CONTRACT_DIALECT,
@@ -762,6 +787,8 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         enabled: context.config.GHOSTMARKET_ENABLED,
         baseUrl: context.config.GHOSTMARKET_BASE_URL,
         contractHash,
+        platformContractHash,
+        isPlatformContract: contractHash === platformContractHash,
         collectionUrlTemplate,
         tokenUrlTemplate,
         contractSearchUrl: `${context.config.GHOSTMARKET_BASE_URL}/?search=${encodeURIComponent(contractHash)}`,
@@ -777,7 +804,10 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   router.get(
     "/meta/ghostmarket/collection/:collectionId",
     withNetworkContext((context, req, res) => {
-      const contractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
+      const contractHash = requestedContractHash
+        ? normalizeContractHash(requestedContractHash)
+        : normalizeContractHash(context.config.NEO_CONTRACT_HASH);
       const url = fillGhostMarketTemplate(context.config.GHOSTMARKET_COLLECTION_URL_TEMPLATE, {
         contractHash,
         collectionId: req.params.collectionId,
@@ -791,7 +821,10 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   router.get(
     "/meta/ghostmarket/token/:tokenId",
     withNetworkContext((context, req, res) => {
-      const contractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
+      const contractHash = requestedContractHash
+        ? normalizeContractHash(requestedContractHash)
+        : normalizeContractHash(context.config.NEO_CONTRACT_HASH);
       const url = fillGhostMarketTemplate(context.config.GHOSTMARKET_TOKEN_URL_TEMPLATE, {
         contractHash,
         collectionId: "",

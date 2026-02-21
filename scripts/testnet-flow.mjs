@@ -6,8 +6,18 @@ import path from "node:path";
 import { experimental, rpc, sc, u, wallet } from "@cityofzion/neon-js";
 
 const DEFAULT_RPC_URL = "https://testnet1.neo.coz.io:443";
-const CONTRACT_NEF = "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.nef";
-const CONTRACT_MANIFEST = "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.manifest.json";
+const PLATFORM_CONTRACT_NEF =
+  process.env.TESTNET_PLATFORM_NEF_PATH?.trim() ||
+  "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.nef";
+const PLATFORM_CONTRACT_MANIFEST =
+  process.env.TESTNET_PLATFORM_MANIFEST_PATH?.trim() ||
+  "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.manifest.json";
+const TEMPLATE_CONTRACT_NEF =
+  process.env.TESTNET_TEMPLATE_NEF_PATH?.trim() ||
+  "contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.nef";
+const TEMPLATE_CONTRACT_MANIFEST =
+  process.env.TESTNET_TEMPLATE_MANIFEST_PATH?.trim() ||
+  "contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.deploy.manifest.json";
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -225,13 +235,18 @@ async function assertFaultInvoke(label, rpcClient, contractHash, operation, para
   }
 
   const exception = result?.exception?.toString?.() ?? "";
-  if (
-    expectedExceptionFragment
-    && (!exception || !exception.includes(expectedExceptionFragment))
-  ) {
-    throw new Error(
-      `${label} exception mismatch. expected to include '${expectedExceptionFragment}', got '${exception || "<empty>"}'`,
-    );
+  const fragments = Array.isArray(expectedExceptionFragment)
+    ? expectedExceptionFragment
+    : expectedExceptionFragment
+      ? [expectedExceptionFragment]
+      : [];
+  if (fragments.length > 0) {
+    const matched = fragments.some((fragment) => exception && exception.includes(fragment));
+    if (!matched) {
+      throw new Error(
+        `${label} exception mismatch. expected to include one of [${fragments.join(" | ")}], got '${exception || "<empty>"}'`,
+      );
+    }
   }
 
   return exception;
@@ -257,32 +272,44 @@ async function main() {
     prioritisationFee: 0,
   };
 
-  const nefPath = path.resolve(CONTRACT_NEF);
-  const manifestPath = path.resolve(CONTRACT_MANIFEST);
+  const platformNefPath = path.resolve(PLATFORM_CONTRACT_NEF);
+  const platformManifestPath = path.resolve(PLATFORM_CONTRACT_MANIFEST);
+  const templateNefPath = path.resolve(TEMPLATE_CONTRACT_NEF);
+  const templateManifestPath = path.resolve(TEMPLATE_CONTRACT_MANIFEST);
 
-  const [nefBytes, manifestText] = await Promise.all([fs.readFile(nefPath), fs.readFile(manifestPath, "utf8")]);
-  const manifestJson = JSON.parse(manifestText);
+  const [platformNefBytes, platformManifestText, templateNefBytes, templateManifestText] = await Promise.all([
+    fs.readFile(platformNefPath),
+    fs.readFile(platformManifestPath, "utf8"),
+    fs.readFile(templateNefPath),
+    fs.readFile(templateManifestPath, "utf8"),
+  ]);
+  const platformManifestJson = JSON.parse(platformManifestText);
+  const templateManifestJson = JSON.parse(templateManifestText);
   const deploySuffix = Date.now().toString().slice(-8);
-  const requestedDeployName = process.env.TESTNET_DEPLOY_NAME?.trim() || `${manifestJson.name}Smoke${deploySuffix}`;
+  const templateNameSuffix = process.env.TESTNET_TEMPLATE_NAME_SUFFIX?.trim() || deploySuffix;
+  const requestedDeployName = process.env.TESTNET_DEPLOY_NAME?.trim() || `${platformManifestJson.name}Smoke${deploySuffix}`;
   const collectionMaxSupply = readNonNegativeIntegerEnv("TESTNET_COLLECTION_MAX_SUPPLY", 0);
 
-  const nef = sc.NEF.fromBuffer(nefBytes);
+  const platformNef = sc.NEF.fromBuffer(platformNefBytes);
 
   function buildDeployArtifacts(name) {
+    const templateNameBase = (templateManifestJson.name || "MultiTenantNftTemplate").slice(0, 220);
+    const scopedTemplateManifestJson = {
+      ...templateManifestJson,
+      name: `${templateNameBase}-${templateNameSuffix}`,
+    };
+
     const deployManifestJson = {
-      ...manifestJson,
+      ...platformManifestJson,
       name,
     };
 
     return {
       deployName: name,
       manifest: sc.ContractManifest.fromJson(deployManifestJson),
-      templateManifestText: JSON.stringify({
-        ...deployManifestJson,
-        name: `${name}Template`,
-      }),
+      templateManifestText: JSON.stringify(scopedTemplateManifestJson),
       predictedHash: normalizeHash(
-        experimental.getContractHash(account.scriptHash, nef.checksum, name),
+        experimental.getContractHash(account.scriptHash, platformNef.checksum, name),
       ),
     };
   }
@@ -310,7 +337,7 @@ async function main() {
   for (;;) {
     console.log(`[testnet] Deploying platform contract: ${deployArtifacts.deployName}`);
     try {
-      deployTxid = await experimental.deployContract(nef, deployArtifacts.manifest, config);
+      deployTxid = await experimental.deployContract(platformNef, deployArtifacts.manifest, config);
       break;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -351,13 +378,36 @@ async function main() {
     deployedHash,
     "setCollectionContractTemplate",
     [
-      byteArrayParamFromHex(nefBytes.toString("hex")),
+      byteArrayParamFromHex(templateNefBytes.toString("hex")),
       sc.ContractParam.string(deployArtifacts.templateManifestText),
     ],
   );
   summary.txids.setTemplate = templateInvoke.txid;
 
   const suffix = Date.now().toString().slice(-6);
+  if (process.env.TESTNET_CREATE_ONLY === "1") {
+    console.log(`[testnet] createCollection only (debug mode, maxSupply=${collectionMaxSupply})`);
+    const createOnlyInvoke = await invokeAndWait(
+      "createCollection",
+      platform,
+      rpcClient,
+      deployedHash,
+      "createCollection",
+      [
+        sc.ContractParam.string(`Smoke Collection ${suffix}`),
+        sc.ContractParam.string(`SMK${suffix.slice(-3)}`),
+        sc.ContractParam.string("E2E test collection"),
+        sc.ContractParam.string(`https://example.com/meta/${suffix}/`),
+        sc.ContractParam.integer(collectionMaxSupply),
+        sc.ContractParam.integer(500),
+        sc.ContractParam.boolean(true),
+      ],
+    );
+    summary.txids.createCollection = createOnlyInvoke.txid;
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+
   console.log(`[testnet] createCollectionAndDeployFromTemplate (maxSupply=${collectionMaxSupply})`);
   const createAndDeployInvoke = await invokeAndWait(
     "createCollectionAndDeployFromTemplate",
@@ -548,15 +598,23 @@ async function main() {
       sc.ContractParam.integer(0),
       sc.ContractParam.boolean(true),
     ],
-    "Operation not allowed in dedicated NFT contract mode",
+    [
+      "Operation not allowed in dedicated NFT contract mode",
+      "method not found: createCollection/7",
+    ],
   );
 
   const wrongScopeException = await assertFaultInvoke(
-    "dedicated:getCollectionWrongScope",
+    "dedicated:mintWrongScope",
     rpcClient,
     summary.deployedCollectionContractHash,
-    "getCollection",
-    [byteArrayParamFromHex(idToByteArrayHex(wrongCollectionId))],
+    "mint",
+    [
+      byteArrayParamFromHex(idToByteArrayHex(wrongCollectionId)),
+      sc.ContractParam.hash160(account.address),
+      sc.ContractParam.string(""),
+      sc.ContractParam.string("{}"),
+    ],
     "Collection id not bound to this dedicated NFT contract",
   );
 

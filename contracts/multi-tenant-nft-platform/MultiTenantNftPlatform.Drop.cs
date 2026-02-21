@@ -18,6 +18,7 @@ public partial class MultiTenantNftPlatform
         bool whitelistRequired
     )
     {
+        AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         CollectionState collection = GetCollectionState(collectionId);
         AssertCollectionOwnerWitness(collection);
@@ -52,6 +53,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setDropWhitelist(ByteString collectionId, UInt160 account, BigInteger allowance)
     {
+        AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         if (!account.IsValid)
         {
@@ -72,6 +74,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setDropWhitelistBatch(ByteString collectionId, UInt160[] accounts, BigInteger[] allowances)
     {
+        AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         if (accounts.Length != allowances.Length)
         {
@@ -108,6 +111,7 @@ public partial class MultiTenantNftPlatform
 
     public static ByteString claimDrop(ByteString collectionId, string tokenUri, string propertiesJson)
     {
+        AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         UInt160 claimer = GetSenderChecked();
         CollectionState collection = GetCollectionState(collectionId);
@@ -127,6 +131,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static object[] getDropConfig(ByteString collectionId)
     {
+        AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         GetCollectionState(collectionId);
         DropConfigState config = GetDropConfigState(collectionId);
@@ -139,48 +144,6 @@ public partial class MultiTenantNftPlatform
             config.PerWalletLimit,
             config.WhitelistRequired,
         ];
-    }
-
-    [Safe]
-    public static object[] getDropWalletStats(ByteString collectionId, UInt160 account)
-    {
-        collectionId = EnforceCollectionScope(collectionId);
-        if (!account.IsValid)
-        {
-            throw new Exception("Invalid account");
-        }
-
-        CollectionState collection = GetCollectionState(collectionId);
-        DropConfigState config = GetDropConfigState(collectionId);
-        BigInteger claimedCount = GetDropWalletClaimedCount(collectionId, account);
-        BigInteger whitelistAllowance = config.WhitelistRequired ? GetDropWhitelistAllowance(collectionId, account) : -1;
-        BigInteger remainingClaims = CalculateDropRemainingClaims(collectionId, collection, config, account, claimedCount);
-        bool claimableNow = IsDropClaimWindowOpen(config) && HasDropRemainingClaims(remainingClaims) && !collection.Paused;
-
-        return
-        [
-            claimedCount,
-            whitelistAllowance,
-            remainingClaims,
-            claimableNow,
-        ];
-    }
-
-    [Safe]
-    public static bool canClaimDrop(ByteString collectionId, UInt160 account)
-    {
-        collectionId = EnforceCollectionScope(collectionId);
-        if (!account.IsValid)
-        {
-            return false;
-        }
-
-        CollectionState collection = GetCollectionState(collectionId);
-        DropConfigState config = GetDropConfigState(collectionId);
-        BigInteger claimedCount = GetDropWalletClaimedCount(collectionId, account);
-        BigInteger remainingClaims = CalculateDropRemainingClaims(collectionId, collection, config, account, claimedCount);
-
-        return IsDropClaimWindowOpen(config) && HasDropRemainingClaims(remainingClaims) && !collection.Paused;
     }
 
     private static void AssertDropClaimAllowed(
@@ -252,73 +215,4 @@ public partial class MultiTenantNftPlatform
         return true;
     }
 
-    private static BigInteger CalculateDropRemainingClaims(
-        ByteString collectionId,
-        CollectionState collection,
-        DropConfigState config,
-        UInt160 account,
-        BigInteger claimedCount
-    )
-    {
-        if (!config.Enabled)
-        {
-            return 0;
-        }
-
-        bool hasFiniteCap = false;
-        BigInteger remaining = 0;
-        if (collection.MaxSupply > 0)
-        {
-            remaining = collection.MaxSupply - collection.Minted;
-            if (remaining <= 0)
-            {
-                return 0;
-            }
-
-            hasFiniteCap = true;
-        }
-
-        if (config.PerWalletLimit > 0)
-        {
-            BigInteger walletRemaining = config.PerWalletLimit - claimedCount;
-            if (walletRemaining <= 0)
-            {
-                return 0;
-            }
-
-            if (!hasFiniteCap || walletRemaining < remaining)
-            {
-                remaining = walletRemaining;
-                hasFiniteCap = true;
-            }
-        }
-
-        if (config.WhitelistRequired)
-        {
-            BigInteger whitelistAllowance = GetDropWhitelistAllowance(collectionId, account);
-            BigInteger whitelistRemaining = whitelistAllowance - claimedCount;
-            if (whitelistRemaining <= 0)
-            {
-                return 0;
-            }
-
-            if (!hasFiniteCap || whitelistRemaining < remaining)
-            {
-                remaining = whitelistRemaining;
-                hasFiniteCap = true;
-            }
-        }
-
-        if (!hasFiniteCap)
-        {
-            return -1;
-        }
-
-        return remaining;
-    }
-
-    private static bool HasDropRemainingClaims(BigInteger remainingClaims)
-    {
-        return remainingClaims < 0 || remainingClaims > 0;
-    }
 }

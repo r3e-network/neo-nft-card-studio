@@ -55,7 +55,7 @@ abstract contract NftStorage {
     uint8 internal constant TOKEN_CLASS_MEMBERSHIP = 1;
     uint8 internal constant TOKEN_CLASS_CHECKIN_PROOF = 2;
 
-    string internal constant _SYMBOL = "MNFTS";
+    string internal constant _SYMBOL = "MNFTP";
 
     uint256 internal _collectionCounter;
     uint256 internal _totalSupply;
@@ -109,6 +109,7 @@ abstract contract NftStorage {
         uint256 mintedAt
     );
     event CollectionOperatorUpdated(uint256 indexed collectionId, address indexed operator, bool enabled);
+    event CollectionContractDeployed(uint256 indexed collectionId, address indexed owner, address indexed contractHash);
     event DropConfigUpdated(
         uint256 indexed collectionId,
         bool enabled,

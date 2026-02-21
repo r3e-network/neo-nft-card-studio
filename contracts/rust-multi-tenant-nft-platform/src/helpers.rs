@@ -101,6 +101,22 @@ pub fn hash160_ref_from_account_id(storage: &NeoStorageContext, account_id: i64)
     neo_devpack::abi::i64_from_bytes(&account_hash160(storage, account_id))
 }
 
+pub fn write_string_field(storage: &NeoStorageContext, key: &[u8], value: &NeoString) -> bool {
+    let bytes = NeoByteString::from_slice(value.as_str().as_bytes());
+    write_bytes(storage, key, &bytes)
+}
+
+pub fn read_string_field(storage: &NeoStorageContext, key: &[u8]) -> NeoString {
+    if let Some(bytes) = read_bytes(storage, key) {
+        if let Ok(text) = core::str::from_utf8(bytes.as_slice()) {
+            return NeoString::from_str(text);
+        }
+    }
+
+    // Backward compatibility for older persisted integer-ref layouts.
+    string_ref(read_i64(storage, key))
+}
+
 pub fn check_witness_for_account_ref(storage: &NeoStorageContext, account_ref: i64) -> bool {
     if account_ref <= 0 {
         return false;
@@ -147,6 +163,89 @@ pub fn emit_transfer(storage: &NeoStorageContext, from: Option<i64>, to: Option<
     state.push(token_id_value(token_id));
 
     let label = NeoString::from_str("Transfer");
+    let _ = NeoRuntime::notify(&label, &state);
+}
+
+pub fn emit_collection_upserted(storage: &NeoStorageContext, collection_id: i64) {
+    let mut state = NeoArray::new();
+    state.push(token_id_value(collection_id));
+    state.push(hash160_value_from_account_id(
+        storage,
+        Some(read_i64(storage, &collection_field_key(collection_id, FIELD_OWNER))),
+    ));
+    state.push(NeoValue::String(read_string_field(
+        storage,
+        &collection_field_key(collection_id, FIELD_NAME_REF),
+    )));
+    state.push(NeoValue::String(read_string_field(
+        storage,
+        &collection_field_key(collection_id, FIELD_SYMBOL_REF),
+    )));
+    state.push(NeoValue::String(read_string_field(
+        storage,
+        &collection_field_key(collection_id, FIELD_DESC_REF),
+    )));
+    state.push(NeoValue::String(read_string_field(
+        storage,
+        &collection_field_key(collection_id, FIELD_BASE_URI_REF),
+    )));
+    state.push(NeoValue::Integer(NeoInteger::new(read_i64(
+        storage,
+        &collection_field_key(collection_id, FIELD_MAX_SUPPLY),
+    ))));
+    state.push(NeoValue::Integer(NeoInteger::new(read_i64(
+        storage,
+        &collection_field_key(collection_id, FIELD_MINTED),
+    ))));
+    state.push(NeoValue::Integer(NeoInteger::new(read_i64(
+        storage,
+        &collection_field_key(collection_id, FIELD_ROYALTY_BPS),
+    ))));
+    state.push(NeoValue::Boolean(NeoBoolean::new(read_bool(
+        storage,
+        &collection_field_key(collection_id, FIELD_TRANSFERABLE),
+    ))));
+    state.push(NeoValue::Boolean(NeoBoolean::new(read_bool(
+        storage,
+        &collection_field_key(collection_id, FIELD_PAUSED),
+    ))));
+    state.push(NeoValue::Integer(NeoInteger::new(read_i64(
+        storage,
+        &collection_field_key(collection_id, FIELD_CREATED_AT),
+    ))));
+
+    let label = NeoString::from_str("CollectionUpserted");
+    let _ = NeoRuntime::notify(&label, &state);
+}
+
+pub fn emit_collection_operator_updated(storage: &NeoStorageContext, collection_id: i64, operator_id: i64, enabled: bool) {
+    let mut state = NeoArray::new();
+    state.push(token_id_value(collection_id));
+    state.push(hash160_value_from_account_id(storage, Some(operator_id)));
+    state.push(NeoValue::Boolean(NeoBoolean::new(enabled)));
+
+    let label = NeoString::from_str("CollectionOperatorUpdated");
+    let _ = NeoRuntime::notify(&label, &state);
+}
+
+pub fn emit_token_upserted(storage: &NeoStorageContext, token_id: i64) {
+    let collection_id = read_i64(storage, &token_field_key(token_id, TOKEN_FIELD_COLLECTION_ID));
+    let owner_id = read_i64(storage, &token_field_key(token_id, TOKEN_FIELD_OWNER));
+    let uri = read_string_field(storage, &token_field_key(token_id, TOKEN_FIELD_URI_REF));
+    let properties = read_string_field(storage, &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF));
+    let burned = read_bool(storage, &token_field_key(token_id, TOKEN_FIELD_BURNED));
+    let minted_at = read_i64(storage, &token_field_key(token_id, TOKEN_FIELD_MINTED_AT));
+
+    let mut state = NeoArray::new();
+    state.push(token_id_value(token_id));
+    state.push(NeoValue::ByteString(neo_devpack::abi::bytes_from_i64(collection_id)));
+    state.push(hash160_value_from_account_id(storage, Some(owner_id)));
+    state.push(NeoValue::String(uri));
+    state.push(NeoValue::String(properties));
+    state.push(NeoValue::Boolean(NeoBoolean::new(burned)));
+    state.push(NeoValue::Integer(NeoInteger::new(minted_at)));
+
+    let label = NeoString::from_str("TokenUpserted");
     let _ = NeoRuntime::notify(&label, &state);
 }
 
@@ -255,22 +354,22 @@ pub fn collection_to_array(storage: &NeoStorageContext, collection_id: i64) -> N
         storage,
         &collection_field_key(collection_id, FIELD_OWNER),
     ))));
-    result.push(NeoValue::String(string_ref(read_i64(
+    result.push(NeoValue::String(read_string_field(
         storage,
         &collection_field_key(collection_id, FIELD_NAME_REF),
-    ))));
-    result.push(NeoValue::String(string_ref(read_i64(
+    )));
+    result.push(NeoValue::String(read_string_field(
         storage,
         &collection_field_key(collection_id, FIELD_SYMBOL_REF),
-    ))));
-    result.push(NeoValue::String(string_ref(read_i64(
+    )));
+    result.push(NeoValue::String(read_string_field(
         storage,
         &collection_field_key(collection_id, FIELD_DESC_REF),
-    ))));
-    result.push(NeoValue::String(string_ref(read_i64(
+    )));
+    result.push(NeoValue::String(read_string_field(
         storage,
         &collection_field_key(collection_id, FIELD_BASE_URI_REF),
-    ))));
+    )));
     result.push(NeoValue::Integer(NeoInteger::new(read_i64(
         storage,
         &collection_field_key(collection_id, FIELD_MAX_SUPPLY),
@@ -309,14 +408,14 @@ pub fn token_to_array(storage: &NeoStorageContext, token_id: i64) -> NeoArray<Ne
         storage,
         &token_field_key(token_id, TOKEN_FIELD_OWNER),
     ))));
-    result.push(NeoValue::String(string_ref(read_i64(
+    result.push(NeoValue::String(read_string_field(
         storage,
         &token_field_key(token_id, TOKEN_FIELD_URI_REF),
-    ))));
-    result.push(NeoValue::String(string_ref(read_i64(
+    )));
+    result.push(NeoValue::String(read_string_field(
         storage,
         &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF),
-    ))));
+    )));
     result.push(NeoValue::Boolean(NeoBoolean::new(read_bool(
         storage,
         &token_field_key(token_id, TOKEN_FIELD_BURNED),

@@ -7,12 +7,11 @@ using Neo.SmartContract.Framework.Attributes;
 
 namespace NeoN3.MultiTenantNftPlatform;
 
+[DisplayName("MultiTenantNftPlatform")]
 [ManifestExtra("Author", "R3E Network")]
+[ManifestExtra("Description", "Neo NFT platform factory for deploying dedicated NFT contracts")]
 [ManifestExtra("Email", "jimmy@r3e.network")]
-[DisplayName("MultiTenantNftTemplate")]
-[ManifestExtra("Description", "Neo NFT dedicated template contract (NEP-11/NEP-24)")]
-[ManifestExtra("ContractRole", "Template")]
-[SupportedStandards("NEP-11", "NEP-24")]
+[ManifestExtra("ContractRole", "Factory")]
 [ContractPermission("*", "*")]
 public partial class MultiTenantNftPlatform : SmartContract
 {
@@ -27,6 +26,9 @@ public partial class MultiTenantNftPlatform : SmartContract
 
     [DisplayName("CollectionOperatorUpdated")]
     public static event Action<ByteString, UInt160, bool> OnCollectionOperatorUpdated;
+
+    [DisplayName("CollectionContractDeployed")]
+    public static event Action<ByteString, UInt160, UInt160> OnCollectionContractDeployed;
 
     [DisplayName("DropConfigUpdated")]
     public static event Action<ByteString, bool, BigInteger, BigInteger, BigInteger, bool> OnDropConfigUpdated;
@@ -45,13 +47,17 @@ public partial class MultiTenantNftPlatform : SmartContract
 
     private static readonly byte[] PrefixContractOwner = [0x00];
     private static readonly byte[] PrefixTotalSupply = [0x01];
+    private static readonly byte[] PrefixCollectionIdCounter = [0x02];
     private static readonly byte[] PrefixDedicatedContractMode = [0x03];
     private static readonly byte[] PrefixDedicatedCollectionId = [0x04];
-    private static readonly byte[] PrefixInitializerContract = [0x05];
     private static readonly byte[] PrefixCollection = [0x10];
     private static readonly byte[] PrefixCollectionMintCounter = [0x11];
     private static readonly byte[] PrefixCollectionToken = [0x12];
     private static readonly byte[] PrefixCollectionOperator = [0x13];
+    private static readonly byte[] PrefixCollectionContract = [0x14];
+    private static readonly byte[] PrefixCollectionContractTemplateNef = [0x15];
+    private static readonly byte[] PrefixCollectionContractTemplateManifest = [0x16];
+    private static readonly byte[] PrefixOwnerDedicatedCollection = [0x17];
     private static readonly byte[] PrefixCollectionDropConfig = [0x18];
     private static readonly byte[] PrefixCollectionDropWhitelist = [0x19];
     private static readonly byte[] PrefixCollectionDropWalletClaimed = [0x1A];

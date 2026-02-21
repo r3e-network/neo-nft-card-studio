@@ -6,6 +6,89 @@ use crate::keys::*;
 use crate::storage_helpers::*;
 use crate::MultiTenantNftPlatformRust;
 
+fn serial_width(max_supply: i64) -> usize {
+    if max_supply >= 100_000 {
+        return 5;
+    }
+    if max_supply >= 10_000 {
+        return 4;
+    }
+    if max_supply >= 1_000 {
+        return 3;
+    }
+    if max_supply >= 100 {
+        return 2;
+    }
+    1
+}
+
+fn left_pad_serial(serial: i64, max_supply: i64) -> String {
+    let width = serial_width(max_supply);
+    let mut serial_text = serial.to_string();
+    while serial_text.len() < width {
+        serial_text = format!("0{}", serial_text);
+    }
+    serial_text
+}
+
+fn escape_json_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
+fn build_default_token_name(collection_name: &str, serial: i64, max_supply: i64) -> String {
+    format!(
+        "{} No.{}",
+        collection_name,
+        left_pad_serial(serial, max_supply)
+    )
+}
+
+fn build_default_properties_json(collection_name: &str, serial: i64, max_supply: i64) -> String {
+    let escaped_name = escape_json_string(&build_default_token_name(collection_name, serial, max_supply));
+    format!("{{\"name\":\"{}\"}}", escaped_name)
+}
+
+fn call_nep11_receiver(
+    storage: &NeoStorageContext,
+    from_id: Option<i64>,
+    to_id: i64,
+    token_id: i64,
+    data: NeoValue,
+) -> bool {
+    let to_hash = account_hash160(storage, to_id);
+    let mut contract_lookup_args = NeoArray::new();
+    contract_lookup_args.push(NeoValue::ByteString(to_hash.clone()));
+
+    let contract_state = NeoContractRuntime::call(
+        &contract_management_hash(),
+        &NeoString::from_str("getContract"),
+        &contract_lookup_args,
+    );
+    let Ok(contract_state_value) = contract_state else {
+        return false;
+    };
+    if contract_state_value.is_null() {
+        return true;
+    }
+
+    let mut callback_args = NeoArray::new();
+    callback_args.push(hash160_value_from_account_id(storage, from_id));
+    callback_args.push(NeoValue::Integer(NeoInteger::new(1)));
+    callback_args.push(token_id_value(token_id));
+    callback_args.push(data);
+
+    NeoContractRuntime::call(
+        &to_hash,
+        &NeoString::from_str("onNEP11Payment"),
+        &callback_args,
+    )
+    .is_ok()
+}
+
 pub(crate) fn mint_token_for_account(
     storage: &NeoStorageContext,
     collection_id: i64,
@@ -38,16 +121,32 @@ pub(crate) fn mint_token_for_account(
         return 0;
     }
 
-    let effective_token_uri_ref = if token_uri_ref > 0 {
-        token_uri_ref
+    let mut effective_token_uri = if token_uri_ref > 0 {
+        string_ref(token_uri_ref)
     } else {
-        read_i64(storage, &collection_field_key(collection_id, FIELD_BASE_URI_REF))
+        NeoString::from_str("")
     };
-    let effective_properties_ref = if properties_ref > 0 {
-        properties_ref
+    if effective_token_uri.as_str().is_empty() {
+        let base_uri = read_string_field(storage, &collection_field_key(collection_id, FIELD_BASE_URI_REF));
+        let default_uri = format!("{}{}", base_uri.as_str(), serial);
+        effective_token_uri = NeoString::from_str(&default_uri);
+    }
+
+    let mut effective_properties = if properties_ref > 0 {
+        string_ref(properties_ref)
     } else {
-        read_i64(storage, &collection_field_key(collection_id, FIELD_NAME_REF))
+        NeoString::from_str("")
     };
+    if effective_properties.as_str().is_empty() || effective_properties.as_str() == "{}" {
+        let collection_name = read_string_field(storage, &collection_field_key(collection_id, FIELD_NAME_REF));
+        let default_properties =
+            build_default_properties_json(collection_name.as_str(), serial, max_supply);
+        effective_properties = NeoString::from_str(&default_properties);
+    }
+
+    if effective_token_uri.len() > 512 || effective_properties.len() > 4096 {
+        return 0;
+    }
 
     if !write_i64(storage, &collection_serial_key(collection_id), serial)
         || !write_i64(
@@ -56,15 +155,15 @@ pub(crate) fn mint_token_for_account(
             collection_id,
         )
         || !write_i64(storage, &token_field_key(token_id, TOKEN_FIELD_OWNER), to_id)
-        || !write_i64(
+        || !write_string_field(
             storage,
             &token_field_key(token_id, TOKEN_FIELD_URI_REF),
-            effective_token_uri_ref,
+            &effective_token_uri,
         )
-        || !write_i64(
+        || !write_string_field(
             storage,
             &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF),
-            effective_properties_ref,
+            &effective_properties,
         )
         || !write_bool(storage, &token_field_key(token_id, TOKEN_FIELD_BURNED), false)
         || !write_i64(storage, &token_field_key(token_id, TOKEN_FIELD_MINTED_AT), now())
@@ -100,7 +199,12 @@ pub(crate) fn mint_token_for_account(
         return 0;
     }
 
+    emit_collection_upserted(storage, collection_id);
+    emit_token_upserted(storage, token_id);
     emit_transfer(storage, None, Some(to_id), token_id);
+    if !call_nep11_receiver(storage, None, to_id, token_id, NeoValue::Null) {
+        panic!("Invalid NEP-11 receiver");
+    }
     token_id
 }
 
@@ -192,12 +296,13 @@ impl MultiTenantNftPlatformRust {
             return false;
         }
 
+        emit_token_upserted(&storage, token_id);
         emit_transfer(&storage, Some(token_owner), None, token_id);
         true
     }
 
     #[neo_method(name = "transfer", param_types = ["Hash160", "ByteArray", "Any"])]
-    pub fn transfer(to: i64, token_id: i64, _data_ref: i64) -> bool {
+    pub fn transfer(to: i64, token_id: i64, data_ref: i64) -> bool {
         if to <= 0 || token_id <= 0 {
             return false;
         }
@@ -257,7 +362,12 @@ impl MultiTenantNftPlatformRust {
             return false;
         }
 
+        let transfer_data = neo_devpack::abi::resolve_value(data_ref).unwrap_or(NeoValue::Null);
+        emit_token_upserted(&storage, token_id);
         emit_transfer(&storage, Some(from), Some(to_id), token_id);
+        if !call_nep11_receiver(&storage, Some(from), to_id, token_id, transfer_data) {
+            panic!("Invalid NEP-11 receiver");
+        }
         true
     }
 }

@@ -13,6 +13,10 @@ Shared SDK adapter: `packages/neo-sdk/src/contract-client.ts`
 ## C# (Primary Production Interface)
 
 Files:
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.cs`
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.Lifecycle.cs`
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.Collections.cs`
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.Internal.cs`
 - `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.cs`
 - `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Lifecycle.cs`
 - `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Collections.cs`
@@ -22,10 +26,14 @@ Files:
 - `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Internal.cs`
 
 Manifest identity:
-- `name`: `MultiTenantNftPlatform`
-- `supportedstandards`: `NEP-11`, `NEP-24`
+- Factory (`MultiTenantNftPlatform`):
+  - non-NEP asset contract (no `NEP-11` / `NEP-24` declaration)
+  - role: collection creation + template deployment
+- Template (`MultiTenantNftTemplate`):
+  - `supportedstandards`: `NEP-11`, `NEP-24`
+  - `symbol`: `MNFTP`
 
-Standard:
+Template standard surface (NEP):
 - `symbol() -> string`
 - `decimals() -> byte`
 - `totalSupply() -> BigInteger`
@@ -38,12 +46,9 @@ Standard:
 - `tokens() -> Iterator`
 - `properties(tokenId) -> Map<string, object>`
 
-Management:
+Factory management:
 - `createCollection(...) -> ByteString`
 - `createCollectionAndDeployFromTemplate(...) -> object[]` (one-tx create + dedicated contract deployment)
-- `updateCollection(...)`
-- `setCollectionOperator(...)`
-- `isCollectionOperator(...)`
 - `setCollectionContractTemplate(nef, manifest)` (platform owner only)
 - `clearCollectionContractTemplate()` (platform owner only)
 - `hasCollectionContractTemplate() -> bool`
@@ -55,31 +60,29 @@ Management:
 - `getOwnerDedicatedCollectionContract(owner) -> UInt160`
 - `hasOwnerDedicatedCollectionContract(owner) -> bool`
 - `deployCollectionContractFromTemplate` enforces one-owner-one-dedicated-contract binding.
+
+Template runtime management:
+- `updateCollection(...)`
+- `setCollectionOperator(...)`
+- `isCollectionOperator(...)`
 - `mint(...) -> ByteString`
 - `configureDrop(...)`
 - `setDropWhitelist(...)`
 - `setDropWhitelistBatch(...)`
 - `claimDrop(...) -> ByteString`
 - `getDropConfig(...) -> object[]`
-- `getDropWalletStats(...) -> object[]`
-- `canClaimDrop(...) -> bool`
 - `configureCheckInProgram(...)`
 - `getCheckInProgram(...) -> object[]`
 - `checkIn(...) -> object[]`
-- `canCheckIn(...) -> bool`
-- `getCheckInWalletStats(...) -> object[]`
-- `getMembershipStatus(...) -> object[]`
-- `getTokenClass(tokenId) -> BigInteger`
+- `initializeDedicatedCollection(...)`
 - `burn(tokenId)`
-- `getCollection(...) -> object[]`
-- `getToken(...) -> object[]`
-- `getCollectionTokens(...) -> Iterator`
 
 Runtime deploy semantics:
-- Primary mode: shared multi-tenant NFT platform contract.
+- Primary mode: factory contract deploys dedicated NFT template contracts.
 - Isolation mode: platform owner sets one template (`setCollectionContractTemplate`), then collection owner deploys own dedicated contract instance by config (`deployCollectionContractFromTemplate`).
 - Dedicated-user mode: creator can directly execute `createCollectionAndDeployFromTemplate` to ensure one real independent NFT contract is created in the same transaction.
 - Dedicated contract hard isolation: runtime stores a bound `collectionId`; all public methods with `collectionId` must match it, and platform-level methods (`createCollection*`, template admin/deploy) are blocked.
+- Deploy hash collision protection: when configuring template, use a unique template manifest `name` per factory deployment (the testnet flow script auto-appends a suffix).
 - User side does not need to compile or upload custom `nef/manifest`.
 
 Pause semantics (all dialects):
@@ -101,6 +104,7 @@ Files:
 
 Contract name:
 - `MultiTenantNftPlatform`
+- `symbol`: `MNFTP`
 
 Type model:
 - `collectionId: uint256`
@@ -138,12 +142,15 @@ Files:
 - `contracts/rust-multi-tenant-nft-platform/src/methods/query.rs`
 
 Manifest identity:
-- `name`: `NeoNftMembershipCardRust`
+- `name`: `MultiTenantNftPlatformRust`
 - `supportedstandards`: `NEP-11`, `NEP-24`
+- `symbol`: `MNFTP`
 
 Bridge model:
 - Runtime uses `i64` ref bridge internally, but exported manifest declares NEP shapes (`Hash160`, `ByteArray`, `Map`, `InteropInterface`) for SDK and integration checks.
 - Account parameters support canonical Hash160 mapping and witness checks when Hash160 values are provided via bridge handles.
+- Collection/token string fields are now persisted as raw UTF-8 bytes (`write_string_field` / `read_string_field`) instead of transient ABI refs.
+- Query paths keep backward compatibility for old integer-ref data via `read_string_field` fallback.
 
 Compatibility helpers:
 - `tokenByIndex` / `tokenOfByIndex` / `getCollectionField` / `getTokenField` / `getCollectionTokenBySerial`
@@ -168,3 +175,17 @@ Safety and standards:
 - Includes `Transfer(from, to, amount, tokenId)` event (4 params)
 - Includes `onNEP11Payment(...)` callback (default reject)
 - Keeps legacy integer-ref compatibility for older tooling calls.
+
+## Cross-Version Consistency Audit
+
+Automated checks run in `verify:contracts`:
+
+- `tools/verify-nep-compliance.js`
+  - Verifies C# Factory is non-NEP runtime.
+  - Verifies C# Template / Solidity / Rust declare and implement NEP-11/NEP-24 method/event shapes.
+- `tools/verify-contract-consistency.js`
+  - Verifies C# Factory vs Template role split.
+  - Verifies C# Template / Solidity / Rust shared method surface (including rust signer-bridge arity rules).
+  - Verifies shared event declarations for indexer compatibility.
+  - Verifies unified `symbol = MNFTP`.
+  - Verifies `getCollection` / `getToken` return layout consistency (ID in first position).

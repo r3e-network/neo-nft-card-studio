@@ -10,7 +10,7 @@ use crate::MultiTenantNftPlatformRust;
 impl MultiTenantNftPlatformRust {
     #[neo_method(name = "symbol", safe)]
     pub fn symbol() -> NeoString {
-        NeoString::from_str("MNFTR")
+        NeoString::from_str("MNFTP")
     }
 
     #[neo_method(name = "decimals", safe)]

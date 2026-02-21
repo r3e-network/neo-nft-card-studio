@@ -17,6 +17,7 @@ apps/
 packages/
   neo-sdk/  # 前后端共享的 Neo RPC/合约调用封装
 contracts/
+  nft-platform-factory/           # C# Factory (non-NEP11)
   multi-tenant-nft-platform/      # C# (Neo Compiler C#)
   solidity/                       # Solidity (neo-solidity)
   rust-multi-tenant-nft-platform/ # Rust (neo-llvm)
@@ -32,18 +33,9 @@ contracts/
 - **网络选择**：前端以钱包当前网络为准（主网/测试网/私链），签名与交易广播由钱包 provider 执行；平台不代替钱包发交易。
 
 核心能力：
-- `createCollection` / `updateCollection`
-- `createCollectionAndDeployFromTemplate`（一笔交易创建 collection 并部署用户独立合约）
-- `setCollectionOperator`
-- `mint` / `transfer` / `burn`
-- `configureDrop` / `setDropWhitelist` / `setDropWhitelistBatch` / `claimDrop`（懒铸造领取）
-- `getDropConfig` / `getDropWalletStats` / `canClaimDrop`
-- `configureCheckInProgram` / `checkIn`（签到规则 + 链上签到证明）
-- `getCheckInProgram` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus`
-- `setCollectionContractTemplate` / `clearCollectionContractTemplate`
-- `deployCollectionContractFromTemplate` / `getCollectionContract` / `hasCollectionContract`
-- `getOwnerDedicatedCollection` / `getOwnerDedicatedCollectionContract` / `hasOwnerDedicatedCollectionContract`
-- `balanceOf` / `ownerOf` / `tokens` / `tokensOf`
+- 平台工厂（非 NEP11）：`createCollection` / `createCollectionAndDeployFromTemplate` / `setCollectionContractTemplate` / `deployCollectionContractFromTemplate` / `getCollectionContract`
+- 独立 NFT 合约（NEP11）：`mint` / `transfer` / `burn` / `tokenURI` / `ownerOf` / `balanceOf` / `tokens` / `tokensOf`
+- 发行规则与会员能力：`configureDrop` / `claimDrop` / `configureCheckInProgram` / `checkIn` / `getMembershipStatus`
 
 风控行为：
 - `paused = true` 时禁止 `mint` 与 `transfer`。
@@ -97,23 +89,32 @@ npm run dev:web
 ### 5.1 C# (`Neo Compiler 3.9.1`, `net10`)
 
 配置：
-- `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.csproj`
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.csproj`（Factory）
+- `contracts/multi-tenant-nft-platform/MultiTenantNftTemplate.csproj`
   - `TargetFramework: net10.0`
   - `Neo.SmartContract.Framework: 3.9.1`
 
 构建：
 
 ```bash
-dotnet build contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.csproj
-./tools/nccs contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.csproj \
+dotnet build contracts/nft-platform-factory/MultiTenantNftPlatform.csproj
+dotnet build contracts/multi-tenant-nft-platform/MultiTenantNftTemplate.csproj
+./tools/nccs contracts/nft-platform-factory/MultiTenantNftPlatform.csproj \
   -o contracts/multi-tenant-nft-platform/build \
   --base-name MultiTenantNftPlatform \
+  --optimize=All --debug=None
+./tools/nccs contracts/multi-tenant-nft-platform/MultiTenantNftTemplate.csproj \
+  -o contracts/multi-tenant-nft-platform/build \
+  --base-name MultiTenantNftTemplate \
   --optimize=All --debug=None
 ```
 
 产物：
 - `contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.nef`
 - `contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.manifest.json`
+- `contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.nef`
+- `contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.manifest.json`
+- `contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.deploy.manifest.json`（模板部署专用精简 manifest）
 
 ### 5.2 Solidity（使用 `~/git/neo-solidity`）
 
@@ -144,10 +145,13 @@ cargo run --manifest-path ~/git/neo-solidity/Cargo.toml --bin neo-solc -- \
 
 ## 6. NEP 标准声明与校验
 
-- 三套合约均声明并实现：`NEP-11`、`NEP-24`
+- `C# Factory`（`MultiTenantNftPlatform`）不声明 NEP-11/NEP-24，只负责部署
+- `C# Template`、`Solidity`、`Rust` 三套 NFT 合约声明并实现：`NEP-11`、`NEP-24`
+- 三套合约统一符号：`MNFTP`
 - 三套合约均包含 `Transfer` 事件（4 参数）与 `onNEP11Payment` 回调
 - 合规校验脚本覆盖方法签名、参数类型、返回类型、safe 标记、事件参数
-- C# 额外校验“仅模板部署”约束：必须存在模板部署接口，且禁止暴露 `deployCollectionContract`（自定义 NEF/manifest 上传部署）
+- C# 额外校验：Factory 禁止暴露 NFT runtime 方法；Template 保持 NEP 接口完整
+- 跨语言一致性校验会检查共享核心方法面、事件声明、Rust 签名桥接规则，以及 Rust 字符串字段持久化（防止退回临时 ref 存储）
 
 ```bash
 npm run verify:contracts
@@ -157,13 +161,17 @@ npm run verify:contracts
 
 ### C# partial 拆分
 
-- `MultiTenantNftPlatform.cs`: manifest 属性、事件、常量、状态结构
-- `MultiTenantNftPlatform.Lifecycle.cs`: `_deploy/verify/update` 与 NEP 入口
-- `MultiTenantNftPlatform.Collections.cs`: collection 管理 + 模板部署接口
-- `MultiTenantNftPlatform.Drop.cs`: 懒铸造与白名单领用
-- `MultiTenantNftPlatform.Membership.cs`: 会员卡与签到证明逻辑
-- `MultiTenantNftPlatform.Tokens.cs`: mint/transfer/burn 与查询
-- `MultiTenantNftPlatform.Internal.cs`: storage map、序列化与内部工具
+- `contracts/nft-platform-factory/*`: 平台工厂合约源码（非 NEP11）
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.cs`: manifest 属性、事件、常量、状态结构
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.Lifecycle.cs`: `_deploy/verify/update`
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.Collections.cs`: collection 管理 + 模板部署接口
+- `contracts/nft-platform-factory/MultiTenantNftPlatform.Internal.cs`: storage map、序列化与内部工具
+- `contracts/multi-tenant-nft-platform/*`: 专属 NFT 模板合约源码（NEP-11/NEP-24）
+- `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Collections.cs`: 包含 `initializeDedicatedCollection`
+- `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Drop.cs`: 懒铸造与白名单领用
+- `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Membership.cs`: 会员卡与签到证明逻辑
+- `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Tokens.cs`: mint/transfer/burn 与 NEP 查询
+- `contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Internal.cs`: storage map、序列化与内部工具
 
 ### Solidity 模块拆分
 
@@ -191,7 +199,7 @@ npm run verify:contracts
 ## 8. 模板化配置部署（无需用户编译）
 
 推荐流程：
-1. 平台 owner 调用 `setCollectionContractTemplate(nef, manifest)` 一次配置模板。
+1. 平台 owner 调用 `setCollectionContractTemplate(nef, manifest)` 一次配置模板（推荐使用 `MultiTenantNftTemplate.deploy.manifest.json`，并给 `name` 增加唯一后缀）。
 2. 用户直接调用 `createCollectionAndDeployFromTemplate(...)`（推荐），一笔交易完成创建+独立合约部署。
 3. 或者先 `createCollection` 再 `deployCollectionContractFromTemplate(collectionId, extraData)`（兼容路径，同样受 `1 钱包 1 专属合约` 约束）。
 4. 通过 `getCollectionContract(collectionId)` 或 `getOwnerDedicatedCollectionContract(owner)` 查询已部署 hash。
@@ -207,9 +215,9 @@ npm run verify:contracts
 - `GET /api/meta/neofs/resolve?uri=<neofs://...>`
 - `GET /api/meta/neofs/metadata?uri=<neofs://...>`
 - `GET /api/meta/neofs/resource?uri=<neofs://...>`
-- `GET /api/meta/ghostmarket`
-- `GET /api/meta/ghostmarket/collection/:collectionId`
-- `GET /api/meta/ghostmarket/token/:tokenId`
+- `GET /api/meta/ghostmarket`（支持 `?contractHash=`，用于按独立 NFT 合约做兼容性检查）
+- `GET /api/meta/ghostmarket/collection/:collectionId`（支持 `?contractHash=`）
+- `GET /api/meta/ghostmarket/token/:tokenId`（支持 `?contractHash=`）
 - `GET /api/stats`
 - `GET /api/collections`
 - `GET /api/collections/:collectionId`

@@ -220,6 +220,7 @@ const resources = {
                 ghost_issue_missing_method_on_nep11_payment: "Missing onNEP11Payment handler. Receiving transfers from other NEP-11 contracts may fail.",
                 ghost_issue_on_nep11_payment_param_count: "onNEP11Payment should accept (from, amount, tokenId, data).",
                 ghost_issue_integer_token_ref_methods: "Core NFT methods still expose Integer token references ({{methods}}). Marketplace compatibility is likely partial until typed token ABI is exposed.",
+                ghost_issue_factory_contract_not_nft: "This contract is an NFT deployment factory, not an NFT asset contract.",
                 ghost_issue_unknown: "Compatibility issue ({{code}}): {{message}}"
             },
             create: {
@@ -499,6 +500,7 @@ const resources = {
                 ghost_issue_missing_method_on_nep11_payment: "缺少 onNEP11Payment 处理方法，接收其他 NEP-11 合约转账可能失败。",
                 ghost_issue_on_nep11_payment_param_count: "onNEP11Payment 应接收 (from, amount, tokenId, data)。",
                 ghost_issue_integer_token_ref_methods: "核心 NFT 方法仍使用 Integer token 引用（{{methods}}），在提供类型化 token ABI 前市场兼容性可能不完整。",
+                ghost_issue_factory_contract_not_nft: "该合约是 NFT 部署工厂，不是可交易的 NFT 资产合约。",
                 ghost_issue_unknown: "兼容性问题（{{code}}）：{{message}}"
             },
             create: {

@@ -68,9 +68,9 @@ export async function fetchContractMeta(): Promise<ContractMetaDto> {
   return response.data;
 }
 
-export async function fetchGhostMarketMeta(): Promise<GhostMarketMetaDto> {
+export async function fetchGhostMarketMeta(contractHash?: string): Promise<GhostMarketMetaDto> {
   const response = await getApiClient().get<GhostMarketMetaDto>("/meta/ghostmarket", {
-    params: getNetworkQueryParams(),
+    params: getNetworkQueryParams(contractHash ? { contractHash } : undefined),
   });
   return response.data;
 }

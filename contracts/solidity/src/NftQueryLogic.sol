@@ -21,6 +21,7 @@ abstract contract NftQueryLogic is NftDropLogic {
         view
         collectionExists(collectionId)
         returns (
+            uint256 id,
             address owner,
             string memory name,
             string memory tokenSymbol,
@@ -36,6 +37,7 @@ abstract contract NftQueryLogic is NftDropLogic {
     {
         Collection storage c = _collections[collectionId];
         return (
+            collectionId,
             c.owner,
             c.name,
             c.symbol,
@@ -54,6 +56,7 @@ abstract contract NftQueryLogic is NftDropLogic {
         external
         view
         returns (
+            bytes32 id,
             uint256 collectionId,
             address owner,
             string memory tokenUri,
@@ -64,7 +67,7 @@ abstract contract NftQueryLogic is NftDropLogic {
     {
         TokenState storage t = _tokens[tokenId];
         require(t.collectionId != 0, "Token not found");
-        return (t.collectionId, t.owner, t.uri, t.propertiesJson, t.burned, t.mintedAt);
+        return (tokenId, t.collectionId, t.owner, t.uri, t.propertiesJson, t.burned, t.mintedAt);
     }
 
     function tokenURI(bytes32 tokenId) external view tokenExists(tokenId) returns (string memory) {

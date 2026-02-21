@@ -6,8 +6,9 @@ const path = require("node:path");
 const repoRoot = process.cwd();
 
 const REQUIRED_STANDARDS = ["NEP-11", "NEP-24"];
+const FORBIDDEN_FACTORY_STANDARDS = ["NEP-11", "NEP-24"];
 
-const METHOD_SHAPES = {
+const NFT_METHOD_SHAPES = {
   symbol: {
     safe: true,
     returnTypes: ["String"],
@@ -75,29 +76,36 @@ const METHOD_SHAPES = {
   },
 };
 
-const TRANSFER_EVENT_PARAM_TYPES = [
-  ["Hash160"],
-  ["Hash160"],
-  ["Integer"],
-  ["ByteArray", "Hash256"],
-];
-
-const CSHARP_TEMPLATE_REQUIRED_METHODS = [
+const FACTORY_REQUIRED_METHODS = [
+  "createCollection",
+  "createCollectionAndDeployFromTemplate",
   "setCollectionContractTemplate",
   "clearCollectionContractTemplate",
   "hasCollectionContractTemplate",
   "getCollectionContractTemplateDigest",
   "deployCollectionContractFromTemplate",
-  "createCollectionAndDeployFromTemplate",
+  "getOwnerDedicatedCollection",
   "getOwnerDedicatedCollectionContract",
   "hasOwnerDedicatedCollectionContract",
 ];
 
-const CSHARP_TEMPLATE_FORBIDDEN_METHODS = ["deployCollectionContract"];
+const FACTORY_FORBIDDEN_NFT_METHODS = Object.keys(NFT_METHOD_SHAPES).concat([
+  "mint",
+  "batchMint",
+  "burn",
+  "claimDrop",
+  "checkIn",
+  "configureDrop",
+  "configureCheckInProgram",
+  "setDropWhitelist",
+  "setDropWhitelistBatch",
+  "getTokenClass",
+]);
+
+const TRANSFER_EVENT_PARAM_TYPES = [["Hash160"], ["Hash160"], ["Integer"], ["ByteArray", "Hash256"]];
 
 function readJson(filePath) {
-  const raw = fs.readFileSync(filePath, "utf8");
-  return JSON.parse(raw);
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function ensureFileExists(filePath, errors, label) {
@@ -111,7 +119,7 @@ function ensureFileExists(filePath, errors, label) {
 function resolveRustManifest() {
   const preferred = path.join(
     repoRoot,
-    "contracts/rust-multi-tenant-nft-platform/target/wasm32-unknown-unknown/release/multi_tenant_nft_platform_rust.manifest.json"
+    "contracts/rust-multi-tenant-nft-platform/target/wasm32-unknown-unknown/release/multi_tenant_nft_platform_rust.manifest.json",
   );
   if (fs.existsSync(preferred)) {
     return preferred;
@@ -119,7 +127,7 @@ function resolveRustManifest() {
 
   const releaseDir = path.join(
     repoRoot,
-    "contracts/rust-multi-tenant-nft-platform/target/wasm32-unknown-unknown/release"
+    "contracts/rust-multi-tenant-nft-platform/target/wasm32-unknown-unknown/release",
   );
   if (!fs.existsSync(releaseDir)) {
     return preferred;
@@ -160,15 +168,15 @@ function checkMethodShape(label, methodMap, methodName, definition, errors) {
   if (!includesType(definition.returnTypes, actualReturnType)) {
     errors.push(
       `${label}: method ${methodName} return type should be one of [${definition.returnTypes.join(
-        ", "
-      )}], got ${actualReturnType || "<empty>"}`
+        ", ",
+      )}], got ${actualReturnType || "<empty>"}`,
     );
   }
 
   const params = Array.isArray(entry.parameters) ? entry.parameters : [];
   if (params.length !== definition.paramTypes.length) {
     errors.push(
-      `${label}: method ${methodName} should accept exactly ${definition.paramTypes.length} parameters, got ${params.length}`
+      `${label}: method ${methodName} should accept exactly ${definition.paramTypes.length} parameters, got ${params.length}`,
     );
     return;
   }
@@ -178,8 +186,8 @@ function checkMethodShape(label, methodMap, methodName, definition, errors) {
     if (!includesType(allowedParamTypes, actual)) {
       errors.push(
         `${label}: method ${methodName} param #${index + 1} should be one of [${allowedParamTypes.join(
-          ", "
-        )}], got ${actual || "<empty>"}`
+          ", ",
+        )}], got ${actual || "<empty>"}`,
       );
     }
   }
@@ -203,48 +211,52 @@ function checkTransferEvent(label, events, errors) {
     if (!includesType(allowedTypes, actual)) {
       errors.push(
         `${label}: Transfer event param #${index + 1} should be one of [${allowedTypes.join(
-          ", "
-        )}], got ${actual || "<empty>"}`
+          ", ",
+        )}], got ${actual || "<empty>"}`,
       );
     }
   }
 }
 
-function checkNftPlatformIdentity(label, manifest, errors) {
-  const name = String(manifest?.name ?? "");
-  if (!name) {
-    errors.push(`${label}: manifest name is empty`);
-    return;
-  }
-
-  if (/nep11/i.test(name)) {
-    errors.push(`${label}: manifest name should use NFT platform naming, got '${name}'`);
-  }
-}
-
-function checkTemplateDeploymentOnly(label, methodMap, errors) {
-  for (const methodName of CSHARP_TEMPLATE_REQUIRED_METHODS) {
-    if (!methodMap.has(methodName)) {
-      errors.push(`${label}: missing template deployment method ${methodName}`);
-    }
-  }
-
-  for (const methodName of CSHARP_TEMPLATE_FORBIDDEN_METHODS) {
-    if (methodMap.has(methodName)) {
-      errors.push(`${label}: forbidden custom deploy method '${methodName}' is still exposed`);
-    }
-  }
-}
-
-function checkManifest(label, manifestPath, errors) {
+function checkFactoryManifest(label, manifestPath, errors) {
   if (!ensureFileExists(manifestPath, errors, label)) {
     return;
   }
 
   const manifest = readJson(manifestPath);
-  const standards = new Set((manifest.supportedstandards || []).map((v) => String(v).toUpperCase()));
+  const standards = new Set((manifest.supportedstandards || []).map((value) => String(value).toUpperCase()));
+  const methods = Array.isArray(manifest?.abi?.methods) ? manifest.abi.methods : [];
+  const methodNames = new Set(methods.map((method) => String(method?.name ?? "")));
+
+  for (const standard of FORBIDDEN_FACTORY_STANDARDS) {
+    if (standards.has(standard.toUpperCase())) {
+      errors.push(`${label}: factory contract must not declare ${standard}`);
+    }
+  }
+
+  for (const methodName of FACTORY_REQUIRED_METHODS) {
+    if (!methodNames.has(methodName)) {
+      errors.push(`${label}: missing required factory method ${methodName}`);
+    }
+  }
+
+  for (const methodName of FACTORY_FORBIDDEN_NFT_METHODS) {
+    if (methodNames.has(methodName)) {
+      errors.push(`${label}: factory contract must not expose NFT runtime method ${methodName}`);
+    }
+  }
+}
+
+function checkNftManifest(label, manifestPath, errors) {
+  if (!ensureFileExists(manifestPath, errors, label)) {
+    return;
+  }
+
+  const manifest = readJson(manifestPath);
+  const standards = new Set((manifest.supportedstandards || []).map((value) => String(value).toUpperCase()));
   const methods = manifest?.abi?.methods || [];
   const events = manifest?.abi?.events || [];
+  const methodMap = new Map(methods.map((method) => [method.name, method]));
 
   for (const standard of REQUIRED_STANDARDS) {
     if (!standards.has(standard.toUpperCase())) {
@@ -252,16 +264,8 @@ function checkManifest(label, manifestPath, errors) {
     }
   }
 
-  const methodMap = new Map(methods.map((method) => [method.name, method]));
-
-  checkNftPlatformIdentity(label, manifest, errors);
-
-  for (const [methodName, definition] of Object.entries(METHOD_SHAPES)) {
+  for (const [methodName, definition] of Object.entries(NFT_METHOD_SHAPES)) {
     checkMethodShape(label, methodMap, methodName, definition, errors);
-  }
-
-  if (label === "CSharp") {
-    checkTemplateDeploymentOnly(label, methodMap, errors);
   }
 
   checkTransferEvent(label, events, errors);
@@ -270,23 +274,29 @@ function checkManifest(label, manifestPath, errors) {
 function main() {
   const errors = [];
 
-  const manifests = [
+  checkFactoryManifest(
+    "CSharp Factory",
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.manifest.json"),
+    errors,
+  );
+
+  const nftTargets = [
     {
-      label: "CSharp",
-      file: path.join(repoRoot, "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.manifest.json"),
+      label: "CSharp Template",
+      file: path.join(repoRoot, "contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.manifest.json"),
     },
     {
-      label: "Solidity",
+      label: "Solidity NFT",
       file: path.join(repoRoot, "contracts/solidity/build/MultiTenantNftPlatform.manifest.json"),
     },
     {
-      label: "Rust",
+      label: "Rust NFT",
       file: resolveRustManifest(),
     },
   ];
 
-  for (const target of manifests) {
-    checkManifest(target.label, target.file, errors);
+  for (const target of nftTargets) {
+    checkNftManifest(target.label, target.file, errors);
   }
 
   if (errors.length > 0) {
@@ -297,7 +307,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log("NEP compliance verification passed for CSharp, Solidity, Rust manifests.");
+  console.log("NEP compliance verification passed for factory/template/NFT contract artifacts.");
 }
 
 main();

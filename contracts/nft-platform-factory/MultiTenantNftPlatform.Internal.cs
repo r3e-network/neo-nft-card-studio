@@ -29,6 +29,16 @@ public partial class MultiTenantNftPlatform
         return new StorageMap(Storage.CurrentContext, PrefixCollectionOperator);
     }
 
+    private static StorageMap CollectionContracts()
+    {
+        return new StorageMap(Storage.CurrentContext, PrefixCollectionContract);
+    }
+
+    private static StorageMap OwnerDedicatedCollections()
+    {
+        return new StorageMap(Storage.CurrentContext, PrefixOwnerDedicatedCollection);
+    }
+
     private static StorageMap Tokens()
     {
         return new StorageMap(Storage.CurrentContext, PrefixToken);
@@ -82,6 +92,46 @@ public partial class MultiTenantNftPlatform
     private static StorageMap TokenClasses()
     {
         return new StorageMap(Storage.CurrentContext, PrefixTokenClass);
+    }
+
+    private static void PutCollectionContractTemplate(ByteString nefFile, string manifest)
+    {
+        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateNef, nefFile);
+        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateManifest, manifest);
+    }
+
+    private static void DeleteCollectionContractTemplate()
+    {
+        Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateNef);
+        Storage.Delete(Storage.CurrentContext, PrefixCollectionContractTemplateManifest);
+    }
+
+    private static bool HasCollectionContractTemplateStored()
+    {
+        return Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateNef) is not null
+            && Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateManifest) is not null;
+    }
+
+    private static ByteString GetCollectionContractTemplateNef()
+    {
+        ByteString nefFile = Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateNef);
+        if (nefFile is null || nefFile.Length == 0)
+        {
+            throw new Exception("Collection contract template NEF not configured");
+        }
+
+        return nefFile;
+    }
+
+    private static string GetCollectionContractTemplateManifest()
+    {
+        ByteString manifestBytes = Storage.Get(Storage.CurrentContext, PrefixCollectionContractTemplateManifest);
+        if (manifestBytes is null || manifestBytes.Length == 0)
+        {
+            throw new Exception("Collection contract template manifest not configured");
+        }
+
+        return (string)manifestBytes;
     }
 
     private static void ValidateCollectionInputs(string name, string tokenSymbol, string description, string baseUri, BigInteger maxSupply, BigInteger royaltyBps)
@@ -159,17 +209,6 @@ public partial class MultiTenantNftPlatform
         if (serialized is null)
         {
             throw new Exception("Collection not found");
-        }
-
-        return (CollectionState)StdLib.Deserialize(serialized);
-    }
-
-    private static CollectionState GetCollectionStateOrDefault(ByteString collectionId)
-    {
-        ByteString serialized = Collections().Get(collectionId);
-        if (serialized is null)
-        {
-            return new CollectionState();
         }
 
         return (CollectionState)StdLib.Deserialize(serialized);
@@ -260,20 +299,19 @@ public partial class MultiTenantNftPlatform
         CollectionCheckInWalletStats().Put(key, StdLib.Serialize(state));
     }
 
+    private static ByteString GetOwnerDedicatedCollectionId(UInt160 owner)
+    {
+        return OwnerDedicatedCollections().Get((ByteString)owner);
+    }
+
+    private static void SetOwnerDedicatedCollectionId(UInt160 owner, ByteString collectionId)
+    {
+        OwnerDedicatedCollections().Put((ByteString)owner, collectionId);
+    }
+
     private static bool IsDedicatedContractMode()
     {
         return ReadBigInteger(Storage.CurrentContext, PrefixDedicatedContractMode) > 0;
-    }
-
-    private static UInt160 GetInitializerContract()
-    {
-        ByteString value = Storage.Get(Storage.CurrentContext, PrefixInitializerContract);
-        if (value is null || value.Length == 0)
-        {
-            return UInt160.Zero;
-        }
-
-        return (UInt160)value;
     }
 
     private static ByteString GetDedicatedCollectionId()
@@ -291,6 +329,14 @@ public partial class MultiTenantNftPlatform
 
         Storage.Put(Storage.CurrentContext, PrefixDedicatedContractMode, 1);
         Storage.Put(Storage.CurrentContext, PrefixDedicatedCollectionId, collectionId);
+    }
+
+    private static void AssertPlatformContractMode()
+    {
+        if (IsDedicatedContractMode())
+        {
+            throw new Exception("Operation not allowed in dedicated NFT contract mode");
+        }
     }
 
     private static void AssertDedicatedContractMode()
@@ -382,9 +428,40 @@ public partial class MultiTenantNftPlatform
 
         PutCollectionState(collectionId, state);
         CollectionMintCounter().Put(collectionId, state.Minted);
+        SetOwnerDedicatedCollectionId(state.Owner, collectionId);
         SetDedicatedContractMode(collectionId);
         Storage.Put(Storage.CurrentContext, PrefixContractOwner, state.Owner);
+
+        BigInteger parsedCounter = TryParsePositiveIntegerString((string)collectionId);
+        if (parsedCounter <= 0)
+        {
+            parsedCounter = 1;
+        }
+
+        Storage.Put(Storage.CurrentContext, PrefixCollectionIdCounter, parsedCounter);
         EmitCollectionUpserted(collectionId, state);
+    }
+
+    private static BigInteger TryParsePositiveIntegerString(string input)
+    {
+        if (input.Length == 0)
+        {
+            return 0;
+        }
+
+        BigInteger result = 0;
+        for (int i = 0; i < input.Length; i += 1)
+        {
+            byte ch = (byte)input[i];
+            if (ch < 48 || ch > 57)
+            {
+                return 0;
+            }
+
+            result = result * 10 + (ch - 48);
+        }
+
+        return result;
     }
 
     private static TokenState GetTokenState(ByteString tokenId)

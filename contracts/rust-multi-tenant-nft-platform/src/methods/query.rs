@@ -105,7 +105,19 @@ impl MultiTenantNftPlatformRust {
             return 0;
         };
 
-        to_iterator_handle(collect_active_tokens(&storage, None, Some(collection_id)))
+        let total_serial = read_i64(&storage, &collection_serial_key(collection_id));
+        let mut result = NeoArray::new();
+        let mut serial = 1;
+        while serial <= total_serial {
+            let token_id = read_i64(&storage, &collection_token_key(collection_id, serial));
+            if token_id > 0 && token_exists(&storage, token_id) {
+                // Match C#/Solidity collection token queries: include burned tokens too.
+                result.push(token_id_value(token_id));
+            }
+            serial += 1;
+        }
+
+        to_iterator_handle(result)
     }
 
     #[neo_method(
@@ -167,10 +179,22 @@ impl MultiTenantNftPlatformRust {
                 &storage,
                 read_i64(&storage, &collection_field_key(collection_id, FIELD_OWNER)),
             ),
-            2 => read_i64(&storage, &collection_field_key(collection_id, FIELD_NAME_REF)),
-            3 => read_i64(&storage, &collection_field_key(collection_id, FIELD_SYMBOL_REF)),
-            4 => read_i64(&storage, &collection_field_key(collection_id, FIELD_DESC_REF)),
-            5 => read_i64(&storage, &collection_field_key(collection_id, FIELD_BASE_URI_REF)),
+            2 => neo_devpack::abi::i64_from_value(&NeoValue::String(read_string_field(
+                &storage,
+                &collection_field_key(collection_id, FIELD_NAME_REF),
+            ))),
+            3 => neo_devpack::abi::i64_from_value(&NeoValue::String(read_string_field(
+                &storage,
+                &collection_field_key(collection_id, FIELD_SYMBOL_REF),
+            ))),
+            4 => neo_devpack::abi::i64_from_value(&NeoValue::String(read_string_field(
+                &storage,
+                &collection_field_key(collection_id, FIELD_DESC_REF),
+            ))),
+            5 => neo_devpack::abi::i64_from_value(&NeoValue::String(read_string_field(
+                &storage,
+                &collection_field_key(collection_id, FIELD_BASE_URI_REF),
+            ))),
             6 => read_i64(&storage, &collection_field_key(collection_id, FIELD_MAX_SUPPLY)),
             7 => read_i64(&storage, &collection_field_key(collection_id, FIELD_MINTED)),
             8 => read_i64(&storage, &collection_field_key(collection_id, FIELD_ROYALTY_BPS)),
@@ -230,8 +254,14 @@ impl MultiTenantNftPlatformRust {
                 &storage,
                 read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_OWNER)),
             ),
-            3 => read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_URI_REF)),
-            4 => read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF)),
+            3 => neo_devpack::abi::i64_from_value(&NeoValue::String(read_string_field(
+                &storage,
+                &token_field_key(token_id, TOKEN_FIELD_URI_REF),
+            ))),
+            4 => neo_devpack::abi::i64_from_value(&NeoValue::String(read_string_field(
+                &storage,
+                &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF),
+            ))),
             5 => {
                 if read_bool(&storage, &token_field_key(token_id, TOKEN_FIELD_BURNED)) {
                     1
@@ -255,7 +285,7 @@ impl MultiTenantNftPlatformRust {
             return NeoString::from_str("");
         }
 
-        string_ref(read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_URI_REF)))
+        read_string_field(&storage, &token_field_key(token_id, TOKEN_FIELD_URI_REF))
     }
 
     #[neo_method(
@@ -274,9 +304,12 @@ impl MultiTenantNftPlatformRust {
         }
 
         let collection_id = read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_COLLECTION_ID));
-        let owner = read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_OWNER));
-        let uri_ref = read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_URI_REF));
-        let properties_ref = read_i64(&storage, &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF));
+        let collection_name = read_string_field(&storage, &collection_field_key(collection_id, FIELD_NAME_REF));
+        let collection_description =
+            read_string_field(&storage, &collection_field_key(collection_id, FIELD_DESC_REF));
+        let uri = read_string_field(&storage, &token_field_key(token_id, TOKEN_FIELD_URI_REF));
+        let properties_json =
+            read_string_field(&storage, &token_field_key(token_id, TOKEN_FIELD_PROPERTIES_REF));
 
         let mut result: NeoMap<NeoValue, NeoValue> = NeoMap::new();
         result.insert(
@@ -288,19 +321,28 @@ impl MultiTenantNftPlatformRust {
             NeoValue::ByteString(neo_devpack::abi::bytes_from_i64(collection_id)),
         );
         result.insert(
-            NeoValue::String(NeoString::from_str("owner")),
-            hash160_value_from_account_id(&storage, Some(owner)),
+            NeoValue::String(NeoString::from_str("name")),
+            NeoValue::String(NeoString::from_str(&format!(
+                "{} #{}",
+                collection_name.as_str(),
+                token_id
+            ))),
+        );
+        result.insert(
+            NeoValue::String(NeoString::from_str("description")),
+            NeoValue::String(collection_description),
+        );
+        result.insert(
+            NeoValue::String(NeoString::from_str("image")),
+            NeoValue::String(uri.clone()),
         );
         result.insert(
             NeoValue::String(NeoString::from_str("tokenURI")),
-            NeoValue::String(string_ref(uri_ref)),
+            NeoValue::String(uri),
         );
-
-        let properties_value = neo_devpack::abi::resolve_value(properties_ref)
-            .unwrap_or_else(|| NeoValue::String(string_ref(properties_ref)));
         result.insert(
-            NeoValue::String(NeoString::from_str("properties")),
-            properties_value,
+            NeoValue::String(NeoString::from_str("propertiesJson")),
+            NeoValue::String(properties_json),
         );
         result.insert(
             NeoValue::String(NeoString::from_str("tokenClass")),

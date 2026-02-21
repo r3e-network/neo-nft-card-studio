@@ -119,6 +119,8 @@ export interface GhostMarketMetaDto {
   enabled: boolean;
   baseUrl: string;
   contractHash: string;
+  platformContractHash?: string;
+  isPlatformContract?: boolean;
   collectionUrlTemplate: string;
   tokenUrlTemplate: string;
   contractSearchUrl: string;

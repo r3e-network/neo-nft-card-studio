@@ -109,7 +109,9 @@ abstract contract NftDropLogic is NftCheckInLogic {
         require(account != address(0), "Invalid account");
         DropConfig storage config = _dropConfigs[collectionId];
         claimed = _dropClaimedCount[collectionId][account];
-        whitelistAllowance = config.whitelistRequired ? _dropWhitelistAllowance[collectionId][account] : 0;
+        whitelistAllowance = config.whitelistRequired
+            ? _dropWhitelistAllowance[collectionId][account]
+            : type(uint256).max;
         remaining = _remainingDropClaims(collectionId, account);
         claimableNow = config.enabled
             && !(_collections[collectionId].paused)
