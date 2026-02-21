@@ -12,6 +12,7 @@ public partial class MultiTenantNftPlatform
 {
     public static bool transfer(UInt160 to, ByteString tokenId, object data)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         if (!to.IsValid)
         {
@@ -83,6 +84,7 @@ public partial class MultiTenantNftPlatform
 
     public static ByteString mint(ByteString collectionId, UInt160 to, string tokenUri, string propertiesJson)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         if (!to.IsValid)
@@ -194,6 +196,7 @@ public partial class MultiTenantNftPlatform
 
     public static void burn(ByteString tokenId)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);

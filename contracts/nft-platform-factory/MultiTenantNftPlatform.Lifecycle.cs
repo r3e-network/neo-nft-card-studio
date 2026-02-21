@@ -30,6 +30,7 @@ public partial class MultiTenantNftPlatform
 
     public static void update(ByteString nefFile, string manifest, object data)
     {
+        AssertDirectInvocation();
         if (!Runtime.CheckWitness(GetContractOwner()))
         {
             throw new Exception("No authorization");

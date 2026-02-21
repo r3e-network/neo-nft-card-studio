@@ -44,6 +44,7 @@ contracts/
 - `maxSupply = 0` 表示无限发行；可支持十万/百万级会员卡按需领取。
 - `batchMint` 的 `100` 仅为单笔交易安全上限，不是项目总量上限。
 - 若开启 `mintProofNft`（签到时铸造证明），签到证明 NFT 与当前集合共用供应量；会员卡项目建议 `maxSupply=0`。
+- 合约关键写操作采用“仅入口调用”保护（`Runtime.CallingScriptHash == Runtime.EntryScriptHash`），默认拒绝同交易中的第三方合约代调用。
 
 懒铸造（推荐给 10 万会员卡发放）：
 - 发行方只配置规则，不做一次性大规模上链铸造。

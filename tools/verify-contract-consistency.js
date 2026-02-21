@@ -489,6 +489,26 @@ function checkCsharpDedicatedInitializationHardening(errors) {
     path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Collections.cs"),
     "utf8",
   );
+  const templateDrop = fs.readFileSync(
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Drop.cs"),
+    "utf8",
+  );
+  const templateMembership = fs.readFileSync(
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Membership.cs"),
+    "utf8",
+  );
+  const templateTokens = fs.readFileSync(
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Tokens.cs"),
+    "utf8",
+  );
+  const templateInternal = fs.readFileSync(
+    path.join(repoRoot, "contracts/multi-tenant-nft-platform/MultiTenantNftPlatform.Internal.cs"),
+    "utf8",
+  );
+  const factoryLifecycle = fs.readFileSync(
+    path.join(repoRoot, "contracts/nft-platform-factory/MultiTenantNftPlatform.Lifecycle.cs"),
+    "utf8",
+  );
   const factoryCollections = fs.readFileSync(
     path.join(repoRoot, "contracts/nft-platform-factory/MultiTenantNftPlatform.Collections.cs"),
     "utf8",
@@ -523,6 +543,27 @@ function checkCsharpDedicatedInitializationHardening(errors) {
     || !/HasCollectionContractTemplateNameSegmentsStored\(\)/.test(factoryInternal)
     || !/return manifestPrefix \+ scopedName \+ manifestSuffix;/.test(factoryInternal)) {
     errors.push("CSharp source: factory should provide BuildScopedTemplateManifest helper");
+  }
+
+  if (!/private static void AssertDirectInvocation\(\)/.test(factoryInternal)
+    || !/private static void AssertDirectInvocation\(\)/.test(templateInternal)) {
+    errors.push("CSharp source: factory/template should provide AssertDirectInvocation guard");
+  }
+
+  const requiredDirectInvocationChecks = [
+    [factoryCollections, "factory collections"],
+    [factoryLifecycle, "factory lifecycle"],
+    [templateCollections, "template collections"],
+    [templateDrop, "template drop"],
+    [templateMembership, "template membership"],
+    [templateTokens, "template tokens"],
+    [templateLifecycle, "template lifecycle"],
+  ];
+
+  for (const [source, label] of requiredDirectInvocationChecks) {
+    if (!/AssertDirectInvocation\(\);/.test(source)) {
+      errors.push(`CSharp source: ${label} should apply AssertDirectInvocation for user-facing mutating methods`);
+    }
   }
 }
 

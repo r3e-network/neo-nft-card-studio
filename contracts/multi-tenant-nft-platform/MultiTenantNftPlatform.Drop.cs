@@ -18,6 +18,7 @@ public partial class MultiTenantNftPlatform
         bool whitelistRequired
     )
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         CollectionState collection = GetCollectionState(collectionId);
@@ -53,6 +54,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setDropWhitelist(ByteString collectionId, UInt160 account, BigInteger allowance)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         if (!account.IsValid)
@@ -74,6 +76,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setDropWhitelistBatch(ByteString collectionId, UInt160[] accounts, BigInteger[] allowances)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         if (accounts.Length != allowances.Length)
@@ -111,6 +114,7 @@ public partial class MultiTenantNftPlatform
 
     public static ByteString claimDrop(ByteString collectionId, string tokenUri, string propertiesJson)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         UInt160 claimer = GetSenderChecked();

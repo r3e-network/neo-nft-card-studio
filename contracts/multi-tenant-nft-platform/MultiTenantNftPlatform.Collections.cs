@@ -121,6 +121,7 @@ public partial class MultiTenantNftPlatform
 
     public static void updateCollection(ByteString collectionId, string description, string baseUri, BigInteger royaltyBps, bool transferable, bool paused)
     {
+        AssertDirectInvocation();
         collectionId = EnforceCollectionScope(collectionId);
         CollectionState state = GetCollectionState(collectionId);
         AssertCollectionOwnerWitness(state);
@@ -152,6 +153,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setCollectionOperator(ByteString collectionId, UInt160 operatorAddress, bool enabled)
     {
+        AssertDirectInvocation();
         collectionId = EnforceCollectionScope(collectionId);
         if (!operatorAddress.IsValid)
         {

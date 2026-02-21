@@ -12,6 +12,7 @@ public partial class MultiTenantNftPlatform
 {
     public static ByteString createCollection(string name, string tokenSymbol, string description, string baseUri, BigInteger maxSupply, BigInteger royaltyBps, bool transferable)
     {
+        AssertDirectInvocation();
         AssertPlatformContractMode();
         ValidateCollectionInputs(name, tokenSymbol, description, baseUri, maxSupply, royaltyBps);
 
@@ -61,6 +62,7 @@ public partial class MultiTenantNftPlatform
         object extraData
     )
     {
+        AssertDirectInvocation();
         AssertPlatformContractMode();
         UInt160 sender = GetSenderChecked();
         ByteString existingCollectionId = GetOwnerDedicatedCollectionId(sender);
@@ -77,6 +79,7 @@ public partial class MultiTenantNftPlatform
 
     public static void updateCollection(ByteString collectionId, string description, string baseUri, BigInteger royaltyBps, bool transferable, bool paused)
     {
+        AssertDirectInvocation();
         collectionId = EnforceCollectionScope(collectionId);
         CollectionState state = GetCollectionState(collectionId);
         AssertCollectionOwnerWitness(state);
@@ -108,6 +111,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setCollectionOperator(ByteString collectionId, UInt160 operatorAddress, bool enabled)
     {
+        AssertDirectInvocation();
         collectionId = EnforceCollectionScope(collectionId);
         if (!operatorAddress.IsValid)
         {
@@ -140,6 +144,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setCollectionContractTemplate(ByteString nefFile, string manifest)
     {
+        AssertDirectInvocation();
         AssertPlatformContractMode();
         if (!Runtime.CheckWitness(GetContractOwner()))
         {
@@ -162,6 +167,7 @@ public partial class MultiTenantNftPlatform
 
     public static void setCollectionContractTemplateNameSegments(string manifestPrefix, string templateNameBase, string manifestSuffix)
     {
+        AssertDirectInvocation();
         AssertPlatformContractMode();
         if (!Runtime.CheckWitness(GetContractOwner()))
         {
@@ -190,6 +196,7 @@ public partial class MultiTenantNftPlatform
 
     public static void clearCollectionContractTemplate()
     {
+        AssertDirectInvocation();
         AssertPlatformContractMode();
         if (!Runtime.CheckWitness(GetContractOwner()))
         {
@@ -250,6 +257,7 @@ public partial class MultiTenantNftPlatform
 
     public static UInt160 deployCollectionContractFromTemplate(ByteString collectionId, object extraData)
     {
+        AssertDirectInvocation();
         AssertPlatformContractMode();
         CollectionState state = GetCollectionState(collectionId);
         AssertCollectionOwnerWitness(state);

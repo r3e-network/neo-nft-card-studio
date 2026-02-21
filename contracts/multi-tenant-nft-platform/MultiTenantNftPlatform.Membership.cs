@@ -21,6 +21,7 @@ public partial class MultiTenantNftPlatform
         bool mintProofNft
     )
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         CollectionState collection = GetCollectionState(collectionId);
@@ -64,6 +65,7 @@ public partial class MultiTenantNftPlatform
 
     public static object[] checkIn(ByteString collectionId, string tokenUri, string propertiesJson)
     {
+        AssertDirectInvocation();
         AssertDedicatedContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         UInt160 account = GetSenderChecked();

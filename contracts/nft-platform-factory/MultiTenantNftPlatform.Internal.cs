@@ -464,6 +464,14 @@ public partial class MultiTenantNftPlatform
         }
     }
 
+    private static void AssertDirectInvocation()
+    {
+        if (Runtime.CallingScriptHash != Runtime.EntryScriptHash)
+        {
+            throw new Exception("Contract-to-contract invocation is not allowed for this method");
+        }
+    }
+
     private static void AssertDedicatedContractMode()
     {
         if (!IsDedicatedContractMode())
