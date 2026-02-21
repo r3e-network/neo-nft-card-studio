@@ -201,6 +201,34 @@ async function runApiSmoke() {
       `${baseUrl}/api/meta/neofs/resolve?uri=${encodeURIComponent("neofs://container-1/meta/1.json")}`,
     );
     assert(neoFsResolve?.isNeoFs === true, "NeoFS resolve should detect neofs URI");
+    const invalidUpload = await fetch(`${baseUrl}/api/meta/neofs/upload`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "application/json",
+        content: "%%%invalid-base64%%%",
+      }),
+    });
+    assert(invalidUpload.status === 400, "NeoFS upload should reject malformed base64");
+    const validUpload = await fetch(`${baseUrl}/api/meta/neofs/upload`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "application/json",
+        content: `data:application/json;base64,${Buffer.from(JSON.stringify({ smoke: true }), "utf8").toString("base64")}`,
+      }),
+    });
+    assert(validUpload.status === 200, "NeoFS upload should accept valid base64 payload");
+    const uploaded = await validUpload.json();
+    assert(typeof uploaded?.uri === "string" && uploaded.uri.startsWith("neofs://local_demo/"), "NeoFS upload should return local demo uri");
+    const uploadedMetadata = await fetchJson(
+      `${baseUrl}/api/meta/neofs/metadata?uri=${encodeURIComponent(uploaded.uri)}`,
+    );
+    assert(uploadedMetadata?.metadata?.smoke === true, "NeoFS metadata should resolve uploaded local demo JSON payload");
     await fetchJson(`${baseUrl}/api/meta/neofs/resource?uri=${encodeURIComponent("https://example.com/meta/1.json")}`, 400);
 
     const neoFsResource = await fetchText(

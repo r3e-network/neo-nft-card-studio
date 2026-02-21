@@ -70,6 +70,33 @@ function fillGhostMarketTemplate(template: string, values: Record<string, string
   return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_whole, key) => values[key] ?? "");
 }
 
+function extractBase64Payload(input: string): string {
+  const marker = "base64,";
+  const index = input.indexOf(marker);
+  if (index >= 0) {
+    return input.slice(index + marker.length);
+  }
+
+  return input;
+}
+
+function isCanonicalBase64(value: string): boolean {
+  if (value.length === 0 || value.length % 4 !== 0) {
+    return false;
+  }
+
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    return false;
+  }
+
+  const paddingIndex = value.indexOf("=");
+  if (paddingIndex >= 0 && /[^=]/.test(value.slice(paddingIndex))) {
+    return false;
+  }
+
+  return true;
+}
+
 function evaluateGhostMarketCompatibility(input: {
   dialect: "csharp" | "solidity" | "rust";
   supportedStandards: string[];
@@ -605,15 +632,15 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       return;
     }
 
-    let base64 = content;
-    if (content.includes("base64,")) {
-      base64 = content.split("base64,")[1];
+    const base64 = extractBase64Payload(content).replace(/\s+/g, "");
+    if (!isCanonicalBase64(base64)) {
+      res.status(400).json({ message: "Invalid base64 payload" });
+      return;
     }
 
     let buffer: Buffer;
-    try {
-      buffer = Buffer.from(base64, "base64");
-    } catch {
+    buffer = Buffer.from(base64, "base64");
+    if (buffer.toString("base64") !== base64) {
       res.status(400).json({ message: "Invalid base64 payload" });
       return;
     }
