@@ -85,6 +85,14 @@ function evaluateGhostMarketCompatibility(input: {
       code: "factory_contract_not_nft",
       message: "This contract is an NFT deployment factory, not an NFT asset contract.",
     });
+
+    return {
+      compatible: false,
+      reasons: reasons.map((issue) => issue.message),
+      warnings: warnings.map((issue) => issue.message),
+      reasonIssues: reasons,
+      warningIssues: warnings,
+    };
   }
 
   if (!standards.has("NEP-11")) {

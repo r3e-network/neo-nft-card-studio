@@ -385,6 +385,25 @@ export function CollectionDetailPage() {
   const reload = async () => {
     setLoading(true);
     setError("");
+    if (!wallet.address || !wallet.network || wallet.network.network === "unknown") {
+      setCollection(null);
+      setTokens([]);
+      setGhostMarket(null);
+      setNeoFsMeta(null);
+      setResolvedCollectionBaseUri("");
+      setResolvedTokenUriById({});
+      setMetadataByTokenId({});
+      setMediaUriByTokenId({});
+      setTemplateConfigured(false);
+      setDeployedCollectionContractHash("");
+      setDropWalletStats(null);
+      setCheckInWalletStats(null);
+      setMembershipStatus(null);
+      setLoading(false);
+      setError(t("detail.err_connect_wallet_first"));
+      return;
+    }
+
     try {
       const [fetchedCollection, fetchedTokens, neoFsMetaResponse] = await Promise.all([
         fetchCollection(collectionId),
@@ -480,7 +499,7 @@ export function CollectionDetailPage() {
 
   useEffect(() => {
     void reload();
-  }, [collectionId, isCsharpDialect, isRustDialect, wallet.network?.network, wallet.network?.magic]);
+  }, [collectionId, isCsharpDialect, isRustDialect, wallet.address, wallet.network?.network, wallet.network?.magic]);
 
   useEffect(() => {
     setMintForm((prev) => ({
@@ -735,6 +754,11 @@ export function CollectionDetailPage() {
     }
 
     if (!requireDedicatedContractForCsharp()) {
+      return;
+    }
+
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setError(t("detail.err_batch_amount_invalid"));
       return;
     }
 
@@ -1631,10 +1655,16 @@ export function CollectionDetailPage() {
                 </button>
                 {isCsharpDialect && (
                   <button className="btn btn-secondary" type="button" disabled={working || !hasDedicatedContract} onClick={() => {
-                    const amount = window.prompt(t("detail.prompt_batch_size"), "10");
-                    if (amount && !isNaN(Number(amount))) {
-                      batchMint(Number(amount));
+                    const raw = window.prompt(t("detail.prompt_batch_size"), "10");
+                    if (raw === null) {
+                      return;
                     }
+                    const amount = Number.parseInt(raw.trim(), 10);
+                    if (!Number.isFinite(amount) || amount <= 0) {
+                      setError(t("detail.err_batch_amount_invalid"));
+                      return;
+                    }
+                    batchMint(amount);
                   }}>
                     {t("detail.btn_batch_mint")}
                   </button>

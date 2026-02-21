@@ -39,7 +39,7 @@ function getNetworkQueryParams(
   const runtime = getRuntimeNetworkConfig();
   const next: Record<string, string | number | boolean> = {};
 
-  if (walletNetwork && runtime.network === "unknown") {
+  if (!walletNetwork || runtime.network === "unknown") {
     throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
   }
 

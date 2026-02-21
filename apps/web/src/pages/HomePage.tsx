@@ -28,6 +28,7 @@ interface CompatibilityIssue {
 export function HomePage() {
   const { t } = useTranslation();
   const wallet = useWallet();
+  const walletNetworkReady = Boolean(wallet.address && wallet.network && wallet.network.network !== "unknown");
   const [stats, setStats] = useState<StatsDto | null>(null);
   const [chainHeight, setChainHeight] = useState<number | null>(null);
   const [activeRpcUrl, setActiveRpcUrl] = useState<string>("");
@@ -42,6 +43,17 @@ export function HomePage() {
     (async () => {
       setLoading(true);
       setError(null);
+
+      if (!walletNetworkReady) {
+        setStats(null);
+        setGhostMarket(null);
+        setCollections([]);
+        setChainHeight(null);
+        setActiveRpcUrl("");
+        setLoading(false);
+        return;
+      }
+
       try {
         const runtime = getRuntimeNetworkConfig();
         setActiveRpcUrl(runtime.rpcUrl);
@@ -81,7 +93,7 @@ export function HomePage() {
     return () => {
       alive = false;
     };
-  }, [wallet.network?.network, wallet.network?.magic]);
+  }, [walletNetworkReady, wallet.network?.network, wallet.network?.magic]);
 
   const myCollections = useMemo(() => {
     if (!wallet.address) {
@@ -186,6 +198,7 @@ export function HomePage() {
       ) : null}
 
       {loading ? <p className="hint">{t("home.loading")}</p> : null}
+      {!loading && !walletNetworkReady ? <p className="hint">{t("home.connect_wallet_network")}</p> : null}
       {error ? <p className="error">{error}</p> : null}
 
       <div className="grid-two">
