@@ -135,7 +135,7 @@ export function HomePage() {
         </article>
         <article className="metric-card">
           <p style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Activity size={14} /> {t("home.idx_cursor")}
+            <Activity size={14} /> {t("home.chain_height")}
           </p>
           <h2>{chainHeight ?? "-"}</h2>
           {activeRpcUrl ? (

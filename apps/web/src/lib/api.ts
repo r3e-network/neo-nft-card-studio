@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { getRuntimeNetworkConfig } from "./runtime-network";
+import { getRuntimeNetworkConfig, getRuntimeWalletNetwork } from "./runtime-network";
 import type {
   CollectionDto,
   ContractMetaDto,
@@ -35,8 +35,13 @@ function getApiClient() {
 function getNetworkQueryParams(
   params?: Record<string, string | number | boolean | undefined>,
 ): Record<string, string | number | boolean> | undefined {
+  const walletNetwork = getRuntimeWalletNetwork();
   const runtime = getRuntimeNetworkConfig();
   const next: Record<string, string | number | boolean> = {};
+
+  if (walletNetwork && runtime.network === "unknown") {
+    throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
+  }
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {

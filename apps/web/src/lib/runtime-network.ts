@@ -20,24 +20,31 @@ export function getRuntimeWalletNetwork(): NeoWalletNetwork | null {
 }
 
 export function getRuntimeNetworkConfig(): RuntimeNetworkConfig {
+  const walletBound = walletNetwork !== null;
   const network = walletNetwork?.network ?? "unknown";
   const profile = APP_CONFIG.networks[network] ?? APP_CONFIG.networks.unknown;
+  const unknownWalletNetwork = walletBound && network === "unknown";
 
-  let rpcUrl = walletNetwork?.rpcUrl || profile.rpcUrl || "";
-  if (!rpcUrl && (network === "testnet" || network === "unknown")) {
+  let rpcUrl = "";
+  if (!unknownWalletNetwork) {
+    rpcUrl = walletNetwork?.rpcUrl || profile.rpcUrl || "";
+  }
+  if (!rpcUrl && (network === "testnet" || (!walletBound && network === "unknown"))) {
     rpcUrl = APP_CONFIG.rpcUrl;
   }
   const apiBaseUrl = profile.apiBaseUrl || APP_CONFIG.apiBaseUrl;
 
   let contractHash = "";
-  if (network === "mainnet") {
-    contractHash = profile.contractHash ?? "";
-  } else if (network === "private") {
-    contractHash = profile.contractHash ?? "";
-  } else if (network === "testnet") {
-    contractHash = profile.contractHash || APP_CONFIG.contractHash;
-  } else {
-    contractHash = APP_CONFIG.contractHash;
+  if (!unknownWalletNetwork) {
+    if (network === "mainnet") {
+      contractHash = profile.contractHash ?? "";
+    } else if (network === "private") {
+      contractHash = profile.contractHash ?? "";
+    } else if (network === "testnet") {
+      contractHash = profile.contractHash || APP_CONFIG.contractHash;
+    } else {
+      contractHash = APP_CONFIG.contractHash;
+    }
   }
 
   return {
