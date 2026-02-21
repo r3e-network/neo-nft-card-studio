@@ -212,7 +212,22 @@ async function runApiSmoke() {
       assert(typeof payload?.message === "string", "NeoFS resource error should include message");
     }
 
-    await fetchJson(`${baseUrl}/api/meta/ghostmarket`);
+    const ghost = await fetchJson(`${baseUrl}/api/meta/ghostmarket`);
+    assert(typeof ghost?.contractHash === "string", "ghostmarket meta should include contractHash");
+    assert(
+      ghost.contractHash === "0x0000000000000000000000000000000000000000",
+      "ghostmarket meta should normalize default contract hash",
+    );
+    const ghostUpperPrefix = await fetchJson(
+      `${baseUrl}/api/meta/ghostmarket?contractHash=${encodeURIComponent("0X1111111111111111111111111111111111111111")}`,
+    );
+    assert(
+      ghostUpperPrefix?.contractHash === "0x1111111111111111111111111111111111111111",
+      "ghostmarket should normalize uppercase 0X contract hash query",
+    );
+    await fetchJson(`${baseUrl}/api/meta/ghostmarket?contractHash=${encodeURIComponent("0x1234")}`, 400);
+    await fetchJson(`${baseUrl}/api/meta/ghostmarket/collection/1?contractHash=${encodeURIComponent("0x1234")}`, 400);
+    await fetchJson(`${baseUrl}/api/meta/ghostmarket/token/1?contractHash=${encodeURIComponent("0x1234")}`, 400);
     await fetchJson(`${baseUrl}/api/stats`);
 
     const collections = await fetchJson(`${baseUrl}/api/collections`);

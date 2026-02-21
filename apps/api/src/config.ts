@@ -33,8 +33,30 @@ const emptyStringToUndefined = (value: unknown): unknown => {
 
 const optionalStringFromEnv = z.preprocess(emptyStringToUndefined, z.string().optional());
 const optionalUrlFromEnv = z.preprocess(emptyStringToUndefined, z.string().url().optional());
-const optionalHashFromEnv = z.preprocess(emptyStringToUndefined, z.string().min(40).optional());
 const optionalDialectFromEnv = z.preprocess(emptyStringToUndefined, z.enum(["csharp", "solidity", "rust"]).optional());
+const UINT160_HASH_REGEX = /^(?:0[xX])?[0-9a-fA-F]{40}$/;
+
+function normalizeContractHash(input: string): string {
+  const trimmed = input.trim();
+  const noPrefix = trimmed.replace(/^0x/i, "");
+  return `0x${noPrefix.toLowerCase()}`;
+}
+
+const requiredHashFromEnv = z
+  .string()
+  .trim()
+  .regex(UINT160_HASH_REGEX, "Contract hash must be a 20-byte hexadecimal script hash")
+  .transform((value) => normalizeContractHash(value));
+
+const optionalHashFromEnv = z.preprocess(
+  emptyStringToUndefined,
+  z
+    .string()
+    .trim()
+    .regex(UINT160_HASH_REGEX, "Contract hash must be a 20-byte hexadecimal script hash")
+    .transform((value) => normalizeContractHash(value))
+    .optional(),
+);
 
 function normalizeOptional(input: string | undefined): string | undefined {
   const value = input?.trim();
@@ -64,7 +86,7 @@ const configSchema = z.object({
   NEO_RPC_URL_MAINNET: optionalUrlFromEnv,
   NEO_RPC_URL_TESTNET: optionalUrlFromEnv,
   NEO_RPC_URL_PRIVATE: optionalUrlFromEnv,
-  NEO_CONTRACT_HASH: z.string().min(40),
+  NEO_CONTRACT_HASH: requiredHashFromEnv,
   NEO_CONTRACT_HASH_MAINNET: optionalHashFromEnv,
   NEO_CONTRACT_HASH_TESTNET: optionalHashFromEnv,
   NEO_CONTRACT_HASH_PRIVATE: optionalHashFromEnv,

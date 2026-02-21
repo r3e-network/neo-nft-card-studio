@@ -48,6 +48,7 @@ If GhostMarket route format changes, only update URL templates (no code changes 
   - Compatibility report
   - Manifest snapshot (from RPC `getContractState`)
   - Generated URL templates
+  - Optional `contractHash` query override is validated as UInt160 (`0x`/`0X` + 40 hex); invalid values return HTTP 400
 - `GET /api/meta/ghostmarket/collection/:collectionId`
   - Filled collection URL
 - `GET /api/meta/ghostmarket/token/:tokenId`

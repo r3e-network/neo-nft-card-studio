@@ -56,8 +56,14 @@ function normalizeHash(hash: string): string {
   if (!hash || hash.length === 0) {
     return "";
   }
-  const cleaned = hash.startsWith("0x") ? hash : `0x${hash}`;
-  return cleaned.toLowerCase();
+
+  const trimmed = hash.trim();
+  const noPrefix = trimmed.replace(/^0x/i, "");
+  if (/^[0-9a-fA-F]{40}$/.test(noPrefix)) {
+    return `0x${noPrefix.toLowerCase()}`;
+  }
+
+  return trimmed.toLowerCase();
 }
 
 function stackItemsFromNotification(notification: RawNotification): unknown[] {

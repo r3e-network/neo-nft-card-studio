@@ -26,12 +26,20 @@ interface GhostMarketCompatibilityIssue {
   params?: Record<string, string>;
 }
 
+const UINT160_HASH_REGEX = /^(?:0[xX])?[0-9a-fA-F]{40}$/;
+
 function normalizeMethodName(name: string): string {
   return name.replace(/_/g, "").toLowerCase();
 }
 
-function normalizeContractHash(hash: string): string {
-  return hash.startsWith("0x") ? hash.toLowerCase() : `0x${hash.toLowerCase()}`;
+function normalizeContractHash(hash: string): string | null {
+  const trimmed = hash.trim();
+  if (!UINT160_HASH_REGEX.test(trimmed)) {
+    return null;
+  }
+
+  const noPrefix = trimmed.replace(/^0x/i, "");
+  return `0x${noPrefix.toLowerCase()}`;
 }
 
 function findMethod(methods: ManifestMethodSummary[], methodName: string): ManifestMethodSummary | null {
@@ -353,6 +361,29 @@ function readContractHashQueryValue(input: unknown): string | null {
   }
 
   return null;
+}
+
+function resolveContractHashQueryValueOrReply(
+  input: unknown,
+  fallbackContractHash: string,
+  res: Response,
+): string | null {
+  const requestedContractHash = readContractHashQueryValue(input);
+  if (!requestedContractHash) {
+    return fallbackContractHash;
+  }
+
+  const normalized = normalizeContractHash(requestedContractHash);
+  if (!normalized) {
+    res.status(400).json({
+      message: "Invalid contractHash query value",
+      requestedContractHash,
+      expectedFormat: "0x-prefixed 20-byte hex script hash",
+    });
+    return null;
+  }
+
+  return normalized;
 }
 
 export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, config: AppConfig): Router {
@@ -808,8 +839,16 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     "/meta/ghostmarket",
     withNetworkContext(async (context, req, res) => {
       const platformContractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
-      const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
-      const contractHash = requestedContractHash ? normalizeContractHash(requestedContractHash) : platformContractHash;
+      if (!platformContractHash) {
+        res.status(500).json({ message: "Platform contract hash is invalid in API configuration" });
+        return;
+      }
+
+      const contractHash = resolveContractHashQueryValueOrReply(req.query.contractHash, platformContractHash, res);
+      if (!contractHash) {
+        return;
+      }
+
       let manifestSummary:
         | {
             supportedStandards: string[];
@@ -897,10 +936,17 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   router.get(
     "/meta/ghostmarket/collection/:collectionId",
     withNetworkContext((context, req, res) => {
-      const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
-      const contractHash = requestedContractHash
-        ? normalizeContractHash(requestedContractHash)
-        : normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      const platformContractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      if (!platformContractHash) {
+        res.status(500).json({ message: "Platform contract hash is invalid in API configuration" });
+        return;
+      }
+
+      const contractHash = resolveContractHashQueryValueOrReply(req.query.contractHash, platformContractHash, res);
+      if (!contractHash) {
+        return;
+      }
+
       const url = fillGhostMarketTemplate(context.config.GHOSTMARKET_COLLECTION_URL_TEMPLATE, {
         contractHash,
         collectionId: req.params.collectionId,
@@ -914,10 +960,17 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   router.get(
     "/meta/ghostmarket/token/:tokenId",
     withNetworkContext((context, req, res) => {
-      const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
-      const contractHash = requestedContractHash
-        ? normalizeContractHash(requestedContractHash)
-        : normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      const platformContractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
+      if (!platformContractHash) {
+        res.status(500).json({ message: "Platform contract hash is invalid in API configuration" });
+        return;
+      }
+
+      const contractHash = resolveContractHashQueryValueOrReply(req.query.contractHash, platformContractHash, res);
+      if (!contractHash) {
+        return;
+      }
+
       const url = fillGhostMarketTemplate(context.config.GHOSTMARKET_TOKEN_URL_TEMPLATE, {
         contractHash,
         collectionId: "",

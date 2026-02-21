@@ -59,6 +59,7 @@ cp .env.example .env
 关键项：
 - `NEO_CONTRACT_DIALECT`: `csharp | solidity | rust`
 - `VITE_CONTRACT_DIALECT`: 前端方言，需与后端一致
+- 所有 `*_CONTRACT_HASH*` 必须是 20-byte 十六进制脚本哈希（40 hex，可带 `0x`/`0X` 前缀；系统会归一化为小写 `0x...`）
 - API 多网络（同一个 API 实例可同时服务多链环境）：
   - 默认网络：`NEO_DEFAULT_NETWORK=mainnet|testnet|private`
   - 基础配置（默认网络必填）：`NEO_RPC_URL`、`NEO_CONTRACT_HASH`、`DB_FILE`

@@ -35,6 +35,16 @@ export function toUserErrorMessage(t: TFunction, error: unknown): string {
     });
   }
 
+  const invalidContractHashMatch = message.match(
+    /^NFT platform contract hash is invalid for wallet network '([^']+)'\. Check (VITE_[A-Z0-9_]+)\.$/i,
+  );
+  if (invalidContractHashMatch) {
+    return t("app.contract_hash_invalid", {
+      network: normalizeNetworkLabel(invalidContractHashMatch[1]),
+      env: invalidContractHashMatch[2],
+    });
+  }
+
   const rpcUrlMatch = message.match(
     /^NFT platform RPC URL is not configured for wallet network '([^']+)'\. Set (VITE_[A-Z0-9_]+)\.$/i,
   );
@@ -49,10 +59,13 @@ export function toUserErrorMessage(t: TFunction, error: unknown): string {
     return t("app.install_wallet_required");
   }
 
+  if (message.startsWith("Invalid contract hash format")) {
+    return t("app.contract_hash_invalid_generic");
+  }
+
   if (/VITE_[A-Z0-9_]+/.test(message) || /(?:\bNEO_|\bINDEXER_)/.test(message)) {
     return t("app.generic_error");
   }
 
   return message;
 }
-
