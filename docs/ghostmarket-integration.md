@@ -2,7 +2,10 @@
 
 ## 1. Target
 
-This project exposes GhostMarket-ready hooks for Neo N3 NFTs on the shared multi-tenant contract model.
+This project exposes GhostMarket-ready hooks for Neo N3 NFTs in both modes:
+
+- Primary production mode: C# factory deploys per-creator dedicated NFT contracts.
+- Compatibility mode: shared multi-tenant NFT contract (Solidity / Rust).
 
 Implemented across contracts:
 
@@ -62,9 +65,10 @@ If GhostMarket route format changes, only update URL templates (no code changes 
 
 1. Build and deploy your selected contract dialect (`csharp` recommended for production).
 2. Set `NEO_CONTRACT_HASH` and `NEO_CONTRACT_DIALECT`.
-3. Run API and open `/api/meta/ghostmarket`.
-4. Ensure compatibility is `true` (or resolve reported reasons).
-5. Use generated GhostMarket links to verify listing pages.
+3. For C# factory mode, run compatibility check against the dedicated NFT contract hash (not factory hash).
+4. Run API and open `/api/meta/ghostmarket`.
+5. Ensure compatibility is `true` (or resolve reported reasons).
+6. Use generated GhostMarket links to verify listing pages.
 
 ## 7. Rust Dialect Limitation
 

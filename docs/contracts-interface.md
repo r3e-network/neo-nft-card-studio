@@ -9,7 +9,7 @@ Shared SDK adapter: `packages/neo-sdk/src/contract-client.ts`
   - `buildSetCollectionContractTemplateNameSegmentsInvoke`
   - `buildClearCollectionContractTemplateInvoke`
   - `buildDeployCollectionContractFromTemplateInvoke`
-  - `getCollectionContract` / `hasCollectionContract`
+  - `getCollectionContract` / `hasCollectionContract` / `hasCollectionContractTemplateNameSegments`
 
 ## C# (Primary Production Interface)
 
@@ -54,6 +54,7 @@ Factory management:
 - `setCollectionContractTemplateNameSegments(manifestPrefix, templateNameBase, manifestSuffix)` (platform owner only)
 - `clearCollectionContractTemplate()` (platform owner only)
 - `hasCollectionContractTemplate() -> bool`
+- `hasCollectionContractTemplateNameSegments() -> bool`
 - `getCollectionContractTemplateDigest() -> object[]`
 - `deployCollectionContractFromTemplate(collectionId, extraData) -> UInt160`
 - `getCollectionContract(collectionId) -> UInt160` (`UInt160.Zero` if not deployed)
@@ -89,7 +90,7 @@ Runtime deploy semantics:
 - Dedicated-user mode: creator can directly execute `createCollectionAndDeployFromTemplate` to ensure one real independent NFT contract is created in the same transaction.
 - Dedicated contract hard isolation: runtime stores a bound `collectionId`; all public methods with `collectionId` must match it, and platform-level methods (`createCollection*`, template admin/deploy) are blocked.
 - Dedicated init hardening: `initializeDedicatedCollection` requires owner witness, or a call from configured initializer-contract hash (when set by factory deploy data).
-- Deploy hash collision protection: factory auto-scopes template manifest `name` by `collectionId` for each deployment, preventing deterministic hash collisions across creators.
+- Deploy hash collision protection: factory auto-scopes template manifest `name` by `collectionId` for each deployment, preventing deterministic hash collisions across creators. Deployment is fail-closed when template name segments are not configured.
 - User side does not need to compile or upload custom `nef/manifest`.
 
 Pause semantics (all dialects):

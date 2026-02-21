@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { CopySlash, Layers, ArrowLeftRight, Activity, Database, AlertTriangle, Cpu, CheckCircle } from "lucide-react";
-import { NeoRpcService } from "@platform/neo-sdk";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, fetchGhostMarketMeta, fetchStats } from "../lib/api";
@@ -30,7 +29,6 @@ export function HomePage() {
   const wallet = useWallet();
   const walletNetworkReady = Boolean(wallet.address && wallet.network && wallet.network.network !== "unknown");
   const [stats, setStats] = useState<StatsDto | null>(null);
-  const [chainHeight, setChainHeight] = useState<number | null>(null);
   const [activeRpcUrl, setActiveRpcUrl] = useState<string>("");
   const [ghostMarket, setGhostMarket] = useState<GhostMarketMetaDto | null>(null);
   const [collections, setCollections] = useState<CollectionDto[]>([]);
@@ -48,7 +46,6 @@ export function HomePage() {
         setStats(null);
         setGhostMarket(null);
         setCollections([]);
-        setChainHeight(null);
         setActiveRpcUrl("");
         setLoading(false);
         return;
@@ -58,16 +55,10 @@ export function HomePage() {
         const runtime = getRuntimeNetworkConfig();
         setActiveRpcUrl(runtime.rpcUrl);
 
-        const runtimeRpc = new NeoRpcService({
-          rpcUrl: runtime.rpcUrl,
-          contractHash: runtime.contractHash || "0x0000000000000000000000000000000000000000",
-        });
-
-        const [fetchedStats, fetchedGhostMarket, fetchedCollections, fetchedBlockCount] = await Promise.all([
+        const [fetchedStats, fetchedGhostMarket, fetchedCollections] = await Promise.all([
           fetchStats(),
           fetchGhostMarketMeta().catch(() => null),
           fetchCollections(),
-          runtimeRpc.getBlockCount().catch(() => null),
         ]);
 
         if (!alive) {
@@ -77,7 +68,6 @@ export function HomePage() {
         setStats(fetchedStats);
         setGhostMarket(fetchedGhostMarket);
         setCollections(fetchedCollections);
-        setChainHeight(typeof fetchedBlockCount === "number" ? fetchedBlockCount - 1 : null);
       } catch (err) {
         if (!alive) {
           return;
@@ -148,9 +138,9 @@ export function HomePage() {
         </article>
         <article className="metric-card">
           <p style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Activity size={14} /> {t("home.chain_height")}
+            <Activity size={14} /> {t("home.wallet_network")}
           </p>
-          <h2>{chainHeight ?? "-"}</h2>
+          <h2>{wallet.network?.network ? wallet.network.network.toUpperCase() : "-"}</h2>
           {activeRpcUrl ? (
             <p className="hint">
               {t("home.endpoint_url")}: {activeRpcUrl}

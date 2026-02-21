@@ -24,6 +24,10 @@ function main(): void {
     typeof csharp.hasOwnerDedicatedCollectionContract === "function",
     "Missing hasOwnerDedicatedCollectionContract reader",
   );
+  assert(
+    typeof csharp.hasCollectionContractTemplateNameSegments === "function",
+    "Missing hasCollectionContractTemplateNameSegments reader",
+  );
 
   const csharpMint = csharp.buildMintInvoke({
     collectionId: "1",

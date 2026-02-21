@@ -179,7 +179,12 @@ public partial class MultiTenantNftPlatform
         }
 
         string reconstructedManifest = manifestPrefix + templateNameBase + manifestSuffix;
-        Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateManifest, reconstructedManifest);
+        string configuredManifest = GetCollectionContractTemplateManifest();
+        if (reconstructedManifest != configuredManifest)
+        {
+            throw new Exception("Template name segments do not match configured template manifest");
+        }
+
         SetCollectionContractTemplateNameSegments(manifestPrefix, templateNameBase, manifestSuffix);
     }
 
@@ -203,6 +208,17 @@ public partial class MultiTenantNftPlatform
         }
 
         return HasCollectionContractTemplateStored();
+    }
+
+    [Safe]
+    public static bool hasCollectionContractTemplateNameSegments()
+    {
+        if (IsDedicatedContractMode())
+        {
+            return false;
+        }
+
+        return HasCollectionContractTemplateNameSegmentsStored();
     }
 
     [Safe]
@@ -250,8 +266,7 @@ public partial class MultiTenantNftPlatform
         }
 
         ByteString templateNef = GetCollectionContractTemplateNef();
-        string templateManifest = GetCollectionContractTemplateManifest();
-        string scopedTemplateManifest = BuildScopedTemplateManifest(collectionId, templateManifest);
+        string scopedTemplateManifest = BuildScopedTemplateManifest(collectionId);
 
         object[] deployData =
         [

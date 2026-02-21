@@ -374,6 +374,15 @@ export class NeoNftPlatformClient {
     return value === true;
   }
 
+  async hasCollectionContractTemplateNameSegments(): Promise<boolean> {
+    if (this.dialect !== "csharp") {
+      throw new Error("hasCollectionContractTemplateNameSegments is only available for csharp dialect");
+    }
+
+    const [value] = await this.rpc.invokeRead("hasCollectionContractTemplateNameSegments");
+    return value === true;
+  }
+
   async getCollectionContractTemplateDigest(): Promise<unknown> {
     if (this.dialect !== "csharp") {
       throw new Error("getCollectionContractTemplateDigest is only available for csharp dialect");

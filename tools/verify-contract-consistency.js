@@ -91,6 +91,7 @@ const FACTORY_REQUIRED_METHODS = [
   "setCollectionContractTemplateNameSegments",
   "clearCollectionContractTemplate",
   "hasCollectionContractTemplate",
+  "hasCollectionContractTemplateNameSegments",
   "getCollectionContractTemplateDigest",
   "deployCollectionContractFromTemplate",
 ];
@@ -514,7 +515,7 @@ function checkCsharpDedicatedInitializationHardening(errors) {
 
   if (!/Runtime\.ExecutingScriptHash/.test(factoryCollections)
     || !/ContractManagement\.Deploy\(templateNef,\s*scopedTemplateManifest,\s*deployData\)/.test(factoryCollections)
-    || !/BuildScopedTemplateManifest\(collectionId,\s*templateManifest\)/.test(factoryCollections)) {
+    || !/BuildScopedTemplateManifest\(collectionId\)/.test(factoryCollections)) {
     errors.push("CSharp source: factory deploy should scope template manifest name per collection and pass its own script hash into deploy data");
   }
 

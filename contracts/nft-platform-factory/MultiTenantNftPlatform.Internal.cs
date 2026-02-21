@@ -166,11 +166,11 @@ public partial class MultiTenantNftPlatform
         return (string)value;
     }
 
-    private static string BuildScopedTemplateManifest(ByteString collectionId, string fallbackManifest)
+    private static string BuildScopedTemplateManifest(ByteString collectionId)
     {
         if (!HasCollectionContractTemplateNameSegmentsStored())
         {
-            return fallbackManifest;
+            throw new Exception("Template manifest name segments not configured");
         }
 
         if (collectionId is null || collectionId.Length == 0)
