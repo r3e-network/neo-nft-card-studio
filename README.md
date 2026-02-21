@@ -36,8 +36,7 @@ contracts/
 - 平台工厂（非 NEP11）：`createCollection` / `createCollectionAndDeployFromTemplate` / `setCollectionContractTemplate` / `deployCollectionContractFromTemplate` / `getCollectionContract`
 - 独立 NFT 合约（NEP11）：`mint` / `transfer` / `burn` / `tokenURI` / `ownerOf` / `balanceOf` / `tokens` / `tokensOf`
 - 发行规则与会员能力（全方言核心）：`configureDrop` / `claimDrop` / `configureCheckInProgram` / `checkIn`
-- 钱包侧统计/会员查询（Solidity / Rust）：`getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`
-- C# 专属模板合约刻意保持精简读取面（不暴露钱包侧统计查询），以降低部署载荷复杂度并保持模板部署稳定性。
+- 钱包侧统计/会员查询（C# 专属合约 / Solidity / Rust）：`getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`
 
 风控行为：
 - `paused = true` 时禁止 `mint` 与 `transfer`。
@@ -207,7 +206,7 @@ npm run verify:contracts
 3. 或者先 `createCollection` 再 `deployCollectionContractFromTemplate(collectionId, extraData)`（兼容路径，同样受 `1 钱包 1 专属合约` 约束）。
 4. 通过 `getCollectionContract(collectionId)` 或 `getOwnerDedicatedCollectionContract(owner)` 查询已部署 hash。
 5. 专属合约内部仅允许绑定集合操作；跨集合 `collectionId` 调用会直接拒绝。
-6. `initializeDedicatedCollection` 仅接受 owner 出签并受初始化器合约哈希校验；SDK 对 `extraData` 的对象/数组会自动序列化为 JSON 字符串再作为 `Any` 传入。
+6. `initializeDedicatedCollection` 仅接受 owner 出签并受初始化器合约哈希校验；SDK 对 `extraData` 的对象/数组会自动序列化为 JSON 字符串再作为 `Any` 传入，部署后会同步写入工厂 `getCollectionDeployExtraData` 与专属合约 `getDedicatedExtraData`。
 
 ## 9. API 概览
 

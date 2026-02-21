@@ -201,10 +201,46 @@ const SHARED_METHOD_SPECS = [
     returnTypes: { csharp: ["Array"], solidity: ["Array"], rust: ["Array"] },
   },
   {
+    name: "getDropWalletStats",
+    safe: true,
+    arity: { csharp: 2, solidity: 2, rust: 2 },
+    returnTypes: { csharp: ["Array"], solidity: ["Array"], rust: ["Array"] },
+  },
+  {
+    name: "canClaimDrop",
+    safe: true,
+    arity: { csharp: 2, solidity: 2, rust: 2 },
+    returnTypes: { csharp: ["Boolean"], solidity: ["Boolean"], rust: ["Boolean"] },
+  },
+  {
     name: "getCheckInProgram",
     safe: true,
     arity: { csharp: 1, solidity: 1, rust: 1 },
     returnTypes: { csharp: ["Array"], solidity: ["Array"], rust: ["Array"] },
+  },
+  {
+    name: "getCheckInWalletStats",
+    safe: true,
+    arity: { csharp: 2, solidity: 2, rust: 2 },
+    returnTypes: { csharp: ["Array"], solidity: ["Array"], rust: ["Array"] },
+  },
+  {
+    name: "canCheckIn",
+    safe: true,
+    arity: { csharp: 2, solidity: 2, rust: 2 },
+    returnTypes: { csharp: ["Boolean"], solidity: ["Boolean"], rust: ["Boolean"] },
+  },
+  {
+    name: "getMembershipStatus",
+    safe: true,
+    arity: { csharp: 2, solidity: 2, rust: 2 },
+    returnTypes: { csharp: ["Array"], solidity: ["Array"], rust: ["Array"] },
+  },
+  {
+    name: "getTokenClass",
+    safe: true,
+    arity: { csharp: 1, solidity: 1, rust: 1 },
+    returnTypes: { csharp: ["Integer"], solidity: ["Integer"], rust: ["Integer"] },
   },
   {
     name: "symbol",

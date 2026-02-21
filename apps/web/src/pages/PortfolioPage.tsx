@@ -5,6 +5,7 @@ import { FolderHeart, ImageOff, ArrowUpRight, CopySlash } from "lucide-react";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchWalletTokens, getNeoFsResourceProxyUrl } from "../lib/api";
+import { toUserErrorMessage } from "../lib/errors";
 import type { TokenDto } from "../lib/types";
 
 interface TokenGroup {
@@ -42,7 +43,7 @@ export function PortfolioPage() {
       } catch (err) {
         if (alive) {
           setTokens([]);
-          setError((err as Error).message);
+          setError(toUserErrorMessage(t, err));
         }
       } finally {
         if (alive) {

@@ -64,6 +64,7 @@ public partial class MultiTenantNftPlatform : SmartContract
     private static readonly byte[] PrefixCollectionCheckInProgram = [0x1B];
     private static readonly byte[] PrefixCollectionCheckInWalletStats = [0x1C];
     private static readonly byte[] PrefixCollectionMembershipBalance = [0x1D];
+    private static readonly byte[] PrefixCollectionDeployExtraData = [0x1E];
     private static readonly byte[] PrefixToken = [0x20];
     private static readonly byte[] PrefixTokenOwner = [0x21];
     private static readonly byte[] PrefixOwnerBalance = [0x22];

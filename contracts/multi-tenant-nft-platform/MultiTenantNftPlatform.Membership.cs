@@ -115,6 +115,89 @@ public partial class MultiTenantNftPlatform
         ];
     }
 
+    [Safe]
+    public static object[] getCheckInWalletStats(ByteString collectionId, UInt160 account)
+    {
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        if (!account.IsValid)
+        {
+            throw new Exception("Invalid account");
+        }
+
+        GetCollectionState(collectionId);
+        CheckInProgramState program = GetCheckInProgramState(collectionId);
+        CheckInWalletStatsState walletStats = GetCheckInWalletStatsState(collectionId, account);
+        BigInteger remaining = BigInteger.Pow(2, 63) - 1;
+        if (program.MaxCheckInsPerWallet > 0)
+        {
+            remaining = program.MaxCheckInsPerWallet - walletStats.CheckInCount;
+            if (remaining < 0)
+            {
+                remaining = 0;
+            }
+        }
+
+        return
+        [
+            walletStats.CheckInCount,
+            walletStats.LastCheckInAt,
+            remaining,
+            CanCheckInInternal(collectionId, account, program, walletStats),
+        ];
+    }
+
+    [Safe]
+    public static bool canCheckIn(ByteString collectionId, UInt160 account)
+    {
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        if (!account.IsValid)
+        {
+            throw new Exception("Invalid account");
+        }
+
+        GetCollectionState(collectionId);
+        CheckInProgramState program = GetCheckInProgramState(collectionId);
+        CheckInWalletStatsState walletStats = GetCheckInWalletStatsState(collectionId, account);
+        return CanCheckInInternal(collectionId, account, program, walletStats);
+    }
+
+    [Safe]
+    public static object[] getMembershipStatus(ByteString collectionId, UInt160 account)
+    {
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        if (!account.IsValid)
+        {
+            throw new Exception("Invalid account");
+        }
+
+        GetCollectionState(collectionId);
+        CheckInProgramState program = GetCheckInProgramState(collectionId);
+        BigInteger membershipBalance = GetCollectionMembershipBalance(collectionId, account);
+
+        return
+        [
+            membershipBalance,
+            membershipBalance > 0,
+            program.MembershipRequired,
+            program.MembershipSoulbound,
+        ];
+    }
+
+    [Safe]
+    public static BigInteger getTokenClass(ByteString tokenId)
+    {
+        AssertDedicatedContractMode();
+        if (tokenId is null || tokenId.Length == 0 || Tokens().Get(tokenId) is null)
+        {
+            throw new Exception("Token not found");
+        }
+
+        return GetTokenClassValue(tokenId);
+    }
+
     private static void AssertCheckInAllowed(
         ByteString collectionId,
         CollectionState collection,
@@ -178,6 +261,41 @@ public partial class MultiTenantNftPlatform
         if (program.EndAt > 0 && now > program.EndAt)
         {
             return false;
+        }
+
+        return true;
+    }
+
+    private static bool CanCheckInInternal(
+        ByteString collectionId,
+        UInt160 account,
+        CheckInProgramState program,
+        CheckInWalletStatsState walletStats
+    )
+    {
+        CollectionState collection = GetCollectionState(collectionId);
+        if (!program.Enabled || collection.Paused || !IsCheckInWindowOpen(program))
+        {
+            return false;
+        }
+
+        if (program.MembershipRequired && GetCollectionMembershipBalance(collectionId, account) <= 0)
+        {
+            return false;
+        }
+
+        if (program.MaxCheckInsPerWallet > 0 && walletStats.CheckInCount >= program.MaxCheckInsPerWallet)
+        {
+            return false;
+        }
+
+        if (program.IntervalSeconds > 0 && walletStats.LastCheckInAt > 0)
+        {
+            BigInteger nextAvailableAt = walletStats.LastCheckInAt + program.IntervalSeconds;
+            if (Runtime.Time < nextAvailableAt)
+            {
+                return false;
+            }
         }
 
         return true;

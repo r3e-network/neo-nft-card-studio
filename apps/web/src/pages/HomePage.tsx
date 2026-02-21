@@ -6,6 +6,7 @@ import { NeoRpcService } from "@platform/neo-sdk";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, fetchGhostMarketMeta, fetchStats } from "../lib/api";
+import { toUserErrorMessage } from "../lib/errors";
 import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import type { CollectionDto, GhostMarketMetaDto, StatsDto } from "../lib/types";
 
@@ -52,7 +53,7 @@ export function HomePage() {
 
         const [fetchedStats, fetchedGhostMarket, fetchedCollections, fetchedBlockCount] = await Promise.all([
           fetchStats(),
-          fetchGhostMarketMeta(),
+          fetchGhostMarketMeta().catch(() => null),
           fetchCollections(),
           runtimeRpc.getBlockCount().catch(() => null),
         ]);
@@ -69,7 +70,7 @@ export function HomePage() {
         if (!alive) {
           return;
         }
-        setError((err as Error).message);
+        setError(toUserErrorMessage(t, err));
       } finally {
         if (alive) {
           setLoading(false);

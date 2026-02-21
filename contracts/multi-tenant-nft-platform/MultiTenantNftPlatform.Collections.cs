@@ -93,6 +93,32 @@ public partial class MultiTenantNftPlatform
         EmitCollectionUpserted(collectionId, state);
     }
 
+    public static void setDedicatedExtraData(ByteString collectionId, object extraData)
+    {
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        CollectionState state = GetCollectionState(collectionId);
+
+        UInt160 initializerContract = GetInitializerContract();
+        bool ownerWitness = Runtime.CheckWitness(state.Owner);
+        bool initializerAuthorized = initializerContract != UInt160.Zero && Runtime.CallingScriptHash == initializerContract;
+        if (!ownerWitness && !initializerAuthorized)
+        {
+            throw new Exception("No authorization");
+        }
+
+        SetDedicatedExtraData(collectionId, extraData);
+    }
+
+    [Safe]
+    public static object getDedicatedExtraData(ByteString collectionId)
+    {
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        GetCollectionState(collectionId);
+        return GetDedicatedExtraData(collectionId);
+    }
+
     public static void updateCollection(ByteString collectionId, string description, string baseUri, BigInteger royaltyBps, bool transferable, bool paused)
     {
         collectionId = EnforceCollectionScope(collectionId);

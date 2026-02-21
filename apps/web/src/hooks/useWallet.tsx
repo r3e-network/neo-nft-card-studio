@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import type { WalletInvokeRequest } from "@platform/neo-sdk";
 
@@ -19,6 +19,7 @@ interface WalletState {
   isConnecting: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
+  sync: () => Promise<void>;
   invoke: (payload: WalletInvokeRequest) => Promise<string>;
 }
 
@@ -46,6 +47,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
 
+  const syncWalletSession = useCallback(async (): Promise<{
+    address: string | null;
+    network: NeoWalletNetwork | null;
+  }> => {
+    const [currentNetwork, currentAccount] = await Promise.all([getNeoWalletNetwork(), getNeoWalletAccount()]);
+    const nextAddress = currentAccount?.address?.trim() || null;
+    const nextNetwork = nextAddress ? currentNetwork : null;
+
+    setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+    setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+    setRuntimeWalletNetwork(nextNetwork);
+
+    return {
+      address: nextAddress,
+      network: nextNetwork,
+    };
+  }, []);
+
   useEffect(() => {
     if (isReady) return;
 
@@ -64,7 +83,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [isReady]);
 
   useEffect(() => {
-    if (!address) {
+    if (!isReady) {
       return;
     }
 
@@ -72,27 +91,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const syncNetwork = async () => {
       try {
-        const [currentNetwork, currentAccount] = await Promise.all([getNeoWalletNetwork(), getNeoWalletAccount()]);
         if (closed) {
           return;
         }
-
-        setAddress((prev) => {
-          const nextAddress = currentAccount?.address ?? null;
-          if (!nextAddress || isSameWalletAddress(prev, nextAddress)) {
-            return prev;
-          }
-          return nextAddress;
-        });
-
-        setNetwork((prev) => {
-          if (isSameWalletNetwork(prev, currentNetwork)) {
-            return prev;
-          }
-
-          setRuntimeWalletNetwork(currentNetwork);
-          return currentNetwork;
-        });
+        await syncWalletSession();
       } catch {
         // ignore transient provider/network read failures
       }
@@ -116,7 +118,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [address]);
+  }, [isReady, syncWalletSession]);
 
   const value = useMemo<WalletState>(
     () => ({
@@ -131,11 +133,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           if (!isReady && getNeoProvider()) {
             setIsReady(true);
           }
-          const account = await connectNeoWallet();
-          const walletNetwork = await getNeoWalletNetwork();
-          setAddress(account.address);
-          setNetwork(walletNetwork);
-          setRuntimeWalletNetwork(walletNetwork);
+          await connectNeoWallet();
+          await syncWalletSession();
         } finally {
           setIsConnecting(false);
         }
@@ -145,15 +144,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setNetwork(null);
         setRuntimeWalletNetwork(null);
       },
+      sync: async () => {
+        const session = await syncWalletSession();
+        if (!session.address) {
+          throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+        }
+
+        if (!session.network || session.network.network === "unknown") {
+          throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
+        }
+      },
       invoke: async (payload: WalletInvokeRequest) => {
-        const walletNetwork = await getNeoWalletNetwork();
-        setNetwork(walletNetwork);
-        setRuntimeWalletNetwork(walletNetwork);
+        const session = await syncWalletSession();
+        if (!session.address) {
+          throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+        }
+
+        if (!session.network || session.network.network === "unknown") {
+          throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
+        }
+
         const result = await invokeNeoWallet(payload);
         return (result.txid ?? result.transaction ?? "").toString();
       },
     }),
-    [address, network, isConnecting, isReady],
+    [address, network, isConnecting, isReady, syncWalletSession],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

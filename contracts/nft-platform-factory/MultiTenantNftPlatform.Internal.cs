@@ -39,6 +39,11 @@ public partial class MultiTenantNftPlatform
         return new StorageMap(Storage.CurrentContext, PrefixOwnerDedicatedCollection);
     }
 
+    private static StorageMap CollectionDeployExtraDataStore()
+    {
+        return new StorageMap(Storage.CurrentContext, PrefixCollectionDeployExtraData);
+    }
+
     private static StorageMap Tokens()
     {
         return new StorageMap(Storage.CurrentContext, PrefixToken);
@@ -307,6 +312,28 @@ public partial class MultiTenantNftPlatform
     private static void SetOwnerDedicatedCollectionId(UInt160 owner, ByteString collectionId)
     {
         OwnerDedicatedCollections().Put((ByteString)owner, collectionId);
+    }
+
+    private static object GetCollectionDeployExtraData(ByteString collectionId)
+    {
+        ByteString serialized = CollectionDeployExtraDataStore().Get(collectionId);
+        if (serialized is null || serialized.Length == 0)
+        {
+            return null;
+        }
+
+        return StdLib.Deserialize(serialized);
+    }
+
+    private static void SetCollectionDeployExtraData(ByteString collectionId, object extraData)
+    {
+        if (extraData is null)
+        {
+            CollectionDeployExtraDataStore().Delete(collectionId);
+            return;
+        }
+
+        CollectionDeployExtraDataStore().Put(collectionId, StdLib.Serialize(extraData));
     }
 
     private static bool IsDedicatedContractMode()

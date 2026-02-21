@@ -4,6 +4,7 @@ import { PlusCircle, UploadCloud, Rocket } from "lucide-react";
 
 import { useWallet } from "../hooks/useWallet";
 import { uploadToNeoFs } from "../lib/api";
+import { toUserErrorMessage } from "../lib/errors";
 import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 
@@ -71,6 +72,7 @@ export function CreateCollectionPage() {
 
     try {
       setSubmitting(true);
+      await wallet.sync();
       let neofsUri = form.baseUri;
       if (file) {
         const uploadRes = await uploadToNeoFs(file);
@@ -129,7 +131,7 @@ export function CreateCollectionPage() {
       setForm(DEFAULT_FORM);
       setFile(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setSubmitting(false);
     }

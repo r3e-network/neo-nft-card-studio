@@ -63,6 +63,7 @@ public partial class MultiTenantNftPlatform : SmartContract
     private static readonly byte[] PrefixOwnerBalance = [0x22];
     private static readonly byte[] PrefixOwnerToken = [0x23];
     private static readonly byte[] PrefixTokenClass = [0x24];
+    private static readonly byte[] PrefixDedicatedExtraData = [0x25];
 
     private static readonly BigInteger TokenClassStandard = 0;
     private static readonly BigInteger TokenClassMembership = 1;

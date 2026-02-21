@@ -352,6 +352,8 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   const availableNetworks = API_NETWORKS.filter((network) => !!networkContexts[network]);
   const NEOFS_METADATA_MAX_BYTES = 1024 * 1024;
   const NEOFS_RESOURCE_MAX_BYTES = 20 * 1024 * 1024;
+  const NEOFS_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+  const NEOFS_LOCAL_STORE_MAX_ENTRIES = 500;
   const localNeoFsStore = new Map<string, { contentType: string; bodyText?: string; body?: Buffer }>();
 
   function resolveContextOrReply(req: Request, res: Response): ApiRouteNetworkContext | null {
@@ -520,6 +522,11 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   );
 
   router.get("/meta/neofs/resolve", withNetworkContext((context, req, res) => {
+    if (!config.NEOFS_ENABLED) {
+      res.status(503).json({ message: "NeoFS integration is disabled" });
+      return;
+    }
+
     const parsed = queryUriSchema.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ message: "Invalid query", error: parsed.error.flatten() });
@@ -548,6 +555,11 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   }));
 
   router.post("/meta/neofs/upload", withNetworkContext((context, req, res) => {
+    if (!config.NEOFS_ENABLED) {
+      res.status(503).json({ message: "NeoFS integration is disabled" });
+      return;
+    }
+
     const { type, content } = req.body;
     if (!content || !type || typeof content !== "string") {
       res.status(400).json({ message: "Missing type or base64 content" });
@@ -559,11 +571,40 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       base64 = content.split("base64,")[1];
     }
 
-    const buffer = Buffer.from(base64, "base64");
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(base64, "base64");
+    } catch {
+      res.status(400).json({ message: "Invalid base64 payload" });
+      return;
+    }
+
+    if (buffer.length === 0) {
+      res.status(400).json({ message: "Decoded payload is empty" });
+      return;
+    }
+
+    if (buffer.length > NEOFS_UPLOAD_MAX_BYTES) {
+      res.status(413).json({
+        message: "Upload payload is too large",
+        maxBytes: NEOFS_UPLOAD_MAX_BYTES,
+        actualBytes: buffer.length,
+      });
+      return;
+    }
+
     const isJson = type.includes("json");
     const containerId = "local_demo";
     const objectId = Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
     const uri = `neofs://${containerId}/${objectId}`;
+
+    while (localNeoFsStore.size >= NEOFS_LOCAL_STORE_MAX_ENTRIES) {
+      const oldestKey = localNeoFsStore.keys().next().value as string | undefined;
+      if (!oldestKey) {
+        break;
+      }
+      localNeoFsStore.delete(oldestKey);
+    }
 
     localNeoFsStore.set(objectId, {
       contentType: type,
@@ -761,7 +802,51 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       const platformContractHash = normalizeContractHash(context.config.NEO_CONTRACT_HASH);
       const requestedContractHash = readContractHashQueryValue(req.query.contractHash);
       const contractHash = requestedContractHash ? normalizeContractHash(requestedContractHash) : platformContractHash;
-      const manifestSummary = await context.indexer.getContractManifestSummary(contractHash);
+      let manifestSummary:
+        | {
+            supportedStandards: string[];
+            methods: Array<{
+              name: string;
+              parameterTypes: string[];
+              returnType: string;
+            }>;
+          }
+        | null = null;
+      try {
+        manifestSummary = await context.indexer.getContractManifestSummary(contractHash);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown RPC error";
+        res.json({
+          network: context.network,
+          defaultNetwork: config.NEO_DEFAULT_NETWORK,
+          availableNetworks,
+          enabled: context.config.GHOSTMARKET_ENABLED,
+          baseUrl: context.config.GHOSTMARKET_BASE_URL,
+          contractHash,
+          platformContractHash,
+          isPlatformContract: contractHash === platformContractHash,
+          manifestAvailable: false,
+          manifestError: `Failed to read manifest via RPC: ${message}`,
+          compatibility: {
+            compatible: false,
+            reasons: ["Manifest unavailable: failed to read contract manifest via RPC."],
+            warnings: [],
+            reasonIssues: [
+              {
+                code: "manifest_unavailable",
+                message: "Manifest unavailable: failed to read contract manifest via RPC.",
+                params: {
+                  rpcError: message,
+                },
+              },
+            ],
+            warningIssues: [],
+            checkedAt: new Date().toISOString(),
+          },
+          checkedAt: new Date().toISOString(),
+        });
+        return;
+      }
 
       const compatibility = evaluateGhostMarketCompatibility({
         dialect: context.config.NEO_CONTRACT_DIALECT,

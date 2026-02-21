@@ -84,6 +84,11 @@ public partial class MultiTenantNftPlatform
         return new StorageMap(Storage.CurrentContext, PrefixTokenClass);
     }
 
+    private static StorageMap DedicatedExtraDataStore()
+    {
+        return new StorageMap(Storage.CurrentContext, PrefixDedicatedExtraData);
+    }
+
     private static void ValidateCollectionInputs(string name, string tokenSymbol, string description, string baseUri, BigInteger maxSupply, BigInteger royaltyBps)
     {
         if (name.Length == 0 || name.Length > 80)
@@ -522,6 +527,28 @@ public partial class MultiTenantNftPlatform
         }
 
         TokenClasses().Put(tokenId, tokenClass);
+    }
+
+    private static object GetDedicatedExtraData(ByteString collectionId)
+    {
+        ByteString serialized = DedicatedExtraDataStore().Get(collectionId);
+        if (serialized is null || serialized.Length == 0)
+        {
+            return null;
+        }
+
+        return StdLib.Deserialize(serialized);
+    }
+
+    private static void SetDedicatedExtraData(ByteString collectionId, object extraData)
+    {
+        if (extraData is null)
+        {
+            DedicatedExtraDataStore().Delete(collectionId);
+            return;
+        }
+
+        DedicatedExtraDataStore().Put(collectionId, StdLib.Serialize(extraData));
     }
 
     private static BigInteger GetCollectionMembershipBalance(ByteString collectionId, UInt160 account)

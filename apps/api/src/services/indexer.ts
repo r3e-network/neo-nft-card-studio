@@ -153,36 +153,31 @@ export class IndexerService {
       }
     | null
   > {
-    try {
-      const state = (await this.rpc.getContractState(contractHash)) as RawContractState;
-      const manifest = state?.manifest;
-      if (!manifest) {
-        return null;
-      }
-
-      const supportedStandards = Array.isArray(manifest.supportedstandards)
-        ? manifest.supportedstandards.map((entry) => entry.toString())
-        : [];
-      const methods = Array.isArray(manifest.abi?.methods)
-        ? manifest.abi.methods
-            .filter((method) => typeof method?.name === "string" && method.name.length > 0)
-            .map((method) => ({
-              name: (method.name as string).toString(),
-              parameterTypes: Array.isArray(method.parameters)
-                ? method.parameters.map((parameter) => parameter?.type?.toString() ?? "Any")
-                : [],
-              returnType: method.returntype?.toString() ?? "Void",
-            }))
-        : [];
-
-      return {
-        supportedStandards,
-        methods,
-      };
-    } catch (error) {
-      this.log.warn({ err: error }, "Failed to read contract manifest via RPC");
+    const state = (await this.rpc.getContractState(contractHash)) as RawContractState;
+    const manifest = state?.manifest;
+    if (!manifest) {
       return null;
     }
+
+    const supportedStandards = Array.isArray(manifest.supportedstandards)
+      ? manifest.supportedstandards.map((entry) => entry.toString())
+      : [];
+    const methods = Array.isArray(manifest.abi?.methods)
+      ? manifest.abi.methods
+          .filter((method) => typeof method?.name === "string" && method.name.length > 0)
+          .map((method) => ({
+            name: (method.name as string).toString(),
+            parameterTypes: Array.isArray(method.parameters)
+              ? method.parameters.map((parameter) => parameter?.type?.toString() ?? "Any")
+              : [],
+            returnType: method.returntype?.toString() ?? "Void",
+          }))
+      : [];
+
+    return {
+      supportedStandards,
+      methods,
+    };
   }
 
   getCurrentSyncBlock(): number {
@@ -354,11 +349,7 @@ export class IndexerService {
         const toAddress = formatNeoAddress(args[1]) || null;
         const tokenId = valueAsString(args[3]);
 
-        if (toAddress) {
-          this.db.markTokenOwner(tokenId, toAddress, timestamp);
-        }
-
-        this.db.insertTransfer({
+        this.db.applyTransfer({
           txid,
           tokenId,
           fromAddress,

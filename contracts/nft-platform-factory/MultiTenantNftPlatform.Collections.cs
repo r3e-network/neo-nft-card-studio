@@ -252,7 +252,18 @@ public partial class MultiTenantNftPlatform
             state.CreatedAt
         );
 
-        _ = extraData;
+        if (extraData is not null)
+        {
+            Contract.Call(
+                deployed.Hash,
+                "setDedicatedExtraData",
+                CallFlags.All,
+                collectionId,
+                extraData
+            );
+        }
+
+        SetCollectionDeployExtraData(collectionId, extraData);
         CollectionContracts().Put(collectionId, deployed.Hash);
         SetOwnerDedicatedCollectionId(state.Owner, collectionId);
 
@@ -278,6 +289,13 @@ public partial class MultiTenantNftPlatform
     {
         collectionId = EnforceCollectionScope(collectionId);
         return CollectionContracts().Get(collectionId) is not null;
+    }
+
+    [Safe]
+    public static object getCollectionDeployExtraData(ByteString collectionId)
+    {
+        collectionId = EnforceCollectionScope(collectionId);
+        return GetCollectionDeployExtraData(collectionId);
     }
 
     [Safe]

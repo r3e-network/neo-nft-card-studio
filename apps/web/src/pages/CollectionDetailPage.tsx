@@ -13,6 +13,7 @@ import {
   getNeoFsResourceProxyUrl,
   resolveNeoFsUri,
 } from "../lib/api";
+import { toUserErrorMessage } from "../lib/errors";
 import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
@@ -354,10 +355,10 @@ export function CollectionDetailPage() {
   const runtimeDialect = useRuntimeContractDialect();
   const isRustDialect = runtimeDialect === "rust";
   const isCsharpDialect = runtimeDialect === "csharp";
-  const supportsWalletLevelStats = !isCsharpDialect;
   const hasDedicatedContract = Boolean(
     deployedCollectionContractHash && !isZeroUInt160Hex(deployedCollectionContractHash),
   );
+  const supportsWalletLevelStats = !isCsharpDialect || hasDedicatedContract;
   const runtimeNetwork = getRuntimeNetworkConfig();
 
   const getActionClient = () => {
@@ -453,7 +454,7 @@ export function CollectionDetailPage() {
         resolvedContractHashForGhostMeta && !isZeroUInt160Hex(resolvedContractHashForGhostMeta)
           ? resolvedContractHashForGhostMeta
           : undefined,
-      );
+      ).catch(() => null);
       setGhostMarket(ghostMeta);
     } catch (err) {
       if (isRustDialect) {
@@ -470,7 +471,7 @@ export function CollectionDetailPage() {
         setDeployedCollectionContractHash("");
         setError(t("detail.err_rust_index_limited"));
       } else {
-        setError((err as Error).message);
+        setError(toUserErrorMessage(t, err));
       }
     } finally {
       setLoading(false);
@@ -617,6 +618,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildUpdateCollectionInvoke({
@@ -634,7 +636,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_collection_updated", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -662,6 +664,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildSetCollectionOperatorInvoke({
@@ -675,7 +678,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_operator_updated", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -698,6 +701,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildMintInvoke({
@@ -715,7 +719,7 @@ export function CollectionDetailPage() {
       setMintForm(defaultMintForm(wallet.address));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -736,6 +740,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildBatchMintInvoke({
@@ -750,7 +755,7 @@ export function CollectionDetailPage() {
       setMintForm(defaultMintForm(wallet.address));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -784,6 +789,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getPlatformClient();
       const txid = await wallet.invoke(
         client.buildDeployCollectionContractFromTemplateInvoke({
@@ -800,7 +806,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_template_deploy_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -835,6 +841,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildConfigureDropInvoke({
@@ -850,7 +857,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_drop_config_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -895,6 +902,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildConfigureCheckInProgramInvoke({
@@ -913,7 +921,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_check_in_program_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -970,7 +978,7 @@ export function CollectionDetailPage() {
         };
       });
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
       return;
     }
 
@@ -981,6 +989,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       let txid = "";
 
@@ -1011,7 +1020,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_drop_whitelist_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -1038,6 +1047,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildClaimDropInvoke(
@@ -1058,7 +1068,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_drop_claim_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -1085,6 +1095,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildCheckInInvoke(
@@ -1105,7 +1116,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_check_in_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -1133,6 +1144,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const transferRequest = isRustDialect
         ? {
@@ -1146,7 +1158,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_transfer_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -1168,6 +1180,7 @@ export function CollectionDetailPage() {
 
     try {
       setWorking(true);
+      await wallet.sync();
       const client = getActionClient();
       const txid = await wallet.invoke(
         client.buildBurnInvoke({
@@ -1178,7 +1191,7 @@ export function CollectionDetailPage() {
       setMessage(t("detail.msg_burn_submitted", { txid }));
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setWorking(false);
     }
@@ -1216,7 +1229,7 @@ export function CollectionDetailPage() {
       });
       setMessage(t("detail.msg_neofs_loaded", { tokenId: token.tokenId }));
     } catch (err) {
-      setError((err as Error).message);
+      setError(toUserErrorMessage(t, err));
     } finally {
       setMetadataLoadingTokenId("");
     }

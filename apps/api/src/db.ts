@@ -189,6 +189,29 @@ export class AppDb {
       .run(input);
   }
 
+  applyTransfer(input: TransferRecord): void {
+    const txn = this.db.transaction((record: TransferRecord) => {
+      if (record.toAddress) {
+        this.db
+          .prepare(
+            `UPDATE tokens
+             SET owner = ?, updated_at = ?
+             WHERE token_id = ?`,
+          )
+          .run(record.toAddress, record.timestamp, record.tokenId);
+      }
+
+      this.db
+        .prepare(
+          `INSERT INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
+           VALUES(@txid, @tokenId, @fromAddress, @toAddress, @blockIndex, @timestamp)`,
+        )
+        .run(record);
+    });
+
+    txn(input);
+  }
+
   listCollections(owner?: string): CollectionRecord[] {
     if (owner) {
       return this.db

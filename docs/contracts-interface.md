@@ -56,6 +56,7 @@ Factory management:
 - `deployCollectionContractFromTemplate(collectionId, extraData) -> UInt160`
 - `getCollectionContract(collectionId) -> UInt160` (`UInt160.Zero` if not deployed)
 - `hasCollectionContract(collectionId) -> bool`
+- `getCollectionDeployExtraData(collectionId) -> object` (returns `null` if not set)
 - `getOwnerDedicatedCollection(owner) -> ByteString`
 - `getOwnerDedicatedCollectionContract(owner) -> UInt160`
 - `hasOwnerDedicatedCollectionContract(owner) -> bool`
@@ -75,15 +76,17 @@ Template runtime management:
 - `getCheckInProgram(...) -> object[]`
 - `checkIn(...) -> object[]`
 - `initializeDedicatedCollection(...)`
+- `setDedicatedExtraData(...)`
+- `getDedicatedExtraData(...) -> object`
 - `burn(tokenId)`
-- C# Template intentionally keeps a reduced wallet-query surface (no `getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`), while keeping NEP-11/NEP-24 runtime methods complete.
+- Wallet-level query helpers are available across all dialects (`getDropWalletStats` / `canClaimDrop` / `getCheckInWalletStats` / `canCheckIn` / `getMembershipStatus` / `getTokenClass`).
 
 Runtime deploy semantics:
 - Primary mode: factory contract deploys dedicated NFT template contracts.
 - Isolation mode: platform owner sets one template (`setCollectionContractTemplate`), then collection owner deploys own dedicated contract instance by config (`deployCollectionContractFromTemplate`).
 - Dedicated-user mode: creator can directly execute `createCollectionAndDeployFromTemplate` to ensure one real independent NFT contract is created in the same transaction.
 - Dedicated contract hard isolation: runtime stores a bound `collectionId`; all public methods with `collectionId` must match it, and platform-level methods (`createCollection*`, template admin/deploy) are blocked.
-- Dedicated init hardening: `initializeDedicatedCollection` requires both owner witness and configured initializer-contract permission (when set by factory deploy data).
+- Dedicated init hardening: `initializeDedicatedCollection` requires owner witness, or a call from configured initializer-contract hash (when set by factory deploy data).
 - Deploy hash collision protection: when configuring template, use a unique template manifest `name` per factory deployment (the testnet flow script auto-appends a suffix).
 - User side does not need to compile or upload custom `nef/manifest`.
 
@@ -112,7 +115,7 @@ Type model:
 - `collectionId: uint256`
 - `tokenId: bytes32`
 
-Semantics are aligned with C# for collection/mint/transfer/burn/operator/query/royalty APIs, and Solidity also exposes wallet-level drop/membership query helpers:
+Semantics are aligned with C# for collection/mint/transfer/burn/operator/query/royalty APIs, including wallet-level drop/membership query helpers:
 - `configureDrop`
 - `setDropWhitelist`
 - `setDropWhitelistBatch`

@@ -23,7 +23,12 @@ const resources = {
                 page_error: "Page failed to load.",
                 reload: "Reload",
                 dialect_mismatch: "Contract dialect mismatch: API={{runtime}}, Frontend={{env}}. The app now follows API dialect.",
-                contract_hash_missing: "Missing contract hash for {{network}}. Please set {{env}}."
+                contract_hash_missing: "Missing contract hash for {{network}}. Please set {{env}}.",
+                rpc_url_missing: "Missing RPC URL for {{network}}. Please set {{env}}.",
+                err_wallet_network_unknown: "Wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.",
+                err_wallet_session_unavailable: "Wallet session is unavailable. Please reconnect wallet.",
+                install_wallet_required: "No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.",
+                generic_error: "Request failed. Please check wallet/network and try again."
             },
             detail: {
                 loading: "Loading collection...",
@@ -305,7 +310,12 @@ const resources = {
                 page_error: "页面加载失败。",
                 reload: "重新加载",
                 dialect_mismatch: "合约方言不一致：API={{runtime}}，前端={{env}}。当前已按 API 方言执行。",
-                contract_hash_missing: "{{network}} 缺少合约哈希配置，请设置 {{env}}。"
+                contract_hash_missing: "{{network}} 缺少合约哈希配置，请设置 {{env}}。",
+                rpc_url_missing: "{{network}} 缺少 RPC 节点配置，请设置 {{env}}。",
+                err_wallet_network_unknown: "钱包网络无法识别，请切换到主网/测试网后重新连接。",
+                err_wallet_session_unavailable: "钱包会话不可用，请重新连接钱包。",
+                install_wallet_required: "未检测到 Neo N3 钱包，请安装 NeoLine、O3 或 OneGate。",
+                generic_error: "请求失败，请检查钱包与网络后重试。"
             },
             detail: {
                 loading: "正在加载 NFT 信息...",
