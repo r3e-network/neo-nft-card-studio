@@ -463,11 +463,12 @@ function checkCsharpDedicatedInitializationHardening(errors) {
   }
 
   if (!/Runtime\.CheckWitness\(owner\)/.test(templateCollections)) {
-    errors.push("CSharp source: initializeDedicatedCollection should require owner witness");
+    errors.push("CSharp source: initializeDedicatedCollection should evaluate owner witness");
   }
 
-  if (!/Runtime\.CallingScriptHash != initializerContract/.test(templateCollections)) {
-    errors.push("CSharp source: initializeDedicatedCollection should gate calls by configured initializer contract");
+  if (!/Runtime\.CallingScriptHash == initializerContract/.test(templateCollections)
+    || !/if\s*\(!ownerWitness && !initializerAuthorized\)/.test(templateCollections)) {
+    errors.push("CSharp source: initializeDedicatedCollection should allow either owner witness or configured initializer contract");
   }
 
   if (!/Runtime\.ExecutingScriptHash/.test(factoryCollections)
