@@ -212,13 +212,35 @@ async function runApiSmoke() {
       }),
     });
     assert(invalidUpload.status === 400, "NeoFS upload should reject malformed base64");
+    const invalidTypeUpload = await fetch(`${baseUrl}/api/meta/neofs/upload`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: 123,
+        content: Buffer.from(JSON.stringify({ smoke: true }), "utf8").toString("base64"),
+      }),
+    });
+    assert(invalidTypeUpload.status === 400, "NeoFS upload should reject non-string content type");
+    const blankTypeUpload = await fetch(`${baseUrl}/api/meta/neofs/upload`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "   ",
+        content: Buffer.from(JSON.stringify({ smoke: true }), "utf8").toString("base64"),
+      }),
+    });
+    assert(blankTypeUpload.status === 400, "NeoFS upload should reject blank content type");
     const validUpload = await fetch(`${baseUrl}/api/meta/neofs/upload`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        type: "application/json",
+        type: "APPLICATION/JSON",
         content: `data:application/json;base64,${Buffer.from(JSON.stringify({ smoke: true }), "utf8").toString("base64")}`,
       }),
     });

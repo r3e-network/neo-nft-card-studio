@@ -420,7 +420,9 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   const NEOFS_RESOURCE_MAX_BYTES = 20 * 1024 * 1024;
   const NEOFS_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
   const NEOFS_LOCAL_STORE_MAX_ENTRIES = 500;
-  const localNeoFsStore = new Map<string, { contentType: string; bodyText?: string; body?: Buffer }>();
+  const NEOFS_LOCAL_STORE_MAX_BYTES = 64 * 1024 * 1024;
+  const localNeoFsStore = new Map<string, { contentType: string; bodyText?: string; body?: Buffer; byteLength: number }>();
+  let localNeoFsStoreTotalBytes = 0;
 
   function resolveContextOrReply(req: Request, res: Response): ApiRouteNetworkContext | null {
     const rawNetwork = readNetworkQueryValue(req.query.network);
@@ -529,6 +531,29 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     }
   }
 
+  function trimLocalNeoFsStore(requiredBytes: number): void {
+    while (
+      localNeoFsStore.size > 0 &&
+      (localNeoFsStore.size >= NEOFS_LOCAL_STORE_MAX_ENTRIES
+        || localNeoFsStoreTotalBytes + requiredBytes > NEOFS_LOCAL_STORE_MAX_BYTES)
+    ) {
+      const oldestKey = localNeoFsStore.keys().next().value as string | undefined;
+      if (!oldestKey) {
+        break;
+      }
+
+      const oldest = localNeoFsStore.get(oldestKey);
+      if (oldest) {
+        localNeoFsStoreTotalBytes -= oldest.byteLength;
+        if (localNeoFsStoreTotalBytes < 0) {
+          localNeoFsStoreTotalBytes = 0;
+        }
+      }
+
+      localNeoFsStore.delete(oldestKey);
+    }
+  }
+
   router.get(
     "/health",
     withNetworkContext(async (context, _req, res) => {
@@ -626,9 +651,22 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       return;
     }
 
-    const { type, content } = req.body;
-    if (!content || !type || typeof content !== "string") {
+    const payload = typeof req.body === "object" && req.body !== null ? req.body as Record<string, unknown> : null;
+    if (!payload) {
+      res.status(400).json({ message: "Invalid request body" });
+      return;
+    }
+
+    const type = payload.type;
+    const content = payload.content;
+    if (!content || !type || typeof content !== "string" || typeof type !== "string") {
       res.status(400).json({ message: "Missing type or base64 content" });
+      return;
+    }
+
+    const contentType = type.trim();
+    if (contentType.length === 0 || contentType.length > 255) {
+      res.status(400).json({ message: "Invalid content type" });
       return;
     }
 
@@ -659,24 +697,39 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       return;
     }
 
-    const isJson = type.includes("json");
+    const isJson = contentType.toLowerCase().includes("json");
     const containerId = "local_demo";
     const objectId = Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
     const uri = `neofs://${containerId}/${objectId}`;
 
-    while (localNeoFsStore.size >= NEOFS_LOCAL_STORE_MAX_ENTRIES) {
-      const oldestKey = localNeoFsStore.keys().next().value as string | undefined;
-      if (!oldestKey) {
-        break;
+    const bodyText = isJson ? buffer.toString("utf8") : undefined;
+    const byteLength = isJson ? Buffer.byteLength(bodyText ?? "", "utf8") : buffer.length;
+    if (byteLength > NEOFS_LOCAL_STORE_MAX_BYTES) {
+      res.status(413).json({
+        message: "Local NeoFS demo store cannot hold this payload",
+        maxBytes: NEOFS_LOCAL_STORE_MAX_BYTES,
+        actualBytes: byteLength,
+      });
+      return;
+    }
+
+    trimLocalNeoFsStore(byteLength);
+
+    const existing = localNeoFsStore.get(objectId);
+    if (existing) {
+      localNeoFsStoreTotalBytes -= existing.byteLength;
+      if (localNeoFsStoreTotalBytes < 0) {
+        localNeoFsStoreTotalBytes = 0;
       }
-      localNeoFsStore.delete(oldestKey);
     }
 
     localNeoFsStore.set(objectId, {
-      contentType: type,
+      contentType,
       body: isJson ? undefined : buffer,
-      bodyText: isJson ? buffer.toString("utf8") : undefined,
+      bodyText,
+      byteLength,
     });
+    localNeoFsStoreTotalBytes += byteLength;
 
     res.json({ network: context.network, uri, containerId, objectId });
   }));
