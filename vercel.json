@@ -9,31 +9,34 @@
       }
     },
     {
-      "src": "apps/web/package.json",
+      "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "dist"
+        "buildCommand": "npm run build:vercel",
+        "distDir": "apps/web/dist"
       }
     }
   ],
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.ts"
+      "destination": "api/index.ts"
     },
     {
       "source": "/",
-      "destination": "/api/index.ts"
+      "destination": "api/index.ts"
     },
     {
       "source": "/((?!api/).*)",
-      "destination": "/apps/web/$1"
+      "destination": "/$1"
     }
   ],
-  "functions": {
-    "api/index.ts": {
-      "memory": 1024,
-      "maxDuration": 10
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
     }
-  }
+  ]
 }
