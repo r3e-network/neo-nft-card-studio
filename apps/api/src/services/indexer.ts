@@ -3,8 +3,8 @@ import pino from "pino";
 
 import { decodeStackItem, NeoRpcService } from "@platform/neo-sdk";
 
-import type { AppConfig } from "../config";
-import { AppDb } from "../db";
+import type { AppConfig } from "../config.js";
+import { AppDb } from "../db.js";
 
 interface RawNotification {
   contract: string;

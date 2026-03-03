@@ -1,12 +1,10 @@
 import cors from "cors";
 import express from "express";
-import pino from "pino";
-import pinoHttp from "pino-http";
 
-import { type ApiNetworkName, loadConfig } from "./config";
-import { AppDb } from "./db";
-import { type ApiRouteNetworkContext, createHttpRouter } from "./routes/http";
-import { IndexerService } from "./services/indexer";
+import { type ApiNetworkName, loadConfig } from "./config.js";
+import { AppDb } from "./db.js";
+import { type ApiRouteNetworkContext, createHttpRouter } from "./routes/http.js";
+import { IndexerService } from "./services/indexer.js";
 
 export function createApp() {
   const config = loadConfig();
@@ -45,8 +43,6 @@ export function createApp() {
       origin: config.API_CORS_ORIGIN,
     }),
   );
-  app.use(pinoHttp());
-
   app.use("/api", createHttpRouter(networkContexts, config));
 
   app.get("/", (_req, res) => {

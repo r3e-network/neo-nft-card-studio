@@ -1,7 +1,7 @@
 import { rpc } from "@cityofzion/neon-js";
 
-import { decodeStackItem } from "./stack";
-import type { ContractArgument, RpcConfig } from "./types";
+import { decodeStackItem } from "./stack.js";
+import type { ContractArgument, RpcConfig } from "./types.js";
 
 export class NeoRpcService {
   private readonly client: any;

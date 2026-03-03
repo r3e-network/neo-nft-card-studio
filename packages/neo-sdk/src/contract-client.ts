@@ -23,8 +23,8 @@ import type {
   SetCollectionOperatorRequest,
   TransferRequest,
   WalletInvokeRequest,
-} from "./types";
-import { NeoRpcService } from "./rpc";
+} from "./types.js";
+import { NeoRpcService } from "./rpc.js";
 
 const HEX_CHARS = /^[0-9a-fA-F]+$/;
 

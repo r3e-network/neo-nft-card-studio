@@ -1,6 +1,6 @@
 import express from "express";
 import pino from "pino";
-import { createApp } from "../apps/api/src/app.ts";
+import { createApp } from "../apps/api/src/app.js";
 
 const log = pino({ name: "nft-platform-vercel-entry" });
 let app: express.Express;

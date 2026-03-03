@@ -10,7 +10,7 @@ import type {
   TokenListingRecord,
   TokenRecord,
   TransferRecord,
-} from "./types";
+} from "./types.js";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS sync_state (

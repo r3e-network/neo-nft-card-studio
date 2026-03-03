@@ -2,10 +2,10 @@ import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 
-import type { ApiNetworkName, AppConfig } from "../config";
-import type { IndexerService } from "../services/indexer";
-import { AppDb } from "../db";
-import { resolveNeoFsUri } from "../services/neofs";
+import type { ApiNetworkName, AppConfig } from "../config.js";
+import type { IndexerService } from "../services/indexer.js";
+import { AppDb } from "../db.js";
+import { resolveNeoFsUri } from "../services/neofs.js";
 
 const queryLimitSchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(100),

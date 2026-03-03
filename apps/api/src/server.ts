@@ -1,5 +1,5 @@
 import pino from "pino";
-import { createApp } from "./app";
+import { createApp } from "./app.js";
 
 const log = pino({ name: "nft-platform-api-server" });
 
