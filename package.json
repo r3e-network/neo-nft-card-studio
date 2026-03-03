@@ -20,6 +20,7 @@
     "check:contract:consistency": "node tools/verify-contract-consistency.js",
     "verify:contracts": "npm run build:contract:csharp && npm run build:contract:solidity && npm run build:contract:rust && npm run check:contract:nep && npm run check:contract:consistency",
     "test:testnet": "node scripts/testnet-flow.mjs",
+    "test:testnet:lifecycle": "node scripts/testnet-full-lifecycle.mjs",
     "smoke:trade": "node scripts/smoke-trade-flow.mjs",
     "smoke:e2e": "node scripts/smoke-e2e.mjs",
     "lint": "npm run lint --workspaces",
