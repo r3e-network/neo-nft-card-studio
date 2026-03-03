@@ -6,6 +6,7 @@ import type {
   ContractMetaDto,
   GhostMarketMetaDto,
   HealthDto,
+  MarketListingDto,
   NeoFsMetaDto,
   NeoFsMetadataDto,
   NeoFsResolveDto,
@@ -165,6 +166,32 @@ export async function fetchCollectionTokens(collectionId: string): Promise<Token
 export async function fetchWalletTokens(address: string): Promise<TokenDto[]> {
   const response = await getApiClient().get<TokenDto[]>(`/wallets/${address}/tokens`, {
     params: getNetworkQueryParams(),
+  });
+  return response.data;
+}
+
+export async function fetchMarketListings(input?: {
+  collectionId?: string;
+  owner?: string;
+  listedOnly?: boolean;
+  limit?: number;
+}): Promise<MarketListingDto[]> {
+  const queryParams: Record<string, string | number | boolean> = {};
+  if (input?.collectionId) {
+    queryParams.collectionId = input.collectionId;
+  }
+  if (input?.owner) {
+    queryParams.owner = input.owner;
+  }
+  if (typeof input?.listedOnly === "boolean") {
+    queryParams.listedOnly = input.listedOnly;
+  }
+  if (typeof input?.limit === "number") {
+    queryParams.limit = input.limit;
+  }
+
+  const response = await getApiClient().get<MarketListingDto[]>("/market/listings", {
+    params: getNetworkQueryParams(queryParams),
   });
   return response.data;
 }

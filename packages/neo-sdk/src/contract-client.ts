@@ -1,5 +1,7 @@
 import type {
   BurnRequest,
+  BuyTokenRequest,
+  CancelTokenSaleRequest,
   CollectionCreateAndDeployRequest,
   CollectionCreateRequest,
   CheckInRequest,
@@ -12,6 +14,7 @@ import type {
   ContractArgument,
   MintRequest,
   BatchMintRequest,
+  ListTokenForSaleRequest,
   RpcConfig,
   SetDropWhitelistBatchRequest,
   SetDropWhitelistRequest,
@@ -307,6 +310,24 @@ export class NeoNftPlatformClient {
           : await this.rpc.invokeRead("getTokenClass", [toByteArrayArg(tokenIdHex)]);
 
     return value?.toString() ?? "0";
+  }
+
+  async isTokenListed(tokenIdHex: string): Promise<boolean> {
+    if (this.dialect !== "csharp") {
+      throw new Error("isTokenListed is only available for csharp dialect");
+    }
+
+    const [value] = await this.rpc.invokeRead("isTokenListed", [toByteArrayArg(tokenIdHex)]);
+    return value === true;
+  }
+
+  async getTokenSale(tokenIdHex: string): Promise<unknown> {
+    if (this.dialect !== "csharp") {
+      throw new Error("getTokenSale is only available for csharp dialect");
+    }
+
+    const [value] = await this.rpc.invokeRead("getTokenSale", [toByteArrayArg(tokenIdHex)]);
+    return value;
   }
 
   async getRoyalties(tokenIdHex: string): Promise<string> {
@@ -633,6 +654,56 @@ export class NeoNftPlatformClient {
     return {
       scriptHash: this.config.contractHash,
       operation: "burn",
+      args: [toByteArrayArg(payload.tokenId)],
+    };
+  }
+
+  buildListTokenForSaleInvoke(payload: ListTokenForSaleRequest): WalletInvokeRequest {
+    if (this.dialect !== "csharp") {
+      throw new Error("listTokenForSale is only available for csharp dialect");
+    }
+
+    return {
+      scriptHash: this.config.contractHash,
+      operation: "listTokenForSale",
+      args: [toByteArrayArg(payload.tokenId), integerArg(payload.price)],
+    };
+  }
+
+  buildCancelTokenSaleInvoke(request: string | CancelTokenSaleRequest): WalletInvokeRequest {
+    if (this.dialect !== "csharp") {
+      throw new Error("cancelTokenSale is only available for csharp dialect");
+    }
+
+    const payload: CancelTokenSaleRequest =
+      typeof request === "string"
+        ? {
+          tokenId: request,
+        }
+        : request;
+
+    return {
+      scriptHash: this.config.contractHash,
+      operation: "cancelTokenSale",
+      args: [toByteArrayArg(payload.tokenId)],
+    };
+  }
+
+  buildBuyTokenInvoke(request: string | BuyTokenRequest): WalletInvokeRequest {
+    if (this.dialect !== "csharp") {
+      throw new Error("buyToken is only available for csharp dialect");
+    }
+
+    const payload: BuyTokenRequest =
+      typeof request === "string"
+        ? {
+          tokenId: request,
+        }
+        : request;
+
+    return {
+      scriptHash: this.config.contractHash,
+      operation: "buyToken",
       args: [toByteArrayArg(payload.tokenId)],
     };
   }

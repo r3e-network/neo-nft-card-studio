@@ -13,7 +13,8 @@ namespace NeoN3.MultiTenantNftPlatform;
 [ManifestExtra("Description", "Neo NFT dedicated template contract (NEP-11/NEP-24)")]
 [ManifestExtra("ContractRole", "Template")]
 [SupportedStandards("NEP-11", "NEP-24")]
-[ContractPermission("*", "*")]
+[ContractPermission("0xd2a4cff31913016155e38e474a2c06d08be276cf", "transfer")]
+[ContractPermission("*", "onNEP11Payment")]
 public partial class MultiTenantNftPlatform : SmartContract
 {
     [DisplayName("Transfer")]
@@ -43,6 +44,12 @@ public partial class MultiTenantNftPlatform : SmartContract
     [DisplayName("CheckedIn")]
     public static event Action<ByteString, UInt160, BigInteger, BigInteger, ByteString> OnCheckedIn;
 
+    [DisplayName("TokenListingUpdated")]
+    public static event Action<ByteString, UInt160, BigInteger, bool, BigInteger> OnTokenListingUpdated;
+
+    [DisplayName("TokenSaleMatched")]
+    public static event Action<ByteString, UInt160, UInt160, BigInteger, BigInteger> OnTokenSaleMatched;
+
     private static readonly byte[] PrefixContractOwner = [0x00];
     private static readonly byte[] PrefixTotalSupply = [0x01];
     private static readonly byte[] PrefixDedicatedContractMode = [0x03];
@@ -64,6 +71,7 @@ public partial class MultiTenantNftPlatform : SmartContract
     private static readonly byte[] PrefixOwnerToken = [0x23];
     private static readonly byte[] PrefixTokenClass = [0x24];
     private static readonly byte[] PrefixDedicatedExtraData = [0x25];
+    private static readonly byte[] PrefixTokenListing = [0x26];
 
     private static readonly BigInteger TokenClassStandard = 0;
     private static readonly BigInteger TokenClassMembership = 1;
@@ -92,6 +100,13 @@ public partial class MultiTenantNftPlatform : SmartContract
         public string PropertiesJson;
         public bool Burned;
         public BigInteger MintedAt;
+    }
+
+    public struct TokenListingState
+    {
+        public UInt160 Seller;
+        public BigInteger Price;
+        public BigInteger ListedAt;
     }
 
     public struct DropConfigState

@@ -13,6 +13,30 @@ const queryLimitSchema = z.object({
 const queryUriSchema = z.object({
   uri: z.string().trim().min(1).max(4096),
 });
+const queryMarketListingsSchema = z.object({
+  collectionId: z.string().trim().min(1).optional(),
+  owner: z.string().trim().min(1).optional(),
+  listedOnly: z
+    .preprocess((value) => {
+      if (typeof value === "boolean") {
+        return value;
+      }
+
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "true" || normalized === "1") {
+          return true;
+        }
+        if (normalized === "false" || normalized === "0") {
+          return false;
+        }
+      }
+
+      return value;
+    }, z.boolean())
+    .optional(),
+  limit: z.coerce.number().int().positive().max(500).default(100),
+});
 
 interface ManifestMethodSummary {
   name: string;
@@ -556,8 +580,9 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/health",
-    withNetworkContext(async (context, _req, res) => {
-      const chainBlockHeight = await context.indexer.getChainBlockHeight();
+    withNetworkContext((context, _req, res) => {
+      const chainBlockHeight = context.indexer.getLastKnownChainBlockHeight();
+      void context.indexer.getChainBlockHeight();
 
       res.json({
         status: "ok",
@@ -1065,6 +1090,62 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     "/stats",
     withNetworkContext((context, _req, res) => {
       res.json(context.db.getStats());
+    }),
+  );
+
+  router.get(
+    "/market/listings",
+    withNetworkContext((context, req, res) => {
+      const parsed = queryMarketListingsSchema.safeParse(req.query);
+      if (!parsed.success) {
+        res.status(400).json({ message: "Invalid query", error: parsed.error.flatten() });
+        return;
+      }
+
+      const rows = context.db.listMarketListings({
+        collectionId: parsed.data.collectionId,
+        owner: parsed.data.owner,
+        listedOnly: parsed.data.listedOnly,
+        limit: parsed.data.limit,
+      });
+
+      res.json(
+        rows.map((row) => ({
+          collection: {
+            collectionId: row.collectionId,
+            owner: row.collectionOwner,
+            name: row.collectionName,
+            symbol: row.collectionSymbol,
+            description: row.collectionDescription,
+            baseUri: row.collectionBaseUri,
+            contractHash: row.collectionContractHash ?? null,
+            maxSupply: row.collectionMaxSupply,
+            minted: row.collectionMinted,
+            royaltyBps: row.collectionRoyaltyBps,
+            transferable: row.collectionTransferable,
+            paused: row.collectionPaused,
+            createdAt: row.collectionCreatedAt,
+            updatedAt: row.collectionUpdatedAt,
+          },
+          token: {
+            tokenId: row.tokenId,
+            collectionId: row.collectionId,
+            owner: row.owner,
+            uri: row.uri,
+            propertiesJson: row.propertiesJson,
+            burned: row.burned,
+            mintedAt: row.mintedAt,
+            updatedAt: row.tokenUpdatedAt,
+          },
+          sale: {
+            listed: row.listed === 1,
+            seller: row.seller ?? "",
+            price: row.price ?? "0",
+            listedAt: row.listedAt ?? "",
+            updatedAt: row.listingUpdatedAt ?? "",
+          },
+        })),
+      );
     }),
   );
 

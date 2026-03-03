@@ -1,6 +1,6 @@
 import { FormEvent, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { PlusCircle, UploadCloud, Rocket } from "lucide-react";
+import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck } from "lucide-react";
 
 import { useWallet } from "../hooks/useWallet";
 import { uploadToNeoFs } from "../lib/api";
@@ -9,6 +9,7 @@ import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 
 interface FormState {
+  mode: "shared" | "dedicated";
   name: string;
   symbol: string;
   description: string;
@@ -25,6 +26,7 @@ interface FormState {
 }
 
 const DEFAULT_FORM: FormState = {
+  mode: "shared",
   name: "",
   symbol: "",
   description: "",
@@ -80,7 +82,7 @@ export function CreateCollectionPage() {
       }
 
       const client = getPlatformClient();
-      if (contractDialect === "csharp") {
+      if (contractDialect === "csharp" && form.mode === "dedicated") {
         const [templateReady, templateSegmentsReady] = await Promise.all([
           client.hasCollectionContractTemplate(),
           client.hasCollectionContractTemplateNameSegments().catch(() => false),
@@ -94,32 +96,44 @@ export function CreateCollectionPage() {
       const payload =
         contractDialect === "csharp"
           ? (() => {
-              const trimmed = form.extraDataJson.trim();
-              let extraData: unknown = null;
-              if (trimmed.length > 0) {
-                try {
-                  extraData = JSON.parse(trimmed);
-                } catch {
-                  throw new Error(t("create.err_extra_json"));
+              if (form.mode === "dedicated") {
+                const trimmed = form.extraDataJson.trim();
+                let extraData: unknown = null;
+                if (trimmed.length > 0) {
+                  try {
+                    extraData = JSON.parse(trimmed);
+                  } catch {
+                    throw new Error(t("create.err_extra_json"));
+                  }
                 }
-              }
 
-              return client.buildCreateCollectionAndDeployFromTemplateInvoke({
-                name: form.name,
-                symbol: form.symbol,
-                description: form.description,
-                baseUri: neofsUri,
-                maxSupply: form.maxSupply,
-                royaltyBps: Number(form.royaltyBps),
-                transferable: form.transferable,
-                extraData: extraData as
-                  | string
-                  | number
-                  | boolean
-                  | null
-                  | Array<unknown>
-                  | Record<string, unknown>,
-              });
+                return client.buildCreateCollectionAndDeployFromTemplateInvoke({
+                  name: form.name,
+                  symbol: form.symbol,
+                  description: form.description,
+                  baseUri: neofsUri,
+                  maxSupply: form.maxSupply,
+                  royaltyBps: Number(form.royaltyBps),
+                  transferable: form.transferable,
+                  extraData: extraData as
+                    | string
+                    | number
+                    | boolean
+                    | null
+                    | Array<unknown>
+                    | Record<string, unknown>,
+                });
+              } else {
+                return client.buildCreateCollectionInvoke({
+                  name: form.name,
+                  symbol: form.symbol,
+                  description: form.description,
+                  baseUri: neofsUri,
+                  maxSupply: form.maxSupply,
+                  royaltyBps: Number(form.royaltyBps),
+                  transferable: form.transferable
+                });
+              }
             })()
           : client.buildCreateCollectionInvoke({
               name: form.name,
@@ -137,9 +151,11 @@ export function CreateCollectionPage() {
             });
 
       const txid = await wallet.invoke(payload);
-      const successPrefix = contractDialect === "csharp" ? t("create.success_dedicated") : t("create.success");
+      const successPrefix = contractDialect === "csharp" && form.mode === "dedicated" 
+        ? t("create.success_dedicated") 
+        : t("create.success");
       setResult(`${successPrefix} ${txid || t("app.tx_sent")}`);
-      setForm(DEFAULT_FORM);
+      setForm({ ...DEFAULT_FORM, mode: form.mode });
       setFile(null);
     } catch (err) {
       setError(toUserErrorMessage(t, err));
@@ -150,26 +166,52 @@ export function CreateCollectionPage() {
 
   return (
     <section className="panel fade-in">
-      <div className="panel-header" style={{ marginBottom: '1.5rem', paddingBottom: '1rem' }}>
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <PlusCircle size={24} /> {t("create.title")}
+      <div className="panel-header mb-md pb-sm">
+        <h2 className="flex-align-center gap-md">
+          <PlusCircle size={24} /> Create a New Collection
         </h2>
-        <p className="hint" style={{ marginTop: '0.25rem' }}>{t("create.subtitle")}</p>
+        <p className="hint mt-xs">Launch your NFTs on the Neo N3 network</p>
       </div>
 
-      {contractDialect === "rust" ? (
-        <p className="hint">
-          {t("create.rust_hint")}
-        </p>
-      ) : null}
-
-      {contractDialect === "csharp" ? (
-        <p className="hint">
-          {t("create.csharp_hint")}
-        </p>
-      ) : null}
-
       <form className="form-grid" onSubmit={onSubmit}>
+        <div className="full" style={{ marginBottom: '1.5rem' }}>
+          <label style={{ marginBottom: '0.75rem', display: 'block', fontSize: '1rem', color: '#fff' }}>Deployment Mode</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div 
+              onClick={() => update("mode", "shared")}
+              style={{ 
+                padding: '1.5rem', borderRadius: '16px', cursor: 'pointer',
+                border: form.mode === 'shared' ? '2px solid var(--neo-green)' : '2px solid var(--glass-border)',
+                background: form.mode === 'shared' ? 'rgba(0, 229, 153, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <h3 className="flex-align-center gap-md" style={{ margin: '0 0 0.5rem', color: form.mode === 'shared' ? 'var(--neo-green)' : '#fff' }}>
+                <Layers size={20} /> Shared Storefront
+              </h3>
+              <p className="hint mb-0">Free to create. NFTs are minted on the platform's multi-tenant smart contract, distinguished by collection ID. Perfect for getting started.</p>
+            </div>
+            
+            <div 
+              onClick={() => update("mode", "dedicated")}
+              style={{ 
+                padding: '1.5rem', borderRadius: '16px', cursor: 'pointer',
+                border: form.mode === 'dedicated' ? '2px solid var(--r3e-cyan)' : '2px solid var(--glass-border)',
+                background: form.mode === 'dedicated' ? 'rgba(0, 212, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                opacity: contractDialect === "csharp" ? 1 : 0.5,
+                pointerEvents: contractDialect === "csharp" ? 'auto' : 'none',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <h3 className="flex-align-center gap-md" style={{ margin: '0 0 0.5rem', color: form.mode === 'dedicated' ? 'var(--r3e-cyan)' : '#fff' }}>
+                <ShieldCheck size={20} /> Dedicated Contract
+              </h3>
+              <p className="hint mb-0">Costs 10 GAS. A fully isolated NEP-11 smart contract deployed exclusively for you. Best for established creators and full control.</p>
+              {contractDialect !== "csharp" && <p className="error" style={{ padding: '0.5rem', marginTop: '0.5rem' }}>Only available on C# Dialect</p>}
+            </div>
+          </div>
+        </div>
+
         <label>
           {t("create.col_name")}
           <input
@@ -207,25 +249,13 @@ export function CreateCollectionPage() {
           <div
             className="upload-area"
             onClick={() => fileInputRef.current?.click()}
-            style={{
-              marginTop: '0.5rem',
-              padding: '2.5rem',
-              border: '2px dashed rgba(0, 229, 153, 0.3)',
-              borderRadius: '12px',
-              textAlign: 'center',
-              cursor: 'pointer',
-              background: 'rgba(11, 14, 20, 0.8)',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.borderColor = 'rgba(0, 229, 153, 0.8)'}
-            onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(0, 229, 153, 0.3)'}
           >
             {file ? (
-              <span style={{ color: '#fff', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <span className="text-white font-semibold flex-center gap-md">
                 <UploadCloud size={20} color="#00E599" /> {file.name} ({(file.size / 1024).toFixed(1)} KB)
               </span>
             ) : (
-              <span style={{ color: '#9CA3AF', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="text-muted flex-center flex-col gap-md">
                 <UploadCloud size={24} color="#9CA3AF" />
                 {t("create.cover_ph")}
               </span>
@@ -276,7 +306,7 @@ export function CreateCollectionPage() {
           <span>{t("create.transferable")}</span>
         </label>
 
-        {contractDialect === "csharp" ? (
+        {contractDialect === "csharp" && form.mode === "dedicated" ? (
           <label className="full">
             {t("create.dedicated_extra_label")}
             <textarea
@@ -288,66 +318,16 @@ export function CreateCollectionPage() {
           </label>
         ) : null}
 
-        {contractDialect === "rust" ? (
-          <>
-            <label>
-              {t("create.lbl_creator_ref")}
-              <input
-                required
-                type="number"
-                value={form.creatorRef}
-                onChange={(event) => update("creatorRef", event.target.value)}
-              />
-            </label>
-            <label>
-              {t("create.lbl_name_ref")}
-              <input
-                required
-                type="number"
-                value={form.nameRef}
-                onChange={(event) => update("nameRef", event.target.value)}
-              />
-            </label>
-            <label>
-              {t("create.lbl_symbol_ref")}
-              <input
-                required
-                type="number"
-                value={form.symbolRef}
-                onChange={(event) => update("symbolRef", event.target.value)}
-              />
-            </label>
-            <label>
-              {t("create.lbl_description_ref")}
-              <input
-                required
-                type="number"
-                value={form.descriptionRef}
-                onChange={(event) => update("descriptionRef", event.target.value)}
-              />
-            </label>
-            <label className="full">
-              {t("create.lbl_base_uri_ref")}
-              <input
-                required
-                type="number"
-                value={form.baseUriRef}
-                onChange={(event) => update("baseUriRef", event.target.value)}
-              />
-            </label>
-          </>
-        ) : null}
-
-        <div className="full form-actions" style={{ marginTop: '2rem' }}>
-          <button className="btn" disabled={submitting} type="submit" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 2rem', fontSize: '1rem' }}>
+        <div className="full form-actions mt-md">
+          <button className="btn flex-align-center gap-md btn-lg" disabled={submitting} type="submit">
             <Rocket size={18} />
             {submitting ? t("create.submitting") : t("create.submit")}
           </button>
         </div>
       </form>
 
-      {result ? <p className="success">{result}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
+      {result ? <p className="success mt-md">{result}</p> : null}
+      {error ? <p className="error mt-md">{error}</p> : null}
     </section>
   );
 }

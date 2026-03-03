@@ -1,78 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { CopySlash, Layers, ArrowLeftRight, Activity, Database, AlertTriangle, Cpu, CheckCircle } from "lucide-react";
+import { Layers, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
-import { useWallet } from "../hooks/useWallet";
-import { fetchCollections, fetchGhostMarketMeta, fetchStats } from "../lib/api";
-import { toUserErrorMessage } from "../lib/errors";
-import { getRuntimeNetworkConfig } from "../lib/runtime-network";
-import type { CollectionDto, GhostMarketMetaDto, StatsDto } from "../lib/types";
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString();
-}
-
-function formatMaxSupply(value: string): string {
-  const normalized = value.trim();
-  return normalized === "0" ? "∞" : value;
-}
-
-interface CompatibilityIssue {
-  code: string;
-  message: string;
-  params?: Record<string, string>;
-}
+import { fetchCollections, fetchStats } from "../lib/api";
+import { shortHash } from "../lib/marketplace";
+import { useRuntimeContractDialect } from "../lib/runtime-dialect";
+import type { CollectionDto, StatsDto } from "../lib/types";
 
 export function HomePage() {
-  const { t } = useTranslation();
-  const wallet = useWallet();
-  const walletNetworkReady = Boolean(wallet.address && wallet.network && wallet.network.network !== "unknown");
+  const contractDialect = useRuntimeContractDialect();
+
   const [stats, setStats] = useState<StatsDto | null>(null);
-  const [activeRpcUrl, setActiveRpcUrl] = useState<string>("");
-  const [ghostMarket, setGhostMarket] = useState<GhostMarketMetaDto | null>(null);
   const [collections, setCollections] = useState<CollectionDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
 
     (async () => {
       setLoading(true);
-      setError(null);
-
-      if (!walletNetworkReady) {
-        setStats(null);
-        setGhostMarket(null);
-        setCollections([]);
-        setActiveRpcUrl("");
-        setLoading(false);
-        return;
-      }
-
       try {
-        const runtime = getRuntimeNetworkConfig();
-        setActiveRpcUrl(runtime.rpcUrl);
-
-        const [fetchedStats, fetchedGhostMarket, fetchedCollections] = await Promise.all([
-          fetchStats(),
-          fetchGhostMarketMeta().catch(() => null),
-          fetchCollections(),
-        ]);
-
+        const [nextStats, nextCollections] = await Promise.all([fetchStats(), fetchCollections()]);
         if (!alive) {
           return;
         }
-
-        setStats(fetchedStats);
-        setGhostMarket(fetchedGhostMarket);
-        setCollections(fetchedCollections);
-      } catch (err) {
-        if (!alive) {
-          return;
-        }
-        setError(toUserErrorMessage(t, err));
+        setStats(nextStats);
+        setCollections(nextCollections);
       } finally {
         if (alive) {
           setLoading(false);
@@ -83,180 +36,124 @@ export function HomePage() {
     return () => {
       alive = false;
     };
-  }, [walletNetworkReady, wallet.network?.network, wallet.network?.magic]);
+  }, []);
 
-  const myCollections = useMemo(() => {
-    if (!wallet.address) {
-      return [];
-    }
-    return collections.filter((collection) => collection.owner === wallet.address);
-  }, [wallet.address, collections]);
-
-  const mapCompatibilityIssue = (issue: CompatibilityIssue | string): string => {
-    if (typeof issue === "string") {
-      return issue;
-    }
-
-    const key = `home.ghost_issue_${issue.code}`;
-    const translated = t(key, issue.params ?? {});
-    if (translated === key) {
-      return t("home.ghost_issue_unknown", {
-        code: issue.code,
-        message: issue.message,
-      });
-    }
-    return translated;
-  };
-
-  const reasonIssues: Array<CompatibilityIssue | string> = ghostMarket?.compatibility.reasonIssues ??
-    ghostMarket?.compatibility.reasons ??
-    [];
-  const warningIssues: Array<CompatibilityIssue | string> = ghostMarket?.compatibility.warningIssues ??
-    ghostMarket?.compatibility.warnings ??
-    [];
+  const featuredCollections = useMemo(() => collections.slice(0, 6), [collections]);
 
   return (
-    <section className="stack-lg fade-in">
-      <div className="metric-grid">
-        <article className="metric-card">
-          <p style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Layers size={14} /> {t("home.tot_collections")}
+    <div className="stack-lg fade-in">
+      <section className="panel" style={{ padding: "3rem" }}>
+        <div className="stack-md" style={{ maxWidth: "760px" }}>
+          <h1 className="title title-highlight" style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)", lineHeight: 1.1 }}>
+            Publish, Showcase, and Trade NFTs on Neo N3
+          </h1>
+          <p className="hint" style={{ fontSize: "1.05rem", lineHeight: 1.7 }}>
+            R3E marketplace supports both shared factory collections and dedicated NFT contracts. Metadata is GhostMarket
+            compatible, and each NFT can be listed or purchased directly on-chain.
           </p>
+          <div className="chip-row" style={{ marginTop: "0.5rem" }}>
+            <span className="chip">Dialect {contractDialect.toUpperCase()}</span>
+            <span className="chip">NEP-11 / NEP-24</span>
+            <span className="chip">GhostMarket Compatible</span>
+          </div>
+          <div className="token-actions" style={{ borderTop: "none", marginTop: "0.25rem", paddingTop: 0 }}>
+            <Link className="btn" to="/explore">
+              <Rocket size={16} /> Explore Marketplace
+            </Link>
+            <Link className="btn btn-secondary" to="/collections/new">
+              <Sparkles size={16} /> Launch Collection
+            </Link>
+            <Link className="btn btn-secondary" to="/mint">
+              Mint NFT
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="metric-grid">
+        <article className="metric-card">
+          <p>Total Collections</p>
           <h2>{stats?.collectionCount ?? "-"}</h2>
         </article>
         <article className="metric-card">
-          <p style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <CopySlash size={14} /> {t("home.tot_nfts")}
-          </p>
+          <p>Total NFTs</p>
           <h2>{stats?.tokenCount ?? "-"}</h2>
         </article>
         <article className="metric-card">
-          <p style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <ArrowLeftRight size={14} /> {t("home.tot_transfers")}
-          </p>
+          <p>Total Transfers</p>
           <h2>{stats?.transferCount ?? "-"}</h2>
         </article>
-        <article className="metric-card">
-          <p style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Activity size={14} /> {t("home.wallet_network")}
+      </section>
+
+      <section className="grid-two">
+        <article className="panel" style={{ minHeight: "260px" }}>
+          <div className="panel-header">
+            <h3 style={{ alignItems: "center", display: "flex", gap: "0.5rem", margin: 0 }}>
+              <Layers size={18} /> Shared Factory Mode
+            </h3>
+          </div>
+          <p className="hint" style={{ lineHeight: 1.7 }}>
+            Deploy collection metadata on the platform factory (single NEP-11 contract). Collection ownership is separated
+            by `collectionId`, similar to storefront-style models.
           </p>
-          <h2>{wallet.network?.network ? wallet.network.network.toUpperCase() : "-"}</h2>
-          {activeRpcUrl ? (
-            <p className="hint">
-              {t("home.endpoint_url")}: {activeRpcUrl}
-            </p>
-          ) : null}
+          <div className="chip-row" style={{ marginTop: "1rem" }}>
+            <span className="chip">No extra deployment fee</span>
+            <span className="chip">Fast launch</span>
+          </div>
         </article>
-      </div>
 
-      {ghostMarket ? (
-        <article className="panel">
-          <div className="panel-header" style={{ marginBottom: '1rem' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Cpu size={18} /> {t("home.ghost_compat")}
+        <article className="panel" style={{ minHeight: "260px" }}>
+          <div className="panel-header">
+            <h3 style={{ alignItems: "center", display: "flex", gap: "0.5rem", margin: 0 }}>
+              <ShieldCheck size={18} /> Dedicated Contract Mode
             </h3>
-            <span className="hint" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              {ghostMarket.compatibility.compatible ? <CheckCircle size={14} color="#10B981" /> : <AlertTriangle size={14} color="#F59E0B" />}
-              {ghostMarket.compatibility.compatible ? t("home.ghost_status_compatible") : t("home.ghost_status_adjust")}
-            </span>
           </div>
-          <p className={ghostMarket.compatibility.compatible ? "success" : "error"}>
-            {ghostMarket.compatibility.compatible
-              ? t("home.ghost_msg_ok")
-              : t("home.ghost_msg_bad")}
+          <p className="hint" style={{ lineHeight: 1.7 }}>
+            For C# mode, each collection can deploy its own isolated NFT contract from template. This costs 10 GAS and is
+            suited for advanced creators needing full contract-level isolation.
           </p>
-          <p className="hint">
-            <a href={ghostMarket.contractSearchUrl} target="_blank" rel="noreferrer">
-              {t("home.ghost_open_search")}
-            </a>
-          </p>
-          {reasonIssues.length > 0 ? (
-            <ul className="hint">
-              {reasonIssues.map((reason, index) => (
-                <li key={`reason-${index}`}>{mapCompatibilityIssue(reason)}</li>
-              ))}
-            </ul>
-          ) : null}
-          {warningIssues.length > 0 ? (
-            <ul className="hint">
-              {warningIssues.map((warning, index) => (
-                <li key={`warning-${index}`}>{mapCompatibilityIssue(warning)}</li>
-              ))}
-            </ul>
-          ) : null}
+          <div className="chip-row" style={{ marginTop: "1rem" }}>
+            <span className="chip">10 GAS deployment</span>
+            <span className="chip">Per-collection contract hash</span>
+          </div>
         </article>
-      ) : null}
+      </section>
 
-      {loading ? <p className="hint">{t("home.loading")}</p> : null}
-      {!loading && !walletNetworkReady ? <p className="hint">{t("home.connect_wallet_network")}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Featured Collections</h3>
+          <Link className="btn btn-secondary" to="/explore">
+            View All
+          </Link>
+        </div>
 
-      <div className="grid-two">
-        <section className="panel">
-          <div className="panel-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Database size={18} /> {t("home.latest_cols")}
-            </h3>
-            <span className="hint">{collections.length} {t("home.records")}</span>
+        {loading ? (
+          <p className="hint">Loading collections...</p>
+        ) : featuredCollections.length === 0 ? (
+          <p className="hint">No collections yet. Create the first one.</p>
+        ) : (
+          <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
+            {featuredCollections.map((collection) => (
+              <Link
+                className="token-card"
+                key={collection.collectionId}
+                style={{ color: "inherit", textDecoration: "none" }}
+                to={`/collections/${collection.collectionId}`}
+              >
+                <div className="stack-sm">
+                  <strong>{collection.name}</strong>
+                  <span className="hint">{collection.symbol}</span>
+                </div>
+                <div className="chip-row">
+                  <span className="chip">Minted {collection.minted}</span>
+                  <span className="chip">Royalty {(collection.royaltyBps / 100).toFixed(2)}%</span>
+                </div>
+                <span className="hint">Owner {shortHash(collection.owner)}</span>
+              </Link>
+            ))}
           </div>
-          {collections.length === 0 ? (
-            <p className="hint">{t("home.no_cols")}</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{t("home.name")}</th>
-                    <th>{t("home.symbol")}</th>
-                    <th>{t("home.minted_max")}</th>
-                    <th>{t("home.created")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {collections.slice(0, 20).map((collection) => (
-                    <tr key={collection.collectionId}>
-                      <td>
-                        <Link to={`/collections/${collection.collectionId}`}>{collection.name}</Link>
-                      </td>
-                      <td>{collection.symbol}</td>
-                      <td>
-                        {collection.minted} / {formatMaxSupply(collection.maxSupply)}
-                      </td>
-                      <td>{formatDate(collection.createdAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="panel">
-          <div className="panel-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Layers size={18} /> {t("home.my_cols")}
-            </h3>
-            <span className="hint">{t("home.wallet_scoped")}</span>
-          </div>
-          {!wallet.address ? (
-            <p className="hint">{t("home.connect_to_view")}</p>
-          ) : myCollections.length === 0 ? (
-            <p className="hint">{t("home.no_owned")}</p>
-          ) : (
-            <ul className="card-list">
-              {myCollections.map((collection) => (
-                <li className="mini-card" key={collection.collectionId}>
-                  <p className="mini-card-title">{collection.name}</p>
-                  <p className="hint">{collection.collectionId}</p>
-                  <Link className="inline-link" to={`/collections/${collection.collectionId}`}>
-                    {t("home.manage")}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-    </section>
+        )}
+      </section>
+    </div>
   );
 }

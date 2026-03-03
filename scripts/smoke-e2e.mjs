@@ -137,6 +137,21 @@ function seedApiDb(dbFile, profile) {
     timestamp: now,
   });
 
+  db.prepare(
+    `INSERT OR REPLACE INTO token_listings(
+      token_id, seller, price, listed, listed_at, updated_at
+    ) VALUES(
+      @tokenId, @seller, @price, @listed, @listedAt, @updatedAt
+    )`,
+  ).run({
+    tokenId,
+    seller: owner,
+    price: "125000000",
+    listed: 1,
+    listedAt: now,
+    updatedAt: now,
+  });
+
   db.close();
 
   return {
@@ -310,6 +325,14 @@ async function runApiSmoke() {
 
     const transfers = await fetchJson(`${baseUrl}/api/transfers?limit=10`);
     assert(Array.isArray(transfers) && transfers.length >= 1, "transfers should contain seeded row");
+
+    const marketListings = await fetchJson(`${baseUrl}/api/market/listings?listedOnly=true`);
+    assert(Array.isArray(marketListings) && marketListings.length >= 1, "market listings should contain seeded row");
+    assert(marketListings[0]?.sale?.listed === true, "market listing sale.listed should be true");
+    assert(
+      marketListings.some((entry) => entry?.token?.tokenId === seededTestnet.tokenId),
+      "market listings should include testnet seeded token",
+    );
 
     await fetchJson(`${baseUrl}/api/transfers?limit=0`, 400);
 

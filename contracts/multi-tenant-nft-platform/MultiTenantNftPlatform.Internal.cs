@@ -84,6 +84,11 @@ public partial class MultiTenantNftPlatform
         return new StorageMap(Storage.CurrentContext, PrefixTokenClass);
     }
 
+    private static StorageMap TokenListings()
+    {
+        return new StorageMap(Storage.CurrentContext, PrefixTokenListing);
+    }
+
     private static StorageMap DedicatedExtraDataStore()
     {
         return new StorageMap(Storage.CurrentContext, PrefixDedicatedExtraData);
@@ -537,6 +542,38 @@ public partial class MultiTenantNftPlatform
         TokenClasses().Put(tokenId, tokenClass);
     }
 
+    private static bool HasTokenListing(ByteString tokenId)
+    {
+        return TokenListings().Get(tokenId) is not null;
+    }
+
+    private static TokenListingState GetTokenListingState(ByteString tokenId)
+    {
+        ByteString serialized = TokenListings().Get(tokenId);
+        if (serialized is null)
+        {
+            throw new Exception("Token is not listed for sale");
+        }
+
+        return (TokenListingState)StdLib.Deserialize(serialized);
+    }
+
+    private static void PutTokenListingState(ByteString tokenId, TokenListingState listing)
+    {
+        if (listing.Price <= 0 || listing.Seller is null || !listing.Seller.IsValid)
+        {
+            TokenListings().Delete(tokenId);
+            return;
+        }
+
+        TokenListings().Put(tokenId, StdLib.Serialize(listing));
+    }
+
+    private static void DeleteTokenListingState(ByteString tokenId)
+    {
+        TokenListings().Delete(tokenId);
+    }
+
     private static object GetDedicatedExtraData(ByteString collectionId)
     {
         ByteString serialized = DedicatedExtraDataStore().Get(collectionId);
@@ -653,6 +690,22 @@ public partial class MultiTenantNftPlatform
             token.Burned,
             token.MintedAt
         );
+    }
+
+    private static void EmitTokenListingUpdated(
+        ByteString tokenId,
+        UInt160 seller,
+        BigInteger price,
+        bool active,
+        BigInteger listedAt
+    )
+    {
+        OnTokenListingUpdated(tokenId, seller, price, active, listedAt);
+    }
+
+    private static void EmitTokenSaleMatched(ByteString tokenId, UInt160 seller, UInt160 buyer, BigInteger price)
+    {
+        OnTokenSaleMatched(tokenId, seller, buyer, price, Runtime.Time);
     }
 
     private static void PostTransfer(UInt160 from, UInt160 to, ByteString tokenId, object data)

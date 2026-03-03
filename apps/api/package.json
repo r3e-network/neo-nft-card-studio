@@ -11,12 +11,13 @@
     "format": "echo 'No format step for api'"
   },
   "dependencies": {
+    "@cityofzion/neon-js": "^5.8.1",
     "@platform/neo-sdk": "1.0.0",
     "better-sqlite3": "^11.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
-    "multer": "^2.0.2",
+    "multer": "^2.1.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "zod": "^3.23.8"

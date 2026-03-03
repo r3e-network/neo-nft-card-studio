@@ -145,3 +145,17 @@ export interface GhostMarketMetaDto {
     methods: GhostMarketMethodSummaryDto[];
   } | null;
 }
+
+export interface MarketListingSaleDto {
+  listed: boolean;
+  seller: string;
+  price: string;
+  listedAt: string;
+  updatedAt: string;
+}
+
+export interface MarketListingDto {
+  collection: CollectionDto;
+  token: TokenDto;
+  sale: MarketListingSaleDto;
+}

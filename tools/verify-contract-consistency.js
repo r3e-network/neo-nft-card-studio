@@ -96,29 +96,6 @@ const FACTORY_REQUIRED_METHODS = [
   "deployCollectionContractFromTemplate",
 ];
 
-const FACTORY_FORBIDDEN_NFT_METHODS = [
-  "symbol",
-  "decimals",
-  "totalSupply",
-  "balanceOf",
-  "ownerOf",
-  "transfer",
-  "tokens",
-  "tokensOf",
-  "tokenURI",
-  "properties",
-  "getRoyalties",
-  "royaltyInfo",
-  "onNEP11Payment",
-  "mint",
-  "batchMint",
-  "burn",
-  "claimDrop",
-  "checkIn",
-  "configureDrop",
-  "configureCheckInProgram",
-];
-
 const SHARED_METHOD_SPECS = [
   {
     name: "updateCollection",
@@ -350,20 +327,14 @@ function checkFactoryManifest(manifest, errors) {
   const methodNames = new Set(methods.map((method) => String(method?.name ?? "")));
 
   for (const standard of REQUIRED_STANDARDS) {
-    if (standards.has(standard.toUpperCase())) {
-      errors.push(`csharp-factory: must not declare ${standard}`);
+    if (!standards.has(standard.toUpperCase())) {
+      errors.push(`csharp-factory: missing supported standard ${standard}`);
     }
   }
 
   for (const methodName of FACTORY_REQUIRED_METHODS) {
     if (!methodNames.has(methodName)) {
       errors.push(`csharp-factory: missing required factory method ${methodName}`);
-    }
-  }
-
-  for (const methodName of FACTORY_FORBIDDEN_NFT_METHODS) {
-    if (methodNames.has(methodName)) {
-      errors.push(`csharp-factory: must not expose NFT runtime method ${methodName}`);
     }
   }
 }
@@ -394,23 +365,22 @@ function checkCsharpRoleSplitSource(errors) {
   if (!/PackageReference\s+Include="Neo\.SmartContract\.Framework"/.test(templateProject)) {
     errors.push("CSharp source: template csproj should reference Neo.SmartContract.Framework");
   }
-  if (factoryFiles.some((name) => /Tokens|Drop|Membership/.test(name))) {
-    errors.push("CSharp source: factory directory must not include NFT runtime source files");
-  }
-
   for (const requiredFactoryFile of [
     "MultiTenantNftPlatform.cs",
     "MultiTenantNftPlatform.Lifecycle.cs",
     "MultiTenantNftPlatform.Collections.cs",
     "MultiTenantNftPlatform.Internal.cs",
+    "MultiTenantNftPlatform.Tokens.cs",
+    "MultiTenantNftPlatform.Drop.cs",
+    "MultiTenantNftPlatform.Membership.cs",
   ]) {
     if (!factoryFiles.includes(requiredFactoryFile)) {
       errors.push(`CSharp source: factory directory missing ${requiredFactoryFile}`);
     }
   }
 
-  if (/SupportedStandards\("NEP-11"/.test(factoryEntry)) {
-    errors.push("CSharp source: factory entry must not declare NEP-11");
+  if (!/SupportedStandards\("NEP-11",\s*"NEP-24"\)/.test(factoryEntry)) {
+    errors.push("CSharp source: factory entry must declare NEP-11/NEP-24");
   }
   if (!/ManifestExtra\("ContractRole",\s*"Factory"\)/.test(factoryEntry)) {
     errors.push("CSharp source: factory entry must declare ContractRole=Factory");
@@ -687,6 +657,7 @@ function main() {
   };
 
   for (const [dialect, manifest] of Object.entries({
+    csharpFactory: manifests.csharpFactory,
     csharpTemplate: manifests.csharpTemplate,
     solidity: manifests.solidity,
     rust: manifests.rust,

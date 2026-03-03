@@ -12,7 +12,10 @@ namespace NeoN3.MultiTenantNftPlatform;
 [ManifestExtra("Description", "Neo NFT platform factory for deploying dedicated NFT contracts")]
 [ManifestExtra("Email", "jimmy@r3e.network")]
 [ManifestExtra("ContractRole", "Factory")]
-[ContractPermission("*", "*")]
+[SupportedStandards("NEP-11", "NEP-24")]
+[ContractPermission("0xd2a4cff31913016155e38e474a2c06d08be276cf", "transfer", "balanceOf")]
+[ContractPermission("*", "initializeDedicatedCollection", "setDedicatedExtraData")]
+[ContractPermission("*", "onNEP11Payment")]
 public partial class MultiTenantNftPlatform : SmartContract
 {
     [DisplayName("Transfer")]
@@ -45,6 +48,12 @@ public partial class MultiTenantNftPlatform : SmartContract
     [DisplayName("CheckedIn")]
     public static event Action<ByteString, UInt160, BigInteger, BigInteger, ByteString> OnCheckedIn;
 
+    [DisplayName("TokenListingUpdated")]
+    public static event Action<ByteString, UInt160, BigInteger, bool, BigInteger> OnTokenListingUpdated;
+
+    [DisplayName("TokenSaleMatched")]
+    public static event Action<ByteString, UInt160, UInt160, BigInteger, BigInteger> OnTokenSaleMatched;
+
     private static readonly byte[] PrefixContractOwner = [0x00];
     private static readonly byte[] PrefixTotalSupply = [0x01];
     private static readonly byte[] PrefixCollectionIdCounter = [0x02];
@@ -73,6 +82,7 @@ public partial class MultiTenantNftPlatform : SmartContract
     private static readonly byte[] PrefixOwnerBalance = [0x22];
     private static readonly byte[] PrefixOwnerToken = [0x23];
     private static readonly byte[] PrefixTokenClass = [0x24];
+    private static readonly byte[] PrefixTokenListing = [0x26];
 
     private static readonly BigInteger TokenClassStandard = 0;
     private static readonly BigInteger TokenClassMembership = 1;
@@ -101,6 +111,13 @@ public partial class MultiTenantNftPlatform : SmartContract
         public string PropertiesJson;
         public bool Burned;
         public BigInteger MintedAt;
+    }
+
+    public struct TokenListingState
+    {
+        public UInt160 Seller;
+        public BigInteger Price;
+        public BigInteger ListedAt;
     }
 
     public struct DropConfigState

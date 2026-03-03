@@ -105,6 +105,8 @@ export class IndexerService {
   private interval: NodeJS.Timeout | null = null;
   private isRunning = false;
   private readonly eventsEnabled: boolean;
+  private lastKnownChainBlockHeight: number | null = null;
+  private chainHeightFetchInFlight: Promise<number | null> | null = null;
 
   constructor(
     private readonly config: AppConfig,
@@ -194,13 +196,17 @@ export class IndexerService {
     return Number(saved);
   }
 
+  getLastKnownChainBlockHeight(): number | null {
+    return this.lastKnownChainBlockHeight;
+  }
+
   async getChainBlockHeight(): Promise<number | null> {
-    try {
-      return (await this.rpc.getBlockCount()) - 1;
-    } catch (error) {
-      this.log.warn({ err: error }, "Failed to fetch chain block height");
-      return null;
+    if (this.chainHeightFetchInFlight) {
+      return this.chainHeightFetchInFlight;
     }
+
+    this.chainHeightFetchInFlight = this.fetchChainBlockHeight();
+    return this.chainHeightFetchInFlight;
   }
 
   private async tick(): Promise<void> {
@@ -211,7 +217,10 @@ export class IndexerService {
     this.isRunning = true;
 
     try {
-      const chainHeight = (await this.rpc.getBlockCount()) - 1;
+      const chainHeight = await this.getChainBlockHeight();
+      if (chainHeight === null) {
+        return;
+      }
       let cursor = this.getCurrentSyncBlock();
       const trackedHashes = this.getTrackedContractHashes();
 
@@ -235,6 +244,19 @@ export class IndexerService {
       this.log.error({ err: error }, "Indexer tick failed");
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  private async fetchChainBlockHeight(): Promise<number | null> {
+    try {
+      const height = (await this.rpc.getBlockCount()) - 1;
+      this.lastKnownChainBlockHeight = height;
+      return height;
+    } catch (error) {
+      this.log.warn({ err: error }, "Failed to fetch chain block height");
+      return this.lastKnownChainBlockHeight;
+    } finally {
+      this.chainHeightFetchInFlight = null;
     }
   }
 
@@ -379,6 +401,61 @@ export class IndexerService {
 
         this.db.setCollectionContractHash(collectionId, deployedContractHash, timestamp);
         trackedHashes.add(deployedContractHash);
+        return;
+      }
+
+      case "TokenListingUpdated": {
+        if (args.length < 5) {
+          return;
+        }
+
+        const tokenId = valueAsString(args[0]);
+        if (!tokenId) {
+          return;
+        }
+
+        const listed = valueAsBool(args[3]);
+        const listedAtSeconds = Number(args[4] ?? 0);
+        const listedAt =
+          Number.isFinite(listedAtSeconds) && listedAtSeconds > 0
+            ? new Date(listedAtSeconds * 1000).toISOString()
+            : timestamp;
+
+        this.db.upsertTokenListing({
+          tokenId,
+          seller: formatNeoAddress(args[1]),
+          price: listed ? valueAsString(args[2]) : "0",
+          listed,
+          listedAt,
+          updatedAt: timestamp,
+        });
+        return;
+      }
+
+      case "TokenSaleMatched": {
+        if (args.length < 5) {
+          return;
+        }
+
+        const tokenId = valueAsString(args[0]);
+        if (!tokenId) {
+          return;
+        }
+
+        const matchedAtSeconds = Number(args[4] ?? 0);
+        const listedAt =
+          Number.isFinite(matchedAtSeconds) && matchedAtSeconds > 0
+            ? new Date(matchedAtSeconds * 1000).toISOString()
+            : timestamp;
+
+        this.db.upsertTokenListing({
+          tokenId,
+          seller: formatNeoAddress(args[1]),
+          price: "0",
+          listed: 0,
+          listedAt,
+          updatedAt: timestamp,
+        });
         return;
       }
 

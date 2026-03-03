@@ -2,7 +2,13 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { CollectionRecord, TokenRecord, TransferRecord } from "./types";
+import type {
+  CollectionRecord,
+  MarketListingRecord,
+  TokenListingRecord,
+  TokenRecord,
+  TransferRecord,
+} from "./types";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS sync_state (
@@ -49,11 +55,23 @@ CREATE TABLE IF NOT EXISTS transfers (
   timestamp TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS token_listings (
+  token_id TEXT PRIMARY KEY,
+  seller TEXT NOT NULL,
+  price TEXT NOT NULL,
+  listed INTEGER NOT NULL,
+  listed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(token_id) REFERENCES tokens(token_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner);
 CREATE INDEX IF NOT EXISTS idx_tokens_owner ON tokens(owner);
 CREATE INDEX IF NOT EXISTS idx_tokens_collection ON tokens(collection_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_token ON transfers(token_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_block ON transfers(block_index);
+CREATE INDEX IF NOT EXISTS idx_token_listings_listed ON token_listings(listed);
+CREATE INDEX IF NOT EXISTS idx_token_listings_updated ON token_listings(updated_at);
 `;
 
 export class AppDb {
@@ -210,6 +228,89 @@ export class AppDb {
     });
 
     txn(input);
+  }
+
+  upsertTokenListing(input: TokenListingRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO token_listings(
+          token_id, seller, price, listed, listed_at, updated_at
+        ) VALUES(
+          @tokenId, @seller, @price, @listed, @listedAt, @updatedAt
+        )
+        ON CONFLICT(token_id) DO UPDATE SET
+          seller=excluded.seller,
+          price=excluded.price,
+          listed=excluded.listed,
+          listed_at=excluded.listed_at,
+          updated_at=excluded.updated_at`,
+      )
+      .run(input);
+  }
+
+  listMarketListings(input?: {
+    collectionId?: string;
+    owner?: string;
+    listedOnly?: boolean;
+    limit?: number;
+  }): MarketListingRecord[] {
+    const limit = Math.min(Math.max(input?.limit ?? 100, 1), 500);
+    const whereClauses = ["t.burned = 0"];
+    const params: Array<string | number> = [];
+
+    if (input?.collectionId) {
+      whereClauses.push("t.collection_id = ?");
+      params.push(input.collectionId);
+    }
+
+    if (input?.owner) {
+      whereClauses.push("t.owner = ?");
+      params.push(input.owner);
+    }
+
+    if (input?.listedOnly) {
+      whereClauses.push("COALESCE(l.listed, 0) = 1");
+    }
+
+    params.push(limit);
+
+    const sql = `
+      SELECT
+        t.token_id AS tokenId,
+        t.collection_id AS collectionId,
+        t.owner AS owner,
+        t.uri AS uri,
+        t.properties_json AS propertiesJson,
+        t.burned AS burned,
+        t.minted_at AS mintedAt,
+        t.updated_at AS tokenUpdatedAt,
+        c.owner AS collectionOwner,
+        c.name AS collectionName,
+        c.symbol AS collectionSymbol,
+        c.description AS collectionDescription,
+        c.base_uri AS collectionBaseUri,
+        c.contract_hash AS collectionContractHash,
+        c.max_supply AS collectionMaxSupply,
+        c.minted AS collectionMinted,
+        c.royalty_bps AS collectionRoyaltyBps,
+        c.transferable AS collectionTransferable,
+        c.paused AS collectionPaused,
+        c.created_at AS collectionCreatedAt,
+        c.updated_at AS collectionUpdatedAt,
+        COALESCE(l.listed, 0) AS listed,
+        l.seller AS seller,
+        l.price AS price,
+        l.listed_at AS listedAt,
+        l.updated_at AS listingUpdatedAt
+      FROM tokens t
+      INNER JOIN collections c ON c.collection_id = t.collection_id
+      LEFT JOIN token_listings l ON l.token_id = t.token_id
+      WHERE ${whereClauses.join(" AND ")}
+      ORDER BY COALESCE(l.listed, 0) DESC, datetime(l.listed_at) DESC, datetime(t.updated_at) DESC
+      LIMIT ?
+    `;
+
+    return this.db.prepare(sql).all(...params) as MarketListingRecord[];
   }
 
   listCollections(owner?: string): CollectionRecord[] {

@@ -291,9 +291,15 @@ async function assertFaultInvoke(label, rpcClient, contractHash, operation, para
 
 async function main() {
   const rpcUrl = process.env.TESTNET_RPC_URL?.trim() || DEFAULT_RPC_URL;
-  const wif = requireEnv("TESTNET_WIF");
+  const sellerWif = requireEnv("TESTNET_WIF");
+  const buyerWif = process.env.TESTNET_BUYER_WIF?.trim() || "";
 
-  const account = new wallet.Account(wif);
+  const sellerAccount = new wallet.Account(sellerWif);
+  const buyerAccount = buyerWif ? new wallet.Account(buyerWif) : null;
+  if (buyerAccount && buyerAccount.address === sellerAccount.address) {
+    throw new Error("TESTNET_BUYER_WIF must be a different account from TESTNET_WIF");
+  }
+
   const rpcClient = new rpc.RPCClient(rpcUrl);
   const version = await rpcClient.getVersion();
   const networkMagic = version?.protocol?.network;
@@ -301,13 +307,22 @@ async function main() {
     throw new Error("Failed to detect network magic from RPC getVersion");
   }
 
-  const config = {
+  const sellerConfig = {
     rpcAddress: rpcUrl,
-    account,
+    account: sellerAccount,
     networkMagic,
     blocksTillExpiry: 120,
     prioritisationFee: 0,
   };
+  const buyerConfig = buyerAccount
+    ? {
+        rpcAddress: rpcUrl,
+        account: buyerAccount,
+        networkMagic,
+        blocksTillExpiry: 120,
+        prioritisationFee: 0,
+      }
+    : null;
 
   const platformNefPath = path.resolve(PLATFORM_CONTRACT_NEF);
   const platformManifestPath = path.resolve(PLATFORM_CONTRACT_MANIFEST);
@@ -346,7 +361,7 @@ async function main() {
       manifest: sc.ContractManifest.fromJson(deployManifestJson),
       templateManifestText: JSON.stringify(scopedTemplateManifestJson),
       predictedHash: normalizeHash(
-        experimental.getContractHash(account.scriptHash, platformNef.checksum, name),
+        experimental.getContractHash(sellerAccount.scriptHash, platformNef.checksum, name),
       ),
     };
   }
@@ -356,7 +371,9 @@ async function main() {
   const summary = {
     rpcUrl,
     networkMagic,
-    deployerAddress: account.address,
+    deployerAddress: sellerAccount.address,
+    sellerAddress: sellerAccount.address,
+    buyerAddress: buyerAccount?.address ?? null,
     deployName: deployArtifacts.deployName,
     collectionMaxSupply,
     predictedContractHash: deployArtifacts.predictedHash,
@@ -368,6 +385,13 @@ async function main() {
     checkInProofTokenId: null,
     deployedCollectionContractHash: null,
     deployedCollectionContractName: null,
+    realTrade: {
+      enabled: !!buyerAccount,
+      salePrice: null,
+      listed: false,
+      bought: false,
+      skippedReason: buyerAccount ? null : "TESTNET_BUYER_WIF is not set",
+    },
     dedicatedIsolation: null,
   };
 
@@ -375,7 +399,7 @@ async function main() {
   for (;;) {
     console.log(`[testnet] Deploying platform contract: ${deployArtifacts.deployName}`);
     try {
-      deployTxid = await experimental.deployContract(platformNef, deployArtifacts.manifest, config);
+      deployTxid = await experimental.deployContract(platformNef, deployArtifacts.manifest, sellerConfig);
       break;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -406,7 +430,7 @@ async function main() {
   await waitForContractState(rpcClient, deployedHash);
   summary.txids.deployPlatform = deployTxid;
 
-  const platform = new experimental.SmartContract(u.HexString.fromHex(deployedHash), config);
+  const platform = new experimental.SmartContract(u.HexString.fromHex(deployedHash), sellerConfig);
 
   console.log("[testnet] setCollectionContractTemplate");
   const templateInvoke = await invokeAndWait(
@@ -519,8 +543,11 @@ async function main() {
 
   const collectionContract = new experimental.SmartContract(
     u.HexString.fromHex(summary.deployedCollectionContractHash),
-    config,
+    sellerConfig,
   );
+  const collectionContractBuyer = buyerConfig
+    ? new experimental.SmartContract(u.HexString.fromHex(summary.deployedCollectionContractHash), buyerConfig)
+    : null;
 
   console.log("[testnet] waiting 15s for ContractManagement propagation...");
   await sleep(15000);
@@ -534,7 +561,7 @@ async function main() {
     "mint",
     [
       byteArrayParamFromHex(idToByteArrayHex(collectionId)),
-      sc.ContractParam.hash160(account.address),
+      sc.ContractParam.hash160(sellerAccount.address),
       sc.ContractParam.string(`https://example.com/meta/${suffix}/1.json`),
       sc.ContractParam.string('{"name":"Smoke NFT","attributes":[{"trait_type":"tier","value":"test"}]}'),
     ],
@@ -605,11 +632,64 @@ async function main() {
     }
   }
 
+  if (buyerAccount && collectionContractBuyer) {
+    const salePrice = readNonNegativeIntegerEnv("TESTNET_SALE_PRICE", 1_00000000);
+    summary.realTrade.salePrice = salePrice.toString();
+
+    console.log(`[testnet] listTokenForSale (price=${salePrice})`);
+    const listInvoke = await invokeAndWait(
+      "listTokenForSale",
+      collectionContract,
+      rpcClient,
+      summary.deployedCollectionContractHash,
+      "listTokenForSale",
+      [
+        byteArrayParamFromHex(idToByteArrayHex(tokenId)),
+        sc.ContractParam.integer(salePrice),
+      ],
+    );
+    summary.txids.listTokenForSale = listInvoke.txid;
+    summary.realTrade.listed = true;
+
+    console.log("[testnet] buyToken (buyer account)");
+    const buyInvoke = await invokeAndWait(
+      "buyToken",
+      collectionContractBuyer,
+      rpcClient,
+      summary.deployedCollectionContractHash,
+      "buyToken",
+      [byteArrayParamFromHex(idToByteArrayHex(tokenId))],
+    );
+    summary.txids.buyToken = buyInvoke.txid;
+    summary.realTrade.bought = true;
+
+    const saleMatchedNotification = findNotification(
+      buyInvoke.appLog,
+      summary.deployedCollectionContractHash,
+      "TokenSaleMatched",
+    );
+    if (!saleMatchedNotification) {
+      throw new Error("Missing TokenSaleMatched notification after buyToken");
+    }
+
+    const isListedRead = await collectionContract.testInvoke("isTokenListed", [
+      byteArrayParamFromHex(idToByteArrayHex(tokenId)),
+    ]);
+    const isListedAfterSale = isListedRead?.stack?.[0] ? decodeStackItem(isListedRead.stack[0]) : null;
+    if (isListedAfterSale !== false) {
+      throw new Error(`Token listing should be cleared after buyToken, got: ${isListedAfterSale}`);
+    }
+  } else {
+    console.log("[testnet] skip real trade flow (set TESTNET_BUYER_WIF to enable on-chain list/buy)");
+  }
+
   const recipient = new wallet.Account(wallet.generatePrivateKey()).address;
-  console.log("[testnet] transfer");
+  const transferContract = collectionContractBuyer ?? collectionContract;
+  const transferLabel = collectionContractBuyer ? "transfer (buyer -> recipient)" : "transfer (seller -> recipient)";
+  console.log(`[testnet] ${transferLabel}`);
   const transferInvoke = await invokeAndWait(
     "transfer",
-    collectionContract,
+    transferContract,
     rpcClient,
     summary.deployedCollectionContractHash,
     "transfer",
@@ -620,6 +700,9 @@ async function main() {
     ],
   );
   summary.txids.transfer = transferInvoke.txid;
+  if (collectionContractBuyer) {
+    summary.txids.transferByBuyer = transferInvoke.txid;
+  }
 
   console.log("[testnet] burn");
   const burnInvoke = await invokeAndWait(
@@ -677,7 +760,7 @@ async function main() {
     "mint",
     [
       byteArrayParamFromHex(idToByteArrayHex(wrongCollectionId)),
-      sc.ContractParam.hash160(account.address),
+      sc.ContractParam.hash160(sellerAccount.address),
       sc.ContractParam.string(""),
       sc.ContractParam.string("{}"),
     ],

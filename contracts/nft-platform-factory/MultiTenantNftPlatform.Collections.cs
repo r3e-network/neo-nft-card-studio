@@ -17,11 +17,6 @@ public partial class MultiTenantNftPlatform
         ValidateCollectionInputs(name, tokenSymbol, description, baseUri, maxSupply, royaltyBps);
 
         UInt160 sender = GetSenderChecked();
-        ByteString ownerBoundCollectionId = GetOwnerDedicatedCollectionId(sender);
-        if (ownerBoundCollectionId is not null)
-        {
-            throw new Exception("Owner already has a dedicated NFT collection");
-        }
 
         BigInteger counter = ReadBigInteger(Storage.CurrentContext, PrefixCollectionIdCounter) + 1;
         Storage.Put(Storage.CurrentContext, PrefixCollectionIdCounter, counter);
@@ -45,7 +40,6 @@ public partial class MultiTenantNftPlatform
 
         PutCollectionState(collectionId, state);
         CollectionMintCounter().Put(collectionId, 0);
-        SetOwnerDedicatedCollectionId(sender, collectionId);
 
         EmitCollectionUpserted(collectionId, state);
         return collectionId;
@@ -64,13 +58,6 @@ public partial class MultiTenantNftPlatform
     {
         AssertDirectInvocation();
         AssertPlatformContractMode();
-        UInt160 sender = GetSenderChecked();
-        ByteString existingCollectionId = GetOwnerDedicatedCollectionId(sender);
-        if (existingCollectionId is not null)
-        {
-            throw new Exception("Owner already has a dedicated NFT contract");
-        }
-
         ByteString collectionId = createCollection(name, tokenSymbol, description, baseUri, maxSupply, royaltyBps, transferable);
         UInt160 collectionContract = deployCollectionContractFromTemplate(collectionId, extraData);
 
@@ -262,10 +249,10 @@ public partial class MultiTenantNftPlatform
         CollectionState state = GetCollectionState(collectionId);
         AssertCollectionOwnerWitness(state);
 
-        ByteString ownerBoundCollectionId = GetOwnerDedicatedCollectionId(state.Owner);
-        if (ownerBoundCollectionId is not null && (string)ownerBoundCollectionId != (string)collectionId)
+        bool paid = (bool)Contract.Call(GAS.Hash, "transfer", CallFlags.All, state.Owner, Runtime.ExecutingScriptHash, 10_00000000, null);
+        if (!paid)
         {
-            throw new Exception("Owner already bound to another dedicated NFT contract");
+            throw new Exception("Insufficient GAS fee for dedicated contract deployment");
         }
 
         if (CollectionContracts().Get(collectionId) is not null)

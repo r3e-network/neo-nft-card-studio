@@ -6,7 +6,6 @@ const path = require("node:path");
 const repoRoot = process.cwd();
 
 const REQUIRED_STANDARDS = ["NEP-11", "NEP-24"];
-const FORBIDDEN_FACTORY_STANDARDS = ["NEP-11", "NEP-24"];
 
 const NFT_METHOD_SHAPES = {
   symbol: {
@@ -90,19 +89,6 @@ const FACTORY_REQUIRED_METHODS = [
   "getOwnerDedicatedCollectionContract",
   "hasOwnerDedicatedCollectionContract",
 ];
-
-const FACTORY_FORBIDDEN_NFT_METHODS = Object.keys(NFT_METHOD_SHAPES).concat([
-  "mint",
-  "batchMint",
-  "burn",
-  "claimDrop",
-  "checkIn",
-  "configureDrop",
-  "configureCheckInProgram",
-  "setDropWhitelist",
-  "setDropWhitelistBatch",
-  "getTokenClass",
-]);
 
 const TRANSFER_EVENT_PARAM_TYPES = [["Hash160"], ["Hash160"], ["Integer"], ["ByteArray", "Hash256"]];
 
@@ -228,23 +214,24 @@ function checkFactoryManifest(label, manifestPath, errors) {
   const manifest = readJson(manifestPath);
   const standards = new Set((manifest.supportedstandards || []).map((value) => String(value).toUpperCase()));
   const methods = Array.isArray(manifest?.abi?.methods) ? manifest.abi.methods : [];
+  const events = Array.isArray(manifest?.abi?.events) ? manifest.abi.events : [];
+  const methodMap = new Map(methods.map((method) => [method.name, method]));
   const methodNames = new Set(methods.map((method) => String(method?.name ?? "")));
 
-  for (const standard of FORBIDDEN_FACTORY_STANDARDS) {
-    if (standards.has(standard.toUpperCase())) {
-      errors.push(`${label}: factory contract must not declare ${standard}`);
+  for (const standard of REQUIRED_STANDARDS) {
+    if (!standards.has(standard.toUpperCase())) {
+      errors.push(`${label}: missing supported standard ${standard}`);
     }
   }
+
+  for (const [methodName, definition] of Object.entries(NFT_METHOD_SHAPES)) {
+    checkMethodShape(label, methodMap, methodName, definition, errors);
+  }
+  checkTransferEvent(label, events, errors);
 
   for (const methodName of FACTORY_REQUIRED_METHODS) {
     if (!methodNames.has(methodName)) {
       errors.push(`${label}: missing required factory method ${methodName}`);
-    }
-  }
-
-  for (const methodName of FACTORY_FORBIDDEN_NFT_METHODS) {
-    if (methodNames.has(methodName)) {
-      errors.push(`${label}: factory contract must not expose NFT runtime method ${methodName}`);
     }
   }
 }

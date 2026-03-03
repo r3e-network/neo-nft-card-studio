@@ -68,6 +68,19 @@ export interface TransferRequest {
   dataRef?: string;
 }
 
+export interface ListTokenForSaleRequest {
+  tokenId: ByteStringHex;
+  price: number | string;
+}
+
+export interface CancelTokenSaleRequest {
+  tokenId: ByteStringHex;
+}
+
+export interface BuyTokenRequest {
+  tokenId: ByteStringHex;
+}
+
 export interface SetCollectionContractTemplateRequest {
   nefFileHex: string;
   manifest: string;

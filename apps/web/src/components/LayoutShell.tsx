@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
+import { Compass, FolderOpen, Home, PlusCircle, Sparkles, Wallet, Zap } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { LayoutDashboard, PlusCircle, Sparkles, FolderOpen, Globe2 } from "lucide-react";
 
 import { useWallet } from "../hooks/useWallet";
-import { APP_CONFIG } from "../lib/config";
 import { fetchContractMeta } from "../lib/api";
+import { APP_CONFIG } from "../lib/config";
 import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import {
   resetRuntimeContractDialect,
@@ -27,19 +26,18 @@ function formatWalletNetworkLabel(
     return "UNKNOWN";
   }
 
-  const name = network.network.toUpperCase();
+  const label = network.network.toUpperCase();
   if (network.magic === null) {
-    return name;
+    return label;
   }
 
-  return `${name} (${network.magic})`;
+  return `${label} · ${network.magic}`;
 }
 
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const wallet = useWallet();
-  const { t, i18n } = useTranslation();
   const runtimeDialect = useRuntimeContractDialect();
-  const [dialectMismatchMessage, setDialectMismatchMessage] = useState<string>("");
+  const [dialectMismatchMessage, setDialectMismatchMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -54,10 +52,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         setRuntimeContractDialect(meta.dialect);
         if (meta.dialect !== APP_CONFIG.contractDialect) {
           setDialectMismatchMessage(
-            t("app.dialect_mismatch", {
-              runtime: meta.dialect.toUpperCase(),
-              env: APP_CONFIG.contractDialect.toUpperCase(),
-            }),
+            `Runtime dialect ${meta.dialect.toUpperCase()} differs from env ${APP_CONFIG.contractDialect.toUpperCase()}.`,
           );
           return;
         }
@@ -73,87 +68,85 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     };
 
     void syncDialect();
-
     return () => {
       cancelled = true;
     };
-  }, [wallet.network?.network, wallet.network?.magic, t]);
+  }, [wallet.network?.network, wallet.network?.magic]);
 
   const runtimeNetwork = getRuntimeNetworkConfig();
   const missingContractHashWarning = wallet.address
     && (runtimeNetwork.network === "mainnet" || runtimeNetwork.network === "private")
     && !runtimeNetwork.contractHash
-    ? t("app.contract_hash_missing", {
-      network: runtimeNetwork.network.toUpperCase(),
-      env:
-        runtimeNetwork.network === "mainnet"
-          ? "VITE_NEO_CONTRACT_HASH_MAINNET"
-          : "VITE_NEO_CONTRACT_HASH_PRIVATE",
-    })
+    ? `Contract hash is missing for ${runtimeNetwork.network.toUpperCase()} network.`
     : "";
 
   return (
-    <div className="app-bg">
-      <div className="bg-gradient-orb bg-gradient-orb--1" />
-      <div className="bg-gradient-orb bg-gradient-orb--2" />
-      <div className="container">
-        <header className="main-header">
-          <div className="header-brand">
-            <div className="brand-row">
-              <span className="brand-logo-neo">NEO N3</span>
-              <span className="brand-logo-r3e"><span>R3E</span> Network</span>
-              <button
-                className="btn btn-icon"
-                onClick={() => i18n.changeLanguage(i18n.language === "en" ? "zh" : "en")}
-                type="button"
-                title={t("app.switch_lang")}
-              >
-                <Globe2 size={18} />
-              </button>
-            </div>
-            <h1 className="title title-highlight">{t("app.title")}</h1>
-            <p className="hint">{t("app.dialect")} {runtimeDialect.toUpperCase()}</p>
-            <p className="hint">{t("app.wallet_network")} {formatWalletNetworkLabel(wallet.network)}</p>
-            {dialectMismatchMessage ? <p className="error">{dialectMismatchMessage}</p> : null}
-            {missingContractHashWarning ? <p className="error">{missingContractHashWarning}</p> : null}
-          </div>
-          <div className="header-actions">
-            {wallet.address ? (
-              <>
-                <span className="wallet-badge">{shortAddress(wallet.address)}</span>
-                <button className="btn btn-secondary" onClick={wallet.disconnect} type="button">
-                  {t("app.disconnect")}
-                </button>
-              </>
-            ) : (
-              <button className="btn" onClick={() => void wallet.connect()} disabled={wallet.isConnecting} type="button">
-                {wallet.isConnecting ? t("app.connecting") : wallet.isReady ? t("app.connect") : t("app.install")}
-              </button>
-            )}
-          </div>
-        </header>
+    <div className="app-shell">
+      <div className="shell-backdrop shell-backdrop-a" />
+      <div className="shell-backdrop shell-backdrop-b" />
 
-        <nav className="nav-dock">
-          <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} to="/">
-            <LayoutDashboard size={20} />
-            <span>{t("app.nav_dashboard")}</span>
+      <header className="topbar">
+        <NavLink className="brand" to="/">
+          <span className="brand-mark">R3E</span>
+          <div className="brand-copy">
+            <strong>NFT Exchange</strong>
+            <span>Neo N3 · GhostMarket Compatible</span>
+          </div>
+        </NavLink>
+
+        <nav className="topnav">
+          <NavLink className={({ isActive }) => `topnav-link ${isActive ? "active" : ""}`} to="/">
+            <Home size={16} />
+            <span>Home</span>
           </NavLink>
-          <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} to="/collections/new">
-            <PlusCircle size={20} />
-            <span>{t("app.nav_create")}</span>
+          <NavLink className={({ isActive }) => `topnav-link ${isActive ? "active" : ""}`} to="/explore">
+            <Compass size={16} />
+            <span>Explore</span>
           </NavLink>
-          <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} to="/mint">
-            <Sparkles size={20} />
-            <span>{t("app.nav_mint")}</span>
+          <NavLink className={({ isActive }) => `topnav-link ${isActive ? "active" : ""}`} to="/collections/new">
+            <PlusCircle size={16} />
+            <span>Create</span>
           </NavLink>
-          <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} to="/portfolio">
-            <FolderOpen size={20} />
-            <span>{t("app.nav_portfolio")}</span>
+          <NavLink className={({ isActive }) => `topnav-link ${isActive ? "active" : ""}`} to="/mint">
+            <Sparkles size={16} />
+            <span>Mint</span>
+          </NavLink>
+          <NavLink className={({ isActive }) => `topnav-link ${isActive ? "active" : ""}`} to="/portfolio">
+            <FolderOpen size={16} />
+            <span>Portfolio</span>
           </NavLink>
         </nav>
 
-        <main className="page-body">{children}</main>
-      </div>
+        <div className="walletbar">
+          <div className="tagline">
+            <span className="tag">
+              <Zap size={12} />
+              {runtimeDialect.toUpperCase()}
+            </span>
+            <span className="tag">
+              <Wallet size={12} />
+              {formatWalletNetworkLabel(wallet.network)}
+            </span>
+          </div>
+          {wallet.address ? (
+            <div className="wallet-actions">
+              <span className="wallet-pill">{shortAddress(wallet.address)}</span>
+              <button className="btn btn-soft" onClick={wallet.disconnect} type="button">
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <button className="btn btn-primary" onClick={() => void wallet.connect()} disabled={wallet.isConnecting} type="button">
+              {wallet.isConnecting ? "Connecting..." : wallet.isReady ? "Connect Wallet" : "Install Wallet"}
+            </button>
+          )}
+        </div>
+      </header>
+
+      {dialectMismatchMessage ? <div className="notice notice-warn">{dialectMismatchMessage}</div> : null}
+      {missingContractHashWarning ? <div className="notice notice-error">{missingContractHashWarning}</div> : null}
+
+      <main className="app-main">{children}</main>
     </div>
   );
 }

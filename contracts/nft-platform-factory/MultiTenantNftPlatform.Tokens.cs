@@ -13,7 +13,7 @@ public partial class MultiTenantNftPlatform
     public static bool transfer(UInt160 to, ByteString tokenId, object data)
     {
         AssertDirectInvocation();
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         if (!to.IsValid)
         {
             throw new Exception("Invalid destination");
@@ -91,7 +91,7 @@ public partial class MultiTenantNftPlatform
     public static ByteString mint(ByteString collectionId, UInt160 to, string tokenUri, string propertiesJson)
     {
         AssertDirectInvocation();
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         collectionId = EnforceCollectionScope(collectionId);
         if (!to.IsValid)
         {
@@ -203,7 +203,7 @@ public partial class MultiTenantNftPlatform
     public static void burn(ByteString tokenId)
     {
         AssertDirectInvocation();
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);
         if (token.Burned)
@@ -258,7 +258,7 @@ public partial class MultiTenantNftPlatform
     public static void listTokenForSale(ByteString tokenId, BigInteger price)
     {
         AssertDirectInvocation();
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         if (price <= 0)
         {
             throw new Exception("Listing price must be greater than zero");
@@ -307,7 +307,7 @@ public partial class MultiTenantNftPlatform
     public static void cancelTokenSale(ByteString tokenId)
     {
         AssertDirectInvocation();
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         if (!HasTokenListing(tokenId))
         {
             throw new Exception("Token is not listed for sale");
@@ -333,7 +333,7 @@ public partial class MultiTenantNftPlatform
     public static bool buyToken(ByteString tokenId)
     {
         AssertDirectInvocation();
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);
         if (token.Burned)
@@ -418,7 +418,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static bool isTokenListed(ByteString tokenId)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         if (tokenId is null || tokenId.Length == 0 || Tokens().Get(tokenId) is null)
         {
             return false;
@@ -438,7 +438,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static object[] getTokenSale(ByteString tokenId)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         if (!isTokenListed(tokenId))
         {
             return [false];
@@ -451,7 +451,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static Iterator tokensOf(UInt160 owner)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         if (!owner.IsValid)
         {
             throw new Exception("Invalid owner");
@@ -463,14 +463,14 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static Iterator tokens()
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         return TokenOwners().Find("", FindOptions.KeysOnly);
     }
 
     [Safe]
     public static string tokenURI(ByteString tokenId)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);
         return token.Uri;
@@ -479,7 +479,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static Map<string, object> properties(ByteString tokenId)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);
         CollectionState collection = GetCollectionState(token.CollectionId);
@@ -500,7 +500,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static string getRoyalties(ByteString tokenId)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);
         CollectionState collection = GetCollectionState(token.CollectionId);
@@ -518,7 +518,7 @@ public partial class MultiTenantNftPlatform
     [Safe]
     public static object[] royaltyInfo(ByteString tokenId, UInt160 _royaltyToken, BigInteger salePrice)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         TokenState token = GetTokenState(tokenId);
         AssertTokenWithinScope(tokenId, token);
         CollectionState collection = GetCollectionState(token.CollectionId);
@@ -546,7 +546,7 @@ public partial class MultiTenantNftPlatform
 
     public static void onNEP11Payment(UInt160 _from, BigInteger _amount, ByteString _tokenId, object _data)
     {
-        AssertDedicatedContractMode();
+        AssertPlatformContractMode();
         throw new Exception("Receiving NEP-11 is not supported");
     }
 

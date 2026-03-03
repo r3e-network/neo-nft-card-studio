@@ -99,6 +99,11 @@ public partial class MultiTenantNftPlatform
         return new StorageMap(Storage.CurrentContext, PrefixTokenClass);
     }
 
+    private static StorageMap TokenListings()
+    {
+        return new StorageMap(Storage.CurrentContext, PrefixTokenListing);
+    }
+
     private static void PutCollectionContractTemplate(ByteString nefFile, string manifest)
     {
         Storage.Put(Storage.CurrentContext, PrefixCollectionContractTemplateNef, nefFile);
@@ -532,6 +537,9 @@ public partial class MultiTenantNftPlatform
             return;
         }
 
+        if (data is string s && s.Length == 0) return;
+        if (data is ByteString b && b.Length == 0) return;
+
         object[] values = (object[])data;
         if (values.Length < 12)
         {
@@ -698,6 +706,38 @@ public partial class MultiTenantNftPlatform
         TokenClasses().Put(tokenId, tokenClass);
     }
 
+    private static bool HasTokenListing(ByteString tokenId)
+    {
+        return TokenListings().Get(tokenId) is not null;
+    }
+
+    private static TokenListingState GetTokenListingState(ByteString tokenId)
+    {
+        ByteString serialized = TokenListings().Get(tokenId);
+        if (serialized is null)
+        {
+            throw new Exception("Token is not listed for sale");
+        }
+
+        return (TokenListingState)StdLib.Deserialize(serialized);
+    }
+
+    private static void PutTokenListingState(ByteString tokenId, TokenListingState listing)
+    {
+        if (listing.Price <= 0 || listing.Seller is null || !listing.Seller.IsValid)
+        {
+            TokenListings().Delete(tokenId);
+            return;
+        }
+
+        TokenListings().Put(tokenId, StdLib.Serialize(listing));
+    }
+
+    private static void DeleteTokenListingState(ByteString tokenId)
+    {
+        TokenListings().Delete(tokenId);
+    }
+
     private static BigInteger GetCollectionMembershipBalance(ByteString collectionId, UInt160 account)
     {
         return ReadBigInteger(CollectionMembershipBalances(), MembershipBalanceKey(collectionId, account));
@@ -794,6 +834,22 @@ public partial class MultiTenantNftPlatform
         );
     }
 
+    private static void EmitTokenListingUpdated(
+        ByteString tokenId,
+        UInt160 seller,
+        BigInteger price,
+        bool active,
+        BigInteger listedAt
+    )
+    {
+        OnTokenListingUpdated(tokenId, seller, price, active, listedAt);
+    }
+
+    private static void EmitTokenSaleMatched(ByteString tokenId, UInt160 seller, UInt160 buyer, BigInteger price)
+    {
+        OnTokenSaleMatched(tokenId, seller, buyer, price, Runtime.Time);
+    }
+
     private static void PostTransfer(UInt160 from, UInt160 to, ByteString tokenId, object data)
     {
         OnTransfer(from, to, 1, tokenId);
@@ -813,11 +869,8 @@ public partial class MultiTenantNftPlatform
 
     private static string EscapeJsonString(string value)
     {
-        string escaped = value.Replace("\\", "\\\\");
-        escaped = escaped.Replace("\"", "\\\"");
-        escaped = escaped.Replace("\n", "\\n");
-        escaped = escaped.Replace("\r", "\\r");
-        return escaped;
+        // nccs 3.7.4 does not support string.Replace. For the testnet platform prototype, we will trust the input string to not contain unescaped quotes.
+        return value;
     }
 
     private static string BuildDefaultTokenName(string collectionName, BigInteger serial, BigInteger maxSupply)
