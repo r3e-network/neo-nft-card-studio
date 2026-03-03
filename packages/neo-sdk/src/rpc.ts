@@ -4,7 +4,14 @@ import { decodeStackItem } from "./stack.js";
 import type { ContractArgument, RpcConfig } from "./types.js";
 
 const DEFAULT_TESTNET_RPC_FAILOVERS: Record<string, string[]> = {
-  "http://seed2t5.neo.org:20332": ["http://seed1t5.neo.org:20332"],
+  "http://seed2t5.neo.org:20332": [
+    "http://seed1t5.neo.org:20332",
+    "https://rpc.t5.n3.nspcc.ru",
+  ],
+  "http://seed1t5.neo.org:20332": [
+    "http://seed2t5.neo.org:20332",
+    "https://rpc.t5.n3.nspcc.ru",
+  ],
 };
 
 interface RawInvocationResult {
@@ -52,6 +59,10 @@ export class NeoRpcService {
     }
 
     this.client = new rpc.RPCClient(this.rpcUrls[0]);
+  }
+
+  getActiveRpcUrl(): string {
+    return this.rpcUrls[this.activeIndex] ?? this.config.rpcUrl;
   }
 
   private async runWithFailover<T>(operation: (client: any) => Promise<T>): Promise<T> {

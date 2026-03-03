@@ -150,6 +150,10 @@ export class IndexerService {
     return this.eventsEnabled;
   }
 
+  getActiveRpcUrl(): string {
+    return this.rpc.getActiveRpcUrl();
+  }
+
   async getContractManifestSummary(contractHash?: string): Promise<
     | {
         supportedStandards: string[];

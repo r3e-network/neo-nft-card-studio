@@ -607,8 +607,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   router.get(
     "/health",
     withNetworkContext(async (context, _req, res) => {
-      const chainBlockHeight = context.indexer.getLastKnownChainBlockHeight();
-      void context.indexer.getChainBlockHeight();
+      const chainBlockHeight = await context.indexer.getChainBlockHeight();
 
       res.json({
         status: "ok",
@@ -621,6 +620,8 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         },
         endpoint: {
           rpcUrl: context.config.NEO_RPC_URL,
+          configuredRpcUrl: context.config.NEO_RPC_URL,
+          activeRpcUrl: context.indexer.getActiveRpcUrl(),
           chainBlockHeight,
           reachable: typeof chainBlockHeight === "number",
         },
@@ -641,6 +642,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         dialect: context.config.NEO_CONTRACT_DIALECT,
         eventIndexingEnabled: context.indexer.isEventIndexingEnabled(),
         rpcUrl: context.config.NEO_RPC_URL,
+        activeRpcUrl: context.indexer.getActiveRpcUrl(),
         ghostMarketEnabled: context.config.GHOSTMARKET_ENABLED,
       });
     }),
