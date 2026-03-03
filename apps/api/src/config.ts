@@ -8,6 +8,7 @@ export type ContractDialect = "csharp" | "solidity" | "rust";
 export type ApiNetworkName = "mainnet" | "testnet" | "private";
 
 const API_NETWORKS: ApiNetworkName[] = ["mainnet", "testnet", "private"];
+const DEFAULT_DB_FILE = process.env.VERCEL ? "/tmp/nft-platform.db" : "apps/api/data/nft-platform.db";
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === "string") {
@@ -78,7 +79,7 @@ const configSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(8080),
   API_CORS_ORIGIN: z.string().default("*"),
   NEO_DEFAULT_NETWORK: z.enum(["mainnet", "testnet", "private"]).default("testnet"),
-  DB_FILE: z.string().default("apps/api/data/nft-platform.db"),
+  DB_FILE: z.string().default(DEFAULT_DB_FILE),
   DB_FILE_MAINNET: optionalStringFromEnv,
   DB_FILE_TESTNET: optionalStringFromEnv,
   DB_FILE_PRIVATE: optionalStringFromEnv,
@@ -117,6 +118,9 @@ const configSchema = z.object({
   INDEXER_ENABLE_EVENTS: booleanFromEnv.optional(),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_ANON_KEY: z.string().trim().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().trim().optional(),
+  SUPABASE_SECRET_KEY: z.string().trim().optional(),
+  SUPABASE_KEY: z.string().trim().optional(),
 });
 
 type RawAppConfig = z.infer<typeof configSchema>;
@@ -130,7 +134,25 @@ export interface ApiNetworkConfig {
 }
 
 export interface AppConfig extends RawAppConfig {
+  SUPABASE_DB_KEY?: string;
   NETWORKS: Partial<Record<ApiNetworkName, ApiNetworkConfig>>;
+}
+
+function resolveSupabaseKey(config: RawAppConfig): string | undefined {
+  const candidates = [
+    normalizeOptional(config.SUPABASE_ANON_KEY),
+    normalizeOptional(config.SUPABASE_SERVICE_ROLE_KEY),
+    normalizeOptional(config.SUPABASE_SECRET_KEY),
+    normalizeOptional(config.SUPABASE_KEY),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
 }
 
 function getNetworkEnvValues(config: RawAppConfig, network: ApiNetworkName): {
@@ -232,8 +254,18 @@ function resolveNetworks(config: RawAppConfig): Partial<Record<ApiNetworkName, A
 
 export function loadConfig(): AppConfig {
   const parsed = configSchema.parse(process.env);
+  const supabaseUrl = normalizeOptional(parsed.SUPABASE_URL);
+  const supabaseKey = resolveSupabaseKey(parsed);
+
+  if (supabaseUrl && !supabaseKey) {
+    throw new Error(
+      "SUPABASE_URL is set but no Supabase key is configured. Set SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY.",
+    );
+  }
+
   return {
     ...parsed,
+    SUPABASE_DB_KEY: supabaseKey,
     NETWORKS: resolveNetworks(parsed),
   };
 }
