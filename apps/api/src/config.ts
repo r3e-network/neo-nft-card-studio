@@ -114,6 +114,7 @@ const configSchema = z.object({
     .default("https://ghostmarket.io/asset/neo/{contractHash}/{tokenId}"),
   INDEXER_POLL_MS: z.coerce.number().int().positive().default(5000),
   INDEXER_BATCH_SIZE: z.coerce.number().int().positive().default(30),
+  INDEXER_BOOTSTRAP_BLOCK_WINDOW: z.coerce.number().int().nonnegative().default(2000),
   INDEXER_START_BLOCK: z.coerce.number().int().nonnegative().default(0),
   INDEXER_ENABLE_EVENTS: booleanFromEnv.optional(),
   SUPABASE_URL: optionalUrlFromEnv,

@@ -200,6 +200,36 @@ export class IndexerService {
     return Number(saved);
   }
 
+  private async resolveSyncCursor(chainHeight: number): Promise<number> {
+    const saved = await this.db.getSyncState(SYNC_BLOCK_KEY);
+    const parsedSaved = saved === null ? Number.NaN : Number(saved);
+    if (Number.isFinite(parsedSaved) && parsedSaved >= 0) {
+      if (parsedSaved >= this.config.INDEXER_START_BLOCK) {
+        return parsedSaved;
+      }
+
+      await this.db.setSyncState(SYNC_BLOCK_KEY, this.config.INDEXER_START_BLOCK.toString());
+      return this.config.INDEXER_START_BLOCK;
+    }
+
+    let bootstrapFrom = this.config.INDEXER_START_BLOCK;
+    const window = this.config.INDEXER_BOOTSTRAP_BLOCK_WINDOW;
+    if (
+      bootstrapFrom === 0
+      && window > 0
+      && chainHeight > window
+    ) {
+      bootstrapFrom = Math.max(0, chainHeight - window + 1);
+      this.log.info(
+        { chainHeight, bootstrapWindow: window, bootstrapFrom },
+        "No sync cursor found, bootstrapping near chain tip",
+      );
+    }
+
+    await this.db.setSyncState(SYNC_BLOCK_KEY, bootstrapFrom.toString());
+    return bootstrapFrom;
+  }
+
   getLastKnownChainBlockHeight(): number | null {
     return this.lastKnownChainBlockHeight;
   }
@@ -217,10 +247,7 @@ export class IndexerService {
     const chainHeight = await this.getChainBlockHeight();
     if (chainHeight === null) return;
 
-    let cursor = await this.getCurrentSyncBlock();
-    if (cursor < this.config.INDEXER_START_BLOCK) {
-      cursor = this.config.INDEXER_START_BLOCK;
-    }
+    const cursor = await this.resolveSyncCursor(chainHeight);
 
     if (cursor > chainHeight) return;
 
@@ -247,12 +274,8 @@ export class IndexerService {
       if (chainHeight === null) {
         return;
       }
-      let cursor = await this.getCurrentSyncBlock();
+      const cursor = await this.resolveSyncCursor(chainHeight);
       const trackedHashes = await this.getTrackedContractHashes();
-
-      if (cursor < this.config.INDEXER_START_BLOCK) {
-        cursor = this.config.INDEXER_START_BLOCK;
-      }
 
       if (cursor > chainHeight) {
         return;

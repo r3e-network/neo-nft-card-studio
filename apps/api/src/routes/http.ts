@@ -580,23 +580,27 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.post(
     "/sync",
-    withNetworkContext(async (context, _req, res) => {
+    withNetworkContext(async (context, req, res) => {
       try {
+        const requestedBatch = Number.parseInt((req.query.batch as string | undefined) ?? "", 10);
+        const batchSize = Number.isFinite(requestedBatch)
+          ? Math.min(Math.max(requestedBatch, 1), 300)
+          : Math.min(Math.max(context.config.INDEXER_BATCH_SIZE * 4, 40), 120);
+
         const chainHeight = await context.indexer.getChainBlockHeight();
         const startBlock = await context.indexer.getCurrentSyncBlock();
-        
-        // Process a batch of blocks (e.g. 50 blocks or 10 seconds worth)
-        // This is safe for Vercel's 10-60s execution limit
-        await context.indexer.runSyncBatch(20); 
-        
+
+        await context.indexer.runSyncBatch(batchSize);
+
         const newHeight = await context.indexer.getCurrentSyncBlock();
-        
+
         res.json({
           status: "sync_completed",
           previousBlock: startBlock,
           currentBlock: newHeight,
           targetHeight: chainHeight,
-          syncedCount: newHeight - startBlock
+          syncedCount: newHeight - startBlock,
+          batchSize,
         });
       } catch (error) {
         res.status(500).json({ status: "error", message: error instanceof Error ? error.message : String(error) });

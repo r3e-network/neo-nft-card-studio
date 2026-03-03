@@ -75,6 +75,7 @@ cp .env.example .env
 - 安全兜底：当钱包未连接或网络无法识别（`unknown`）时，前端会 fail-closed，拒绝继续发起链请求，避免误落到默认网络。
 - 主网注意：若钱包在 mainnet 且你部署了独立主网合约，建议显式设置 `VITE_NEO_CONTRACT_HASH_MAINNET` 与 `NEO_CONTRACT_HASH_MAINNET` 覆盖默认值。
 - `INDEXER_ENABLE_EVENTS`: 是否启用事件索引（`rust` 方言建议按需开启）
+- `INDEXER_BOOTSTRAP_BLOCK_WINDOW`: 当首次无同步游标且 `INDEXER_START_BLOCK=0` 时，自动从链头附近回溯窗口开始同步（默认 `2000`）。
 - `NEOFS_*`: NeoFS 网关与 URI 解析配置（支持 `neofs://<container>/<object>`）
 - `GHOSTMARKET_*`: GhostMarket 链接模板和兼容性检测配置
 
