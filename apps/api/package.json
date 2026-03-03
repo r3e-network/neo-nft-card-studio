@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "vercel-build": "mkdir -p dist",
     "lint": "echo 'No lint configured for api'",
     "format": "echo 'No format step for api'"
   },

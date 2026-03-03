@@ -26,7 +26,6 @@
     "lint": "npm run lint --workspaces",
     "format": "npm run format --workspaces",
     "check": "npm run typecheck --workspaces",
-    "build": "npm run vercel-build",
     "vercel-build": "npm run build --workspace @platform/neo-sdk && npm run build --workspace @platform/web"
   },
   "engines": {
