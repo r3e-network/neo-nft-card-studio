@@ -265,18 +265,14 @@ export function CreateCollectionPage() {
 
                 <label>
                   Max Supply
-                  <div style={{ position: "relative" }}>
-                    <input type="number" min={0} value={form.maxSupply} onChange={(e) => update("maxSupply", e.target.value)} />
-                    <div style={{ position: "absolute", right: "1rem", top: "1.4rem", color: "#8A939B", fontSize: "0.8rem" }}>0 = Unlimited</div>
-                  </div>
+                  <input type="number" min={0} value={form.maxSupply} onChange={(e) => update("maxSupply", e.target.value)} />
+                  <p className="hint" style={{ marginTop: "0.4rem", fontSize: "0.8rem" }}>0 = Unlimited supply</p>
                 </label>
 
                 <label>
                   Royalty Percentage (%)
-                  <div style={{ position: "relative" }}>
-                    <input type="number" min={0} max={100} value={Number(form.royaltyBps) / 100} onChange={(e) => update("royaltyBps", (Number(e.target.value) * 100).toString())} />
-                    <div style={{ position: "absolute", right: "1rem", top: "1.4rem", color: "#8A939B", fontSize: "0.8rem" }}>BPS: {form.royaltyBps}</div>
-                  </div>
+                  <input type="number" min={0} max={100} value={Number(form.royaltyBps) / 100} onChange={(e) => update("royaltyBps", (Number(e.target.value) * 100).toString())} />
+                  <p className="hint" style={{ marginTop: "0.4rem", fontSize: "0.8rem" }}>Basis points (BPS): {form.royaltyBps}</p>
                 </label>
 
                 <label className="switch full" style={{ marginTop: "1rem" }}>
