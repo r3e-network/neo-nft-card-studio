@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "vercel-build": "echo 'handled by root'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'No lint configured for neo-sdk'",
     "format": "echo 'No format step for neo-sdk'"
