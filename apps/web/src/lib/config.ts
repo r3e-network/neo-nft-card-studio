@@ -17,8 +17,8 @@ function normalizeOptionalValue(input: string | undefined): string | undefined {
 
 export const APP_CONFIG = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "/api",
-  rpcUrl: import.meta.env.VITE_NEO_RPC_URL ?? DEFAULT_TESTNET_RPC_URL,
-  contractHash: import.meta.env.VITE_NEO_CONTRACT_HASH ?? DEFAULT_TESTNET_CONTRACT_HASH,
+  rpcUrl: DEFAULT_TESTNET_RPC_URL,
+  contractHash: DEFAULT_TESTNET_CONTRACT_HASH,
   contractDialect: normalizeDialect(import.meta.env.VITE_CONTRACT_DIALECT),
   networks: {
     mainnet: {
@@ -28,8 +28,8 @@ export const APP_CONFIG = {
     },
     testnet: {
       apiBaseUrl: normalizeOptionalValue(import.meta.env.VITE_API_BASE_URL_TESTNET) ?? "/api",
-      rpcUrl: normalizeOptionalValue(import.meta.env.VITE_NEO_RPC_URL_TESTNET) ?? DEFAULT_TESTNET_RPC_URL,
-      contractHash: normalizeOptionalValue(import.meta.env.VITE_NEO_CONTRACT_HASH_TESTNET) ?? DEFAULT_TESTNET_CONTRACT_HASH,
+      rpcUrl: DEFAULT_TESTNET_RPC_URL,
+      contractHash: DEFAULT_TESTNET_CONTRACT_HASH,
     },
     private: {
       apiBaseUrl: normalizeOptionalValue(import.meta.env.VITE_API_BASE_URL_PRIVATE) ?? "/api",

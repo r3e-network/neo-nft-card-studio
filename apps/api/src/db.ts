@@ -91,6 +91,67 @@ function loadSqliteConstructor(): SqliteConstructor {
   }
 }
 
+function formatSupabaseError(error: unknown): string {
+  if (!error) {
+    return "unknown error";
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (typeof error === "object") {
+    const withMessage = error as {
+      message?: unknown;
+      code?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+    const parts = [
+      typeof withMessage.code === "string" ? `code=${withMessage.code}` : "",
+      typeof withMessage.message === "string" ? withMessage.message : "",
+      typeof withMessage.details === "string" ? withMessage.details : "",
+      typeof withMessage.hint === "string" ? withMessage.hint : "",
+    ].filter((entry) => entry.length > 0);
+
+    if (parts.length > 0) {
+      return parts.join(" | ");
+    }
+  }
+
+  return String(error);
+}
+
+function isSupabaseNoRowsError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { code?: unknown; message?: unknown };
+  if (candidate.code === "PGRST116" || candidate.code === "PGRST505") {
+    return true;
+  }
+
+  if (typeof candidate.message !== "string") {
+    return false;
+  }
+
+  const message = candidate.message.toLowerCase();
+  return message.includes("0 rows") || message.includes("no rows");
+}
+
+function assertSupabaseSuccess(error: unknown, operation: string): void {
+  if (!error) {
+    return;
+  }
+
+  throw new Error(`Supabase ${operation} failed: ${formatSupabaseError(error)}`);
+}
+
 export class AppDb {
   private readonly sqlite: SqliteDatabase | null = null;
   private readonly supabase: SupabaseClient | null = null;
@@ -122,8 +183,13 @@ export class AppDb {
         .from("sync_state")
         .select("value")
         .eq("key", key)
-        .single();
-      if (error) return null;
+        .maybeSingle();
+      if (error) {
+        if (isSupabaseNoRowsError(error)) {
+          return null;
+        }
+        assertSupabaseSuccess(error, `read sync_state key='${key}'`);
+      }
       return data?.value ?? null;
     }
 
@@ -133,9 +199,10 @@ export class AppDb {
 
   async setSyncState(key: string, value: string): Promise<void> {
     if (this.supabase) {
-      await this.supabase
+      const { error } = await this.supabase
         .from("sync_state")
         .upsert({ key, value }, { onConflict: "key" });
+      assertSupabaseSuccess(error, `upsert sync_state key='${key}'`);
       return;
     }
 
@@ -212,10 +279,11 @@ export class AppDb {
 
   async setCollectionContractHash(collectionId: string, contractHash: string, updatedAt: string): Promise<void> {
     if (this.supabase) {
-      await this.supabase
+      const { error } = await this.supabase
         .from("collections")
         .update({ contract_hash: contractHash, updated_at: updatedAt })
         .eq("collection_id", collectionId);
+      assertSupabaseSuccess(error, `update collections.contract_hash for collection_id='${collectionId}'`);
       return;
     }
 
@@ -234,8 +302,8 @@ export class AppDb {
         .from("collections")
         .select("contract_hash")
         .not("contract_hash", "is", null);
-      if (error) return [];
-      return data.map(r => r.contract_hash).filter(Boolean) as string[];
+      assertSupabaseSuccess(error, "list collection contract hashes");
+      return (data ?? []).map((row) => row.contract_hash).filter(Boolean) as string[];
     }
 
     const rows = this.sqlite!
@@ -288,10 +356,11 @@ export class AppDb {
 
   async markTokenOwner(tokenId: string, owner: string, updatedAt: string): Promise<void> {
     if (this.supabase) {
-      await this.supabase
+      const { error } = await this.supabase
         .from("tokens")
         .update({ owner, updated_at: updatedAt })
         .eq("token_id", tokenId);
+      assertSupabaseSuccess(error, `update token owner for token_id='${tokenId}'`);
       return;
     }
 
@@ -306,7 +375,7 @@ export class AppDb {
 
   async insertTransfer(input: TransferRecord): Promise<void> {
     if (this.supabase) {
-      await this.supabase
+      const { error } = await this.supabase
         .from("transfers")
         .insert({
           txid: input.txid,
@@ -316,6 +385,7 @@ export class AppDb {
           block_index: input.blockIndex,
           timestamp: input.timestamp,
         });
+      assertSupabaseSuccess(error, `insert transfer txid='${input.txid}' token_id='${input.tokenId}'`);
       return;
     }
 
@@ -363,7 +433,7 @@ export class AppDb {
 
   async upsertTokenListing(input: TokenListingRecord): Promise<void> {
     if (this.supabase) {
-      await this.supabase
+      const { error } = await this.supabase
         .from("token_listings")
         .upsert({
           token_id: input.tokenId,
@@ -373,6 +443,7 @@ export class AppDb {
           listed_at: input.listedAt,
           updated_at: input.updatedAt,
         }, { onConflict: "token_id" });
+      assertSupabaseSuccess(error, `upsert token_listings token_id='${input.tokenId}'`);
       return;
     }
 
@@ -821,16 +892,19 @@ export class AppDb {
 
   async getStats(): Promise<{ collectionCount: number; tokenCount: number; transferCount: number }> {
     if (this.supabase) {
-      const [{ count: collectionCount }, { count: tokenCount }, { count: transferCount }] = await Promise.all([
+      const [collectionsResult, tokensResult, transfersResult] = await Promise.all([
         this.supabase.from("collections").select("*", { count: "exact", head: true }),
         this.supabase.from("tokens").select("*", { count: "exact", head: true }).eq("burned", 0),
         this.supabase.from("transfers").select("*", { count: "exact", head: true }),
       ]);
+      assertSupabaseSuccess(collectionsResult.error, "count collections");
+      assertSupabaseSuccess(tokensResult.error, "count active tokens");
+      assertSupabaseSuccess(transfersResult.error, "count transfers");
 
       return {
-        collectionCount: collectionCount || 0,
-        tokenCount: tokenCount || 0,
-        transferCount: transferCount || 0,
+        collectionCount: collectionsResult.count || 0,
+        tokenCount: tokensResult.count || 0,
+        transferCount: transfersResult.count || 0,
       };
     }
 

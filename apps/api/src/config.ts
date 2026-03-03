@@ -275,13 +275,13 @@ function resolveNetworkConfig(config: RawAppConfig, network: ApiNetworkName): Ap
   const builtIn = BUILTIN_DEFAULTS[network];
 
   const rpcUrl =
+    builtIn?.rpcUrl ??
     envValues.rpcUrl ??
-    (isDefault ? normalizeOptional(config.NEO_RPC_URL) : undefined) ??
-    builtIn?.rpcUrl;
+    (isDefault ? normalizeOptional(config.NEO_RPC_URL) : undefined);
   const contractHash =
+    builtIn?.contractHash ??
     envValues.contractHash ??
-    (isDefault ? normalizeOptional(config.NEO_CONTRACT_HASH) : undefined) ??
-    builtIn?.contractHash;
+    (isDefault ? normalizeOptional(config.NEO_CONTRACT_HASH) : undefined);
 
   const hasAnyNetworkSpecificValue =
     !!envValues.dbFile ||
