@@ -1,5 +1,6 @@
 import { FormEvent, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck, Info, ChevronRight, Check } from "lucide-react";
 
 import { useWallet } from "../hooks/useWallet";

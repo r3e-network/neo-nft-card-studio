@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "vercel-build": "mkdir -p dist && echo 'ok' > dist/index.html",
+    "vercel-build": "if [ -f ../../package.json ] && [ -d ../../node_modules ]; then npm run vercel-build --prefix ../../; else mkdir -p dist && echo 'ok' > dist/index.html; fi",
     "lint": "echo 'No lint configured for api'",
     "format": "echo 'No format step for api'"
   },

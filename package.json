@@ -26,7 +26,7 @@
     "lint": "npm run lint --workspaces",
     "format": "npm run format --workspaces",
     "check": "npm run typecheck --workspaces",
-    "vercel-build": "npm run build --workspace @platform/neo-sdk && npm run build --workspace @platform/web"
+    "vercel-build": "npm run build --workspace @platform/neo-sdk && npm run build --workspace @platform/web && mkdir -p dist && cp -R apps/web/dist/. dist/"
   },
   "engines": {
     "node": ">=20.0.0"
