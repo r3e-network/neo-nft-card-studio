@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { experimental, rpc, sc, u, wallet } from "@cityofzion/neon-js";
+import { experimental, rpc, sc, tx, u, wallet } from "@cityofzion/neon-js";
 
 const DEFAULT_RPC_URL = "https://testnet1.neo.coz.io:443";
 const PLATFORM_CONTRACT_NEF =
@@ -251,8 +251,22 @@ function findNotification(appLog, contractHash, eventName) {
   return null;
 }
 
-async function invokeAndWait(label, smartContract, rpcClient, contractHash, operation, params) {
-  const txid = await smartContract.invoke(operation, params);
+function buildGlobalSignerForContract(smartContract) {
+  const accountScriptHash = smartContract?.config?.account?.scriptHash;
+  if (!accountScriptHash) {
+    return undefined;
+  }
+
+  return [
+    new tx.Signer({
+      account: accountScriptHash,
+      scopes: "Global",
+    }),
+  ];
+}
+
+async function invokeAndWait(label, smartContract, rpcClient, contractHash, operation, params, signers) {
+  const txid = await smartContract.invoke(operation, params, signers ?? buildGlobalSignerForContract(smartContract));
   const appLog = await waitForApplicationLog(rpcClient, txid);
   const execution = Array.isArray(appLog.executions) && appLog.executions.length > 0 ? appLog.executions[0] : null;
   if (!execution || execution.vmstate !== "HALT") {

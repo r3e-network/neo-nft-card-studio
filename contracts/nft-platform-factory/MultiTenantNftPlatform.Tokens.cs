@@ -550,4 +550,13 @@ public partial class MultiTenantNftPlatform
         throw new Exception("Receiving NEP-11 is not supported");
     }
 
+    public static void onNEP17Payment(UInt160 _from, BigInteger _amount, object _data)
+    {
+        AssertPlatformContractMode();
+        if (Runtime.CallingScriptHash != GAS.Hash)
+        {
+            throw new Exception("Only GAS payments are supported");
+        }
+    }
+
 }
