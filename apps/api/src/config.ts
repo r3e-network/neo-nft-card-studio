@@ -127,6 +127,7 @@ const configSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalStringFromEnv,
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: optionalStringFromEnv,
   POSTGRES_HOST: optionalStringFromEnv,
+  POSTGRES_USER: optionalStringFromEnv,
   POSTGRES_URL: optionalStringFromEnv,
 });
 
@@ -180,6 +181,30 @@ function inferSupabaseUrlFromPostgresHost(host: string | undefined): string | un
   return `https://${match[1].toLowerCase()}.supabase.co`;
 }
 
+function inferSupabaseUrlFromPostgresUser(user: string | undefined): string | undefined {
+  const normalizedUser = normalizeOptional(user);
+  if (!normalizedUser) {
+    return undefined;
+  }
+
+  const decodedUser = decodeURIComponent(normalizedUser);
+  const segments = decodedUser.split(".").filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return undefined;
+  }
+
+  const candidate = segments[segments.length - 1].toLowerCase();
+  if (candidate === "postgres") {
+    return undefined;
+  }
+
+  if (!/^[a-z0-9-]{6,64}$/.test(candidate)) {
+    return undefined;
+  }
+
+  return `https://${candidate}.supabase.co`;
+}
+
 function inferSupabaseUrlFromPostgresUrl(postgresUrl: string | undefined): string | undefined {
   const normalizedUrl = normalizeOptional(postgresUrl);
   if (!normalizedUrl) {
@@ -188,7 +213,7 @@ function inferSupabaseUrlFromPostgresUrl(postgresUrl: string | undefined): strin
 
   try {
     const parsed = new URL(normalizedUrl);
-    return inferSupabaseUrlFromPostgresHost(parsed.hostname);
+    return inferSupabaseUrlFromPostgresHost(parsed.hostname) ?? inferSupabaseUrlFromPostgresUser(parsed.username);
   } catch {
     return undefined;
   }
@@ -200,6 +225,7 @@ function resolveSupabaseUrl(config: RawAppConfig): string | undefined {
     normalizeOptional(config.NEXT_PUBLIC_SUPABASE_URL) ??
     normalizeOptional(config.SUPABASE_PROJECT_URL) ??
     inferSupabaseUrlFromPostgresHost(config.POSTGRES_HOST) ??
+    inferSupabaseUrlFromPostgresUser(config.POSTGRES_USER) ??
     inferSupabaseUrlFromPostgresUrl(config.POSTGRES_URL)
   );
 }
