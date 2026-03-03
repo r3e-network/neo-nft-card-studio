@@ -29,6 +29,6 @@
     "vercel-build": "npm run build --workspace @platform/neo-sdk && npm run build --workspace @platform/web && mkdir -p dist && cp -R apps/web/dist/. dist/"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.x"
   }
 }
