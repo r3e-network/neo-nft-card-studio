@@ -1,7 +1,8 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import Database from "better-sqlite3";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import type BetterSqlite3 from "better-sqlite3";
 
 import type {
   CollectionRecord,
@@ -75,8 +76,23 @@ CREATE INDEX IF NOT EXISTS idx_token_listings_listed ON token_listings(listed);
 CREATE INDEX IF NOT EXISTS idx_token_listings_updated ON token_listings(updated_at);
 `;
 
+const require = createRequire(import.meta.url);
+type SqliteDatabase = InstanceType<typeof BetterSqlite3>;
+type SqliteConstructor = typeof BetterSqlite3;
+
+function loadSqliteConstructor(): SqliteConstructor {
+  try {
+    return require("better-sqlite3") as SqliteConstructor;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `SQLite backend is unavailable because better-sqlite3 failed to load (${message}). Configure SUPABASE_URL with SUPABASE_SERVICE_ROLE_KEY to run on serverless platforms.`,
+    );
+  }
+}
+
 export class AppDb {
-  private readonly sqlite: Database.Database | null = null;
+  private readonly sqlite: SqliteDatabase | null = null;
   private readonly supabase: SupabaseClient | null = null;
 
   constructor(dbPath: string, supabaseUrl?: string, supabaseKey?: string) {
@@ -88,7 +104,8 @@ export class AppDb {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      this.sqlite = new Database(dbPath);
+      const Sqlite = loadSqliteConstructor();
+      this.sqlite = new Sqlite(dbPath);
       this.sqlite.pragma("journal_mode = WAL");
       this.sqlite.exec(SCHEMA_SQL);
       this.ensureCollectionContractHashColumn();

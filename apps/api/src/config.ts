@@ -116,11 +116,18 @@ const configSchema = z.object({
   INDEXER_BATCH_SIZE: z.coerce.number().int().positive().default(30),
   INDEXER_START_BLOCK: z.coerce.number().int().nonnegative().default(0),
   INDEXER_ENABLE_EVENTS: booleanFromEnv.optional(),
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_ANON_KEY: z.string().trim().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().trim().optional(),
-  SUPABASE_SECRET_KEY: z.string().trim().optional(),
-  SUPABASE_KEY: z.string().trim().optional(),
+  SUPABASE_URL: optionalUrlFromEnv,
+  NEXT_PUBLIC_SUPABASE_URL: optionalUrlFromEnv,
+  SUPABASE_PROJECT_URL: optionalUrlFromEnv,
+  SUPABASE_ANON_KEY: optionalStringFromEnv,
+  SUPABASE_SERVICE_ROLE_KEY: optionalStringFromEnv,
+  SUPABASE_SECRET_KEY: optionalStringFromEnv,
+  SUPABASE_KEY: optionalStringFromEnv,
+  SUPABASE_PUBLISHABLE_KEY: optionalStringFromEnv,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalStringFromEnv,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: optionalStringFromEnv,
+  POSTGRES_HOST: optionalStringFromEnv,
+  POSTGRES_URL: optionalStringFromEnv,
 });
 
 type RawAppConfig = z.infer<typeof configSchema>;
@@ -140,10 +147,13 @@ export interface AppConfig extends RawAppConfig {
 
 function resolveSupabaseKey(config: RawAppConfig): string | undefined {
   const candidates = [
-    normalizeOptional(config.SUPABASE_ANON_KEY),
     normalizeOptional(config.SUPABASE_SERVICE_ROLE_KEY),
     normalizeOptional(config.SUPABASE_SECRET_KEY),
     normalizeOptional(config.SUPABASE_KEY),
+    normalizeOptional(config.SUPABASE_ANON_KEY),
+    normalizeOptional(config.SUPABASE_PUBLISHABLE_KEY),
+    normalizeOptional(config.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    normalizeOptional(config.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
   ];
 
   for (const candidate of candidates) {
@@ -153,6 +163,45 @@ function resolveSupabaseKey(config: RawAppConfig): string | undefined {
   }
 
   return undefined;
+}
+
+function inferSupabaseUrlFromPostgresHost(host: string | undefined): string | undefined {
+  const normalizedHost = normalizeOptional(host);
+  if (!normalizedHost) {
+    return undefined;
+  }
+
+  const hostWithoutPort = normalizedHost.split(":")[0];
+  const match = hostWithoutPort.match(/^db\.([a-z0-9-]+)\.supabase\.co$/i);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  return `https://${match[1].toLowerCase()}.supabase.co`;
+}
+
+function inferSupabaseUrlFromPostgresUrl(postgresUrl: string | undefined): string | undefined {
+  const normalizedUrl = normalizeOptional(postgresUrl);
+  if (!normalizedUrl) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(normalizedUrl);
+    return inferSupabaseUrlFromPostgresHost(parsed.hostname);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveSupabaseUrl(config: RawAppConfig): string | undefined {
+  return (
+    normalizeOptional(config.SUPABASE_URL) ??
+    normalizeOptional(config.NEXT_PUBLIC_SUPABASE_URL) ??
+    normalizeOptional(config.SUPABASE_PROJECT_URL) ??
+    inferSupabaseUrlFromPostgresHost(config.POSTGRES_HOST) ??
+    inferSupabaseUrlFromPostgresUrl(config.POSTGRES_URL)
+  );
 }
 
 function getNetworkEnvValues(config: RawAppConfig, network: ApiNetworkName): {
@@ -254,17 +303,18 @@ function resolveNetworks(config: RawAppConfig): Partial<Record<ApiNetworkName, A
 
 export function loadConfig(): AppConfig {
   const parsed = configSchema.parse(process.env);
-  const supabaseUrl = normalizeOptional(parsed.SUPABASE_URL);
+  const supabaseUrl = resolveSupabaseUrl(parsed);
   const supabaseKey = resolveSupabaseKey(parsed);
 
   if (supabaseUrl && !supabaseKey) {
     throw new Error(
-      "SUPABASE_URL is set but no Supabase key is configured. Set SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY.",
+      "Supabase URL is configured but no key is available. Set SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SECRET_KEY, or SUPABASE_ANON_KEY.",
     );
   }
 
   return {
     ...parsed,
+    SUPABASE_URL: supabaseUrl,
     SUPABASE_DB_KEY: supabaseKey,
     NETWORKS: resolveNetworks(parsed),
   };
