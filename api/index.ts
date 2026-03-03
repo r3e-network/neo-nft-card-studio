@@ -1,20 +1,14 @@
 import express from "express";
 import pino from "pino";
-import { createApp } from "../apps/api/src/app.js";
 
 const log = pino({ name: "nft-platform-vercel-entry" });
-let app: express.Express;
+let appPromise: Promise<express.Express> | null = null;
 
 function envPresent(...values: Array<string | undefined>): boolean {
   return values.some((value) => typeof value === "string" && value.trim().length > 0);
 }
 
-try {
-  ({ app } = createApp());
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  log.error({ err: error }, "Failed to initialize API app");
-
+function createFallbackApp(message: string): express.Express {
   const fallback = express();
   fallback.use((_req, res) => {
     const diagnostics = {
@@ -57,7 +51,30 @@ try {
       diagnostics,
     });
   });
-  app = fallback;
+  return fallback;
 }
 
-export default app;
+async function getApp(): Promise<express.Express> {
+  if (!appPromise) {
+    appPromise = (async () => {
+      try {
+        const { createApp } = await import("../apps/api/src/app.js");
+        return createApp().app;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log.error({ err: error }, "Failed to initialize API app");
+        return createFallbackApp(message);
+      }
+    })();
+  }
+
+  return appPromise;
+}
+
+export default async function handler(
+  req: express.Request,
+  res: express.Response,
+): Promise<void> {
+  const resolvedApp = await getApp();
+  resolvedApp(req, res);
+}
