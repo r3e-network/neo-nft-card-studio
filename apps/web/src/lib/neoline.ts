@@ -597,14 +597,16 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
   throw new Error(`Connected wallet provider does not expose a compatible account API. Available keys: ${available}`);
 }
 
-export async function getNeoWalletAccount(): Promise<NeoLineAccount | null> {
+export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount | null> {
   const provider = getNeoProvider();
   if (!provider) {
     return null;
   }
 
   try {
-    await ensureProviderEnabled(provider);
+    if (!silent) {
+      await ensureProviderEnabled(provider);
+    }
   } catch {
     // ignore provider enable errors for background sync
   }
@@ -616,7 +618,7 @@ export async function getNeoWalletAccount(): Promise<NeoLineAccount | null> {
   }
 }
 
-export async function getNeoWalletNetwork(): Promise<NeoWalletNetwork> {
+export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwork> {
   const provider = getNeoProvider();
   if (!provider) {
     return {
@@ -626,7 +628,9 @@ export async function getNeoWalletNetwork(): Promise<NeoWalletNetwork> {
   }
 
   try {
-    await ensureProviderEnabled(provider);
+    if (!silent) {
+      await ensureProviderEnabled(provider);
+    }
   } catch {
     // Some wallets reject background enable() calls but still expose network info.
   }

@@ -24,6 +24,7 @@ interface WalletState {
 }
 
 const WalletContext = createContext<WalletState | null>(null);
+const WALLET_CONNECTED_KEY = "opennft_wallet_connected";
 
 function isSameWalletNetwork(a: NeoWalletNetwork | null, b: NeoWalletNetwork | null): boolean {
   if (!a && !b) {
@@ -47,13 +48,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
 
-  const syncWalletSession = useCallback(async (): Promise<{
+  const syncWalletSession = useCallback(async (silent = true): Promise<{
     address: string | null;
     network: NeoWalletNetwork | null;
   }> => {
-    const [currentNetwork, currentAccount] = await Promise.all([getNeoWalletNetwork(), getNeoWalletAccount()]);
+    // Only proceed if isConnected flag is set or non-silent mode requested
+    const isConnected = localStorage.getItem(WALLET_CONNECTED_KEY) === "true";
+    if (!isConnected && silent) {
+      return { address: null, network: null };
+    }
+
+    const [currentNetwork, currentAccount] = await Promise.all([
+      getNeoWalletNetwork(silent),
+      getNeoWalletAccount(silent)
+    ]);
+    
     const nextAddress = currentAccount?.address?.trim() || null;
     const nextNetwork = nextAddress ? currentNetwork : null;
+
+    if (nextAddress) {
+      localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+    }
 
     setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
     setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
@@ -94,7 +109,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (closed) {
           return;
         }
-        await syncWalletSession();
+        await syncWalletSession(true);
       } catch {
         // ignore transient provider/network read failures
       }
@@ -134,24 +149,29 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             setIsReady(true);
           }
           await connectNeoWallet();
-          await syncWalletSession();
+          localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+          await syncWalletSession(false);
+        } catch (err) {
+          console.error("Connect failed:", err);
+          throw err;
         } finally {
           setIsConnecting(false);
         }
       },
       disconnect: () => {
+        localStorage.removeItem(WALLET_CONNECTED_KEY);
         setAddress(null);
         setNetwork(null);
         setRuntimeWalletNetwork(null);
       },
       sync: async () => {
-        const session = await syncWalletSession();
+        const session = await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
       },
       invoke: async (payload: WalletInvokeRequest) => {
-        const session = await syncWalletSession();
+        const session = await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
