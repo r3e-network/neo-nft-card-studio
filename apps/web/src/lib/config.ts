@@ -14,7 +14,7 @@ function normalizeOptionalValue(input: string | undefined): string | undefined {
 }
 
 export const APP_CONFIG = {
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api",
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "/api",
   rpcUrl: import.meta.env.VITE_NEO_RPC_URL ?? "https://testnet1.neo.coz.io:443",
   contractHash: import.meta.env.VITE_NEO_CONTRACT_HASH ?? "",
   contractDialect: normalizeDialect(import.meta.env.VITE_CONTRACT_DIALECT),

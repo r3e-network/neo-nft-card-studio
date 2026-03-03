@@ -1,6 +1,6 @@
 import { FormEvent, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck } from "lucide-react";
+import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck, Info, ChevronRight, Check } from "lucide-react";
 
 import { useWallet } from "../hooks/useWallet";
 import { uploadToNeoFs } from "../lib/api";
@@ -18,11 +18,6 @@ interface FormState {
   royaltyBps: string;
   transferable: boolean;
   extraDataJson: string;
-  creatorRef: string;
-  nameRef: string;
-  symbolRef: string;
-  descriptionRef: string;
-  baseUriRef: string;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -35,11 +30,6 @@ const DEFAULT_FORM: FormState = {
   royaltyBps: "500",
   transferable: true,
   extraDataJson: '{"mode":"per-user-dedicated","source":"web-console"}',
-  creatorRef: "1",
-  nameRef: "1001",
-  symbolRef: "1002",
-  descriptionRef: "1003",
-  baseUriRef: "1004",
 };
 
 export function CreateCollectionPage() {
@@ -51,6 +41,7 @@ export function CreateCollectionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [step, setStep] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -63,12 +54,12 @@ export function CreateCollectionPage() {
     setResult("");
 
     if (!wallet.address) {
-      setError(t("create.err_connect"));
+      setError("Please connect your wallet first.");
       return;
     }
 
-    if (!form.baseUri && !file) {
-      setError(t("create.err_cover"));
+    if (!form.name || !form.symbol) {
+      setError("Name and symbol are required.");
       return;
     }
 
@@ -89,74 +80,34 @@ export function CreateCollectionPage() {
         ]);
 
         if (!templateReady || !templateSegmentsReady) {
-          throw new Error(t("create.err_template_not_ready"));
+          throw new Error("Dedicated contract template is not configured on this network.");
         }
       }
 
-      const payload =
-        contractDialect === "csharp"
-          ? (() => {
-              if (form.mode === "dedicated") {
-                const trimmed = form.extraDataJson.trim();
-                let extraData: unknown = null;
-                if (trimmed.length > 0) {
-                  try {
-                    extraData = JSON.parse(trimmed);
-                  } catch {
-                    throw new Error(t("create.err_extra_json"));
-                  }
-                }
-
-                return client.buildCreateCollectionAndDeployFromTemplateInvoke({
-                  name: form.name,
-                  symbol: form.symbol,
-                  description: form.description,
-                  baseUri: neofsUri,
-                  maxSupply: form.maxSupply,
-                  royaltyBps: Number(form.royaltyBps),
-                  transferable: form.transferable,
-                  extraData: extraData as
-                    | string
-                    | number
-                    | boolean
-                    | null
-                    | Array<unknown>
-                    | Record<string, unknown>,
-                });
-              } else {
-                return client.buildCreateCollectionInvoke({
-                  name: form.name,
-                  symbol: form.symbol,
-                  description: form.description,
-                  baseUri: neofsUri,
-                  maxSupply: form.maxSupply,
-                  royaltyBps: Number(form.royaltyBps),
-                  transferable: form.transferable
-                });
-              }
-            })()
-          : client.buildCreateCollectionInvoke({
-              name: form.name,
-              symbol: form.symbol,
-              description: form.description,
-              baseUri: neofsUri,
-              maxSupply: form.maxSupply,
-              royaltyBps: Number(form.royaltyBps),
-              transferable: form.transferable,
-              creatorRef: form.creatorRef,
-              nameRef: form.nameRef,
-              symbolRef: form.symbolRef,
-              descriptionRef: form.descriptionRef,
-              baseUriRef: form.baseUriRef,
-            });
+      const payload = form.mode === "dedicated" 
+        ? client.buildCreateCollectionAndDeployFromTemplateInvoke({
+            name: form.name,
+            symbol: form.symbol,
+            description: form.description,
+            baseUri: neofsUri,
+            maxSupply: form.maxSupply,
+            royaltyBps: Number(form.royaltyBps),
+            transferable: form.transferable,
+            extraData: JSON.parse(form.extraDataJson),
+          })
+        : client.buildCreateCollectionInvoke({
+            name: form.name,
+            symbol: form.symbol,
+            description: form.description,
+            baseUri: neofsUri,
+            maxSupply: form.maxSupply,
+            royaltyBps: Number(form.royaltyBps),
+            transferable: form.transferable
+          });
 
       const txid = await wallet.invoke(payload);
-      const successPrefix = contractDialect === "csharp" && form.mode === "dedicated" 
-        ? t("create.success_dedicated") 
-        : t("create.success");
-      setResult(`${successPrefix} ${txid || t("app.tx_sent")}`);
-      setForm({ ...DEFAULT_FORM, mode: form.mode });
-      setFile(null);
+      setResult(`Success! Transaction sent: ${txid}`);
+      setStep(3);
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {
@@ -165,169 +116,224 @@ export function CreateCollectionPage() {
   };
 
   return (
-    <section className="panel fade-in">
-      <div className="panel-header mb-md pb-sm">
-        <h2 className="flex-align-center gap-md">
-          <PlusCircle size={24} /> Create a New Collection
-        </h2>
-        <p className="hint mt-xs">Launch your NFTs on the Neo N3 network</p>
+    <div className="fade-in" style={{ maxWidth: "1000px", margin: "0 auto", padding: "2rem 0" }}>
+      <div style={{ textAlign: "center", marginBottom: "3rem" }}>
+        <h1 style={{ fontSize: "3rem", fontWeight: 800, margin: "0 0 1rem" }}>Create a Collection</h1>
+        <p style={{ fontSize: "1.2rem", color: "#8A939B" }}>Launch your NFT collection on Neo N3 in minutes.</p>
       </div>
 
-      <form className="form-grid" onSubmit={onSubmit}>
-        <div className="full" style={{ marginBottom: '1.5rem' }}>
-          <label style={{ marginBottom: '0.75rem', display: 'block', fontSize: '1rem', color: '#fff' }}>Deployment Mode</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+      {/* Stepper */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "1rem", marginBottom: "3rem" }}>
+        {[1, 2, 3].map(i => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ 
+              width: "40px", 
+              height: "40px", 
+              borderRadius: "50%", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              background: step >= i ? "#2081E2" : "rgba(255,255,255,0.1)",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: "1.1rem"
+            }}>
+              {step > i ? <Check size={20} /> : i}
+            </div>
+            {i < 3 && <div style={{ width: "60px", height: "2px", background: step > i ? "#2081E2" : "rgba(255,255,255,0.1)" }}></div>}
+          </div>
+        ))}
+      </div>
+
+      {step === 1 && (
+        <div className="stack-lg fade-in">
+          <div style={{ textAlign: "center" }}>
+            <h2 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "2rem" }}>Choose your deployment mode</h2>
+          </div>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
             <div 
               onClick={() => update("mode", "shared")}
               style={{ 
-                padding: '1.5rem', borderRadius: '16px', cursor: 'pointer',
-                border: form.mode === 'shared' ? '2px solid var(--neo-green)' : '2px solid var(--glass-border)',
-                background: form.mode === 'shared' ? 'rgba(0, 229, 153, 0.05)' : 'rgba(255, 255, 255, 0.02)',
-                transition: 'all 0.2s ease'
+                padding: "2.5rem", 
+                borderRadius: "24px", 
+                cursor: "pointer",
+                border: form.mode === "shared" ? "2px solid #2081E2" : "2px solid rgba(255, 255, 255, 0.1)",
+                background: form.mode === "shared" ? "rgba(32, 129, 226, 0.05)" : "rgba(255, 255, 255, 0.02)",
+                transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                position: "relative"
               }}
+              onMouseOver={(e) => !form.mode.includes("shared") && (e.currentTarget.style.borderColor = "rgba(32, 129, 226, 0.5)")}
+              onMouseOut={(e) => e.currentTarget.style.borderColor = form.mode === "shared" ? "#2081E2" : "rgba(255, 255, 255, 0.1)"}
             >
-              <h3 className="flex-align-center gap-md" style={{ margin: '0 0 0.5rem', color: form.mode === 'shared' ? 'var(--neo-green)' : '#fff' }}>
-                <Layers size={20} /> Shared Storefront
-              </h3>
-              <p className="hint mb-0">Free to create. NFTs are minted on the platform's multi-tenant smart contract, distinguished by collection ID. Perfect for getting started.</p>
+              {form.mode === "shared" && <div style={{ position: "absolute", top: "1.5rem", right: "1.5rem", background: "#2081E2", borderRadius: "50%", padding: "4px" }}><Check size={16} /></div>}
+              <Layers size={40} color="#2081E2" style={{ marginBottom: "1.5rem" }} />
+              <h3 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }}>Shared Storefront</h3>
+              <p style={{ color: "#8A939B", lineHeight: 1.6, marginBottom: "1.5rem" }}>
+                Perfect for getting started. Your collection lives on our optimized platform contract.
+              </p>
+              <ul style={{ padding: 0, margin: 0, listStyle: "none", color: "#8A939B", fontSize: "0.95rem" }}>
+                <li style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}><Check size={16} color="#00E599" /> Free to deploy</li>
+                <li style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}><Check size={16} color="#00E599" /> Instant setup</li>
+                <li style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><Check size={16} color="#00E599" /> Low gas fees for minting</li>
+              </ul>
             </div>
-            
+
             <div 
               onClick={() => update("mode", "dedicated")}
               style={{ 
-                padding: '1.5rem', borderRadius: '16px', cursor: 'pointer',
-                border: form.mode === 'dedicated' ? '2px solid var(--r3e-cyan)' : '2px solid var(--glass-border)',
-                background: form.mode === 'dedicated' ? 'rgba(0, 212, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
-                opacity: contractDialect === "csharp" ? 1 : 0.5,
-                pointerEvents: contractDialect === "csharp" ? 'auto' : 'none',
-                transition: 'all 0.2s ease'
+                padding: "2.5rem", 
+                borderRadius: "24px", 
+                cursor: "pointer",
+                border: form.mode === "dedicated" ? "2px solid #00E599" : "2px solid rgba(255, 255, 255, 0.1)",
+                background: form.mode === "dedicated" ? "rgba(0, 229, 153, 0.05)" : "rgba(255, 255, 255, 0.02)",
+                transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+                position: "relative",
+                opacity: contractDialect === "csharp" ? 1 : 0.6,
+                pointerEvents: contractDialect === "csharp" ? "auto" : "none"
               }}
+              onMouseOver={(e) => !form.mode.includes("dedicated") && (e.currentTarget.style.borderColor = "rgba(0, 229, 153, 0.5)")}
+              onMouseOut={(e) => e.currentTarget.style.borderColor = form.mode === "dedicated" ? "#00E599" : "rgba(255, 255, 255, 0.1)"}
             >
-              <h3 className="flex-align-center gap-md" style={{ margin: '0 0 0.5rem', color: form.mode === 'dedicated' ? 'var(--r3e-cyan)' : '#fff' }}>
-                <ShieldCheck size={20} /> Dedicated Contract
-              </h3>
-              <p className="hint mb-0">Costs 10 GAS. A fully isolated NEP-11 smart contract deployed exclusively for you. Best for established creators and full control.</p>
-              {contractDialect !== "csharp" && <p className="error" style={{ padding: '0.5rem', marginTop: '0.5rem' }}>Only available on C# Dialect</p>}
+              {form.mode === "dedicated" && <div style={{ position: "absolute", top: "1.5rem", right: "1.5rem", background: "#00E599", borderRadius: "50%", padding: "4px" }}><Check size={16} /></div>}
+              <ShieldCheck size={40} color="#00E599" style={{ marginBottom: "1.5rem" }} />
+              <h3 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "1rem" }}>Dedicated Contract</h3>
+              <p style={{ color: "#8A939B", lineHeight: 1.6, marginBottom: "1.5rem" }}>
+                For professional creators. Your own smart contract for maximum independence.
+              </p>
+              <ul style={{ padding: 0, margin: 0, listStyle: "none", color: "#8A939B", fontSize: "0.95rem" }}>
+                <li style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}><Check size={16} color="#00E599" /> 10 GAS one-time fee</li>
+                <li style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}><Check size={16} color="#00E599" /> Unique contract hash</li>
+                <li style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><Check size={16} color="#00E599" /> Full ownership & isolation</li>
+              </ul>
+              {contractDialect !== "csharp" && <div style={{ marginTop: "1rem", color: "#F43F5E", fontSize: "0.85rem", fontWeight: 600 }}>C# Dialect required</div>}
             </div>
           </div>
-        </div>
 
-        <label>
-          {t("create.col_name")}
-          <input
-            required
-            value={form.name}
-            onChange={(event) => update("name", event.target.value)}
-            placeholder={t("create.col_name_ph")}
-          />
-        </label>
-
-        <label>
-          {t("create.symbol")}
-          <input
-            required
-            value={form.symbol}
-            onChange={(event) => update("symbol", event.target.value.toUpperCase())}
-            placeholder={t("create.symbol_ph")}
-            maxLength={12}
-          />
-        </label>
-
-        <label className="full">
-          {t("create.desc")}
-          <textarea
-            required
-            value={form.description}
-            onChange={(event) => update("description", event.target.value)}
-            placeholder={t("create.desc_ph")}
-            rows={3}
-          />
-        </label>
-
-        <label className="full">
-          {t("create.cover")}
-          <div
-            className="upload-area"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {file ? (
-              <span className="text-white font-semibold flex-center gap-md">
-                <UploadCloud size={20} color="#00E599" /> {file.name} ({(file.size / 1024).toFixed(1)} KB)
-              </span>
-            ) : (
-              <span className="text-muted flex-center flex-col gap-md">
-                <UploadCloud size={24} color="#9CA3AF" />
-                {t("create.cover_ph")}
-              </span>
-            )}
-            <input
-              type="file"
-              ref={fileInputRef}
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const f = e.target.files?.[0] || null;
-                setFile(f);
-                if (!f) update("baseUri", "");
-              }}
-            />
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+            <button className="btn" onClick={() => setStep(2)} style={{ width: "240px", borderRadius: "12px", background: "#2081E2", fontSize: "1.1rem" }}>
+              Continue <ChevronRight size={20} style={{ marginLeft: "0.5rem" }} />
+            </button>
           </div>
-        </label>
-
-        <label>
-          {t("create.max_supply")}
-          <p className="hint">{t("create.max_supply_hint")}</p>
-          <input
-            required
-            type="number"
-            min={0}
-            value={form.maxSupply}
-            onChange={(event) => update("maxSupply", event.target.value)}
-          />
-        </label>
-
-        <label>
-          {t("create.royalty")}
-          <input
-            required
-            type="number"
-            min={0}
-            max={10000}
-            value={form.royaltyBps}
-            onChange={(event) => update("royaltyBps", event.target.value)}
-          />
-        </label>
-
-        <label className="switch full">
-          <input
-            type="checkbox"
-            checked={form.transferable}
-            onChange={(event) => update("transferable", event.target.checked)}
-          />
-          <span>{t("create.transferable")}</span>
-        </label>
-
-        {contractDialect === "csharp" && form.mode === "dedicated" ? (
-          <label className="full">
-            {t("create.dedicated_extra_label")}
-            <textarea
-              rows={3}
-              value={form.extraDataJson}
-              onChange={(event) => update("extraDataJson", event.target.value)}
-              placeholder='{"mode":"per-user-dedicated","tag":"creator-001"}'
-            />
-          </label>
-        ) : null}
-
-        <div className="full form-actions mt-md">
-          <button className="btn flex-align-center gap-md btn-lg" disabled={submitting} type="submit">
-            <Rocket size={18} />
-            {submitting ? t("create.submitting") : t("create.submit")}
-          </button>
         </div>
-      </form>
+      )}
 
-      {result ? <p className="success mt-md">{result}</p> : null}
-      {error ? <p className="error mt-md">{error}</p> : null}
-    </section>
+      {step === 2 && (
+        <form className="stack-lg fade-in" onSubmit={onSubmit}>
+           <div className="panel" style={{ padding: "3rem" }}>
+              <div style={{ marginBottom: "2rem" }}>
+                <h2 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "0.5rem" }}>Collection Details</h2>
+                <p style={{ color: "#8A939B" }}>Configure the metadata and settings for your new collection.</p>
+              </div>
+
+              <div className="form-grid">
+                <label className="full">
+                  Logo Image
+                  <div className="upload-area" onClick={() => fileInputRef.current?.click()} style={{ borderStyle: "dashed", padding: "3rem" }}>
+                    {file ? (
+                      <div className="stack-sm flex-center">
+                        <Check size={32} color="#00E599" />
+                        <span style={{ fontWeight: 600 }}>{file.name}</span>
+                        <span style={{ color: "#8A939B", fontSize: "0.85rem" }}>Click to change</span>
+                      </div>
+                    ) : (
+                      <div className="stack-sm flex-center">
+                        <UploadCloud size={32} color="#8A939B" />
+                        <span style={{ fontWeight: 600 }}>Upload logo</span>
+                        <span style={{ color: "#8A939B", fontSize: "0.85rem" }}>Recommended size: 350 x 350. Max 20MB.</span>
+                      </div>
+                    )}
+                    <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                  </div>
+                </label>
+
+                <label>
+                  Collection Name *
+                  <input required value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="e.g. Neo Genesis" />
+                </label>
+
+                <label>
+                  Symbol *
+                  <input required value={form.symbol} onChange={(e) => update("symbol", e.target.value.toUpperCase())} placeholder="e.g. NGEN" maxLength={12} />
+                </label>
+
+                <label className="full">
+                  Description
+                  <textarea value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Tell the world about your collection..." rows={4} />
+                </label>
+
+                <label>
+                  Max Supply
+                  <div style={{ position: "relative" }}>
+                    <input type="number" min={0} value={form.maxSupply} onChange={(e) => update("maxSupply", e.target.value)} />
+                    <div style={{ position: "absolute", right: "1rem", top: "1.4rem", color: "#8A939B", fontSize: "0.8rem" }}>0 = Unlimited</div>
+                  </div>
+                </label>
+
+                <label>
+                  Royalty Percentage (%)
+                  <div style={{ position: "relative" }}>
+                    <input type="number" min={0} max={100} value={Number(form.royaltyBps) / 100} onChange={(e) => update("royaltyBps", (Number(e.target.value) * 100).toString())} />
+                    <div style={{ position: "absolute", right: "1rem", top: "1.4rem", color: "#8A939B", fontSize: "0.8rem" }}>BPS: {form.royaltyBps}</div>
+                  </div>
+                </label>
+
+                <label className="switch full" style={{ marginTop: "1rem" }}>
+                  <input type="checkbox" checked={form.transferable} onChange={(e) => update("transferable", e.target.checked)} />
+                  <span style={{ fontSize: "1rem", fontWeight: 600 }}>Allow transfers between wallets</span>
+                  <Info size={16} color="#8A939B" style={{ marginLeft: "0.5rem" }} />
+                </label>
+
+                {form.mode === "dedicated" && (
+                  <label className="full" style={{ marginTop: "1rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                      Dedicated Extra Data (JSON)
+                      <ShieldCheck size={16} color="#00E599" />
+                    </div>
+                    <textarea value={form.extraDataJson} onChange={(e) => update("extraDataJson", e.target.value)} rows={3} style={{ fontFamily: "monospace", fontSize: "0.85rem" }} />
+                  </label>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "1rem", marginTop: "3rem" }}>
+                <button className="btn btn-secondary" onClick={() => setStep(1)} type="button" style={{ flex: 1, borderRadius: "12px", height: "55px" }}>Back</button>
+                <button className="btn" disabled={submitting} type="submit" style={{ flex: 2, borderRadius: "12px", height: "55px", background: "#2081E2" }}>
+                  {submitting ? "Launching..." : `Launch Collection ${form.mode === "dedicated" ? "(10 GAS)" : "(Free)"}`}
+                </button>
+              </div>
+           </div>
+        </form>
+      )}
+
+      {step === 3 && (
+        <div className="panel fade-in" style={{ textAlign: "center", padding: "5rem" }}>
+          <div style={{ 
+            width: "80px", 
+            height: "80px", 
+            borderRadius: "50%", 
+            background: "#00E599", 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center",
+            margin: "0 auto 2rem"
+          }}>
+            <Check size={48} color="#fff" />
+          </div>
+          <h2 style={{ fontSize: "2.2rem", fontWeight: 800, marginBottom: "1rem" }}>Collection Launched!</h2>
+          <p style={{ fontSize: "1.1rem", color: "#8A939B", marginBottom: "2rem", maxWidth: "500px", margin: "0 auto 2rem" }}>
+            Your collection has been successfully deployed to the Neo N3 network. It may take a few seconds for the indexer to process your transaction.
+          </p>
+          <div className="panel" style={{ background: "rgba(255,255,255,0.02)", marginBottom: "3rem", padding: "1.5rem" }}>
+            <p className="hint" style={{ fontSize: "0.85rem", wordBreak: "break-all" }}>{result}</p>
+          </div>
+          <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
+            <Link className="btn" to="/portfolio" style={{ borderRadius: "12px", background: "#2081E2", padding: "1rem 2rem" }}>View Portfolio</Link>
+            <Link className="btn btn-secondary" to="/explore" style={{ borderRadius: "12px", padding: "1rem 2rem" }}>Explore Marketplace</Link>
+          </div>
+        </div>
+      )}
+
+      {error ? <p className="error" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{error}</p> : null}
+    </div>
   );
 }

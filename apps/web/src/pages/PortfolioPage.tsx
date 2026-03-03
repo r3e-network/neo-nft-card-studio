@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { FolderOpen, ImageOff, Loader2, Settings, Tag, Wallet } from "lucide-react";
+import { FolderOpen, ImageOff, Loader2, Settings, Tag, Wallet, Copy, Check, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
@@ -11,7 +11,7 @@ import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
 
-type Tab = "collected" | "created";
+type Tab = "collected" | "created" | "activity";
 
 function isNeoFsUri(value: string): boolean {
   return /^neofs:(\/\/)?/i.test(value.trim());
@@ -86,6 +86,7 @@ export function PortfolioPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [actionTokenId, setActionTokenId] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const isCsharp = contractDialect === "csharp";
 
@@ -164,198 +165,268 @@ export function PortfolioPage() {
     }
   };
 
-  const listedCount = useMemo(
-    () => collectedListings.filter((entry) => entry.sale.listed).length,
-    [collectedListings],
-  );
+  const copyAddress = () => {
+    if (wallet.address) {
+      navigator.clipboard.writeText(wallet.address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   if (!wallet.address) {
     return (
-      <section className="panel">
-        <div className="flex-center" style={{ flexDirection: "column", gap: "1rem", minHeight: "50vh" }}>
-          <Wallet color="#8aa0bf" size={42} />
-          <h2>Connect Wallet</h2>
-          <p className="hint">Connect your wallet to view collected NFTs and created collections.</p>
-          <button className="btn" onClick={() => void wallet.connect()} type="button">
-            Connect Wallet
-          </button>
-        </div>
-      </section>
+      <div className="flex-center" style={{ flexDirection: "column", gap: "1.5rem", minHeight: "60vh" }}>
+        <Wallet color="#2081E2" size={64} />
+        <h2 style={{ fontSize: "2rem", fontWeight: 800 }}>Wallet not connected</h2>
+        <p className="hint" style={{ fontSize: "1.1rem" }}>Connect your wallet to see your items, collections and activity.</p>
+        <button className="btn" onClick={() => void wallet.connect()} style={{ background: "#2081E2", padding: "1rem 2rem", borderRadius: "12px" }}>
+          Connect Wallet
+        </button>
+      </div>
     );
   }
 
   return (
-    <div className="stack-lg fade-in">
-      <section className="panel">
-        <div className="panel-header" style={{ alignItems: "flex-end" }}>
-          <div>
-            <h2>Portfolio</h2>
-            <p className="hint" style={{ marginTop: "0.5rem" }}>
-              {shortHash(wallet.address)}
-            </p>
+    <div className="fade-in" style={{ margin: "-1.4rem -1.2rem 0" }}>
+      {/* Profile Header */}
+      <div style={{ height: "260px", background: "linear-gradient(135deg, #121822, #1c2638, #2081E2)", position: "relative" }}>
+        <div style={{ 
+          position: "absolute", 
+          bottom: "-65px", 
+          left: "40px", 
+          width: "130px", 
+          height: "130px", 
+          borderRadius: "50%", 
+          border: "6px solid #04060A", 
+          background: "#1c2638",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+          zIndex: 10
+        }}>
+          <div style={{ width: "100%", height: "100%", background: "linear-gradient(45deg, #2081E2, #00E599)" }}></div>
+        </div>
+      </div>
+
+      <div style={{ padding: "85px 40px 40px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div className="stack-sm">
+            <h1 style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>Unnamed User</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+              <div 
+                onClick={copyAddress}
+                style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "0.5rem", 
+                  padding: "0.4rem 0.8rem", 
+                  background: "rgba(255,255,255,0.05)", 
+                  borderRadius: "20px",
+                  cursor: "pointer",
+                  color: "#8A939B",
+                  fontSize: "0.9rem",
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ color: "#fff" }}>{shortHash(wallet.address)}</span>
+                {copied ? <Check size={14} color="#00E599" /> : <Copy size={14} />}
+              </div>
+              <span style={{ color: "#8A939B", fontSize: "0.9rem" }}>Joined March 2026</span>
+            </div>
           </div>
 
-          <div className="chip-row">
-            <span className="chip">Collected {collectedListings.length}</span>
-            <span className="chip">Created {createdCollections.length}</span>
-            {isCsharp ? <span className="chip">Listed {listedCount}</span> : null}
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Share2 size={20} /></button>
+            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Twitter size={20} /></button>
+            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Settings size={20} /></button>
           </div>
         </div>
 
-        <div style={{ borderBottom: "1px solid var(--glass-border)", display: "flex", gap: "1rem", paddingBottom: "0.6rem" }}>
-          <button className={`btn btn-secondary ${tab === "collected" ? "active" : ""}`} onClick={() => setTab("collected")} type="button">
-            Collected
-          </button>
-          <button className={`btn btn-secondary ${tab === "created" ? "active" : ""}`} onClick={() => setTab("created")} type="button">
-            Created
-          </button>
-          <button className="btn btn-secondary" onClick={() => void reloadPortfolio()} type="button">
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid rgba(255, 255, 255, 0.1)", margin: "2.5rem 0" }}>
+          {[
+            { id: "collected", label: "Collected", count: collectedListings.length },
+            { id: "created", label: "Created", count: createdCollections.length },
+            { id: "activity", label: "Activity", count: 0 }
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id as Tab)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: "1rem 0",
+                color: tab === t.id ? "#fff" : "#8A939B",
+                fontWeight: 600,
+                fontSize: "1rem",
+                cursor: "pointer",
+                borderBottom: tab === t.id ? "2px solid #2081E2" : "2px solid transparent",
+                transition: "all 0.2s",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem"
+              }}
+            >
+              {t.label} <span style={{ fontSize: "0.85rem", opacity: 0.6 }}>{t.count}</span>
+            </button>
+          ))}
         </div>
-      </section>
 
-      {tab === "collected" ? (
-        <section>
-          {loading ? (
-            <div className="panel">
-              <p className="hint">Loading collected NFTs...</p>
-            </div>
-          ) : collectedListings.length === 0 ? (
-            <div className="panel">
-              <p className="hint">No NFTs collected yet.</p>
-              <Link className="btn btn-secondary" to="/explore">
-                Explore Marketplace
-              </Link>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))" }}>
-              {collectedListings.map((entry) => {
-                const properties = parseTokenProperties(entry.token.propertiesJson);
-                const media = pickTokenMediaUri(entry.token, properties);
-                const tokenName =
-                  typeof properties.name === "string" && properties.name.trim().length > 0
-                    ? properties.name.trim()
-                    : `${entry.collection.symbol} #${tokenSerial(entry.token.tokenId)}`;
-                const isActing = actionTokenId === entry.token.tokenId;
+        {tab === "collected" && (
+          <div className="stack-md">
+            {loading ? (
+              <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+                {[1, 2, 3, 4].map(i => <div key={i} className="panel" style={{ height: "400px", background: "rgba(255,255,255,0.05)" }}></div>)}
+              </div>
+            ) : collectedListings.length === 0 ? (
+              <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
+                <ImageOff size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
+                <h3>No items found</h3>
+                <p className="hint">Explore the marketplace to find your first NFT.</p>
+                <Link className="btn" to="/explore" style={{ marginTop: "1.5rem", background: "#2081E2" }}>Explore Marketplace</Link>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+                {collectedListings.map((entry) => {
+                  const properties = parseTokenProperties(entry.token.propertiesJson);
+                  const media = pickTokenMediaUri(entry.token, properties);
+                  const tokenName =
+                    typeof properties.name === "string" && properties.name.trim().length > 0
+                      ? properties.name.trim()
+                      : `${entry.collection.symbol} #${tokenSerial(entry.token.tokenId)}`;
+                  const isActing = actionTokenId === entry.token.tokenId;
 
-                return (
-                  <article className="token-card" key={entry.token.tokenId}>
-                    {media ? (
-                      <img alt={tokenName} className="metadata-media" src={media} />
-                    ) : (
-                      <div className="metadata-media flex-center">
-                        <ImageOff color="#8aa0bf" size={24} />
-                      </div>
-                    )}
-
-                    <div className="stack-sm">
-                      <strong>{tokenName}</strong>
-                      <span className="hint">{entry.collection.name}</span>
-                      <span className="hint">Token #{tokenSerial(entry.token.tokenId)}</span>
-                    </div>
-
-                    {entry.sale.listed ? (
-                      <span className="chip">
-                        <Tag size={12} /> {formatGasAmount(entry.sale.price)} GAS
-                      </span>
-                    ) : (
-                      <span className="hint">Not listed</span>
-                    )}
-
-                    {isCsharp ? (
-                      <div className="token-actions">
-                        {entry.sale.listed ? (
-                          <button
-                            className="btn btn-secondary"
-                            disabled={isActing}
-                            onClick={() => void onCancelListing(entry)}
-                            type="button"
-                          >
-                            {isActing ? "Submitting..." : "Cancel Listing"}
-                          </button>
+                  return (
+                    <div className="panel" key={entry.token.tokenId} style={{ padding: 0, overflow: "hidden" }}>
+                      <Link to={`/collections/${entry.collection.collectionId}`}>
+                        {media ? (
+                          <img alt={tokenName} src={media} style={{ width: "100%", height: "280px", objectFit: "cover" }} />
                         ) : (
-                          <>
-                            <input
-                              onChange={(event) =>
-                                setListPriceByTokenId((prev) => ({ ...prev, [entry.token.tokenId]: event.target.value }))
-                              }
-                              placeholder="Price in GAS"
-                              value={listPriceByTokenId[entry.token.tokenId] ?? ""}
-                            />
-                            <button className="btn" disabled={isActing} onClick={() => void onListToken(entry)} type="button">
-                              {isActing ? "Submitting..." : "List for Sale"}
-                            </button>
-                          </>
+                          <div style={{ width: "100%", height: "280px", background: "#1c2638", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <ImageOff color="#8aa0bf" size={40} />
+                          </div>
+                        )}
+                      </Link>
+
+                      <div style={{ padding: "1.2rem" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#8A939B", fontWeight: 600 }}>{entry.collection.name}</div>
+                        <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "1rem" }}>{tokenName}</div>
+
+                        {entry.sale.listed ? (
+                          <div style={{ marginBottom: "1rem" }}>
+                            <div style={{ fontSize: "0.75rem", color: "#8A939B", fontWeight: 600 }}>Listed Price</div>
+                            <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>{formatGasAmount(entry.sale.price)} GAS</div>
+                          </div>
+                        ) : (
+                          <div style={{ marginBottom: "1rem", color: "#8A939B", fontSize: "0.9rem" }}>Not listed</div>
+                        )}
+
+                        {isCsharp && (
+                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem" }}>
+                            {entry.sale.listed ? (
+                              <button
+                                className="btn btn-secondary"
+                                disabled={isActing}
+                                onClick={() => void onCancelListing(entry)}
+                                type="button"
+                                style={{ width: "100%", borderRadius: "10px" }}
+                              >
+                                {isActing ? "..." : "Cancel Listing"}
+                              </button>
+                            ) : (
+                              <div className="stack-xs">
+                                <input
+                                  onChange={(event) =>
+                                    setListPriceByTokenId((prev) => ({ ...prev, [entry.token.tokenId]: event.target.value }))
+                                  }
+                                  placeholder="Price in GAS"
+                                  value={listPriceByTokenId[entry.token.tokenId] ?? ""}
+                                  style={{ height: "40px", marginBottom: "0.5rem" }}
+                                />
+                                <button className="btn" disabled={isActing} onClick={() => void onListToken(entry)} type="button" style={{ width: "100%", borderRadius: "10px", background: "#2081E2" }}>
+                                  {isActing ? "..." : "List for Sale"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    ) : null}
-
-                    <Link className="btn btn-secondary" to={`/collections/${entry.collection.collectionId}`}>
-                      Open Collection
-                    </Link>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      ) : (
-        <section>
-          {loading ? (
-            <div className="panel">
-              <p className="hint">Loading created collections...</p>
-            </div>
-          ) : createdCollections.length === 0 ? (
-            <div className="panel">
-              <p className="hint">No collections created yet.</p>
-              <Link className="btn" to="/collections/new">
-                Create Collection
-              </Link>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-              {createdCollections.map((collection) => {
-                const dedicatedHash = resolveCollectionContractHash(collection);
-
-                return (
-                  <article className="token-card" key={collection.collectionId}>
-                    <div className="stack-sm">
-                      <strong>{collection.name}</strong>
-                      <span className="hint">{collection.symbol}</span>
-                      <span className="hint">Minted {collection.minted}</span>
-                      <span className="hint">Royalty {(collection.royaltyBps / 100).toFixed(2)}%</span>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-                    <div className="chip-row">
-                      <span className="chip">{dedicatedHash ? "Dedicated" : "Shared"}</span>
-                      {dedicatedHash ? <span className="chip">{shortHash(dedicatedHash)}</span> : null}
+        {tab === "created" && (
+          <div className="stack-md">
+            {loading ? (
+              <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
+                {[1, 2].map(i => <div key={i} className="panel" style={{ height: "250px", background: "rgba(255,255,255,0.05)" }}></div>)}
+              </div>
+            ) : createdCollections.length === 0 ? (
+              <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
+                <FolderOpen size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
+                <h3>No collections created</h3>
+                <p className="hint">Start your journey by creating your first NFT collection.</p>
+                <Link className="btn" to="/collections/new" style={{ marginTop: "1.5rem", background: "#2081E2" }}>Create Collection</Link>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+                {createdCollections.map((collection) => {
+                  const dedicatedHash = resolveCollectionContractHash(collection);
+
+                  return (
+                    <div className="panel" key={collection.collectionId} style={{ padding: 0, overflow: "hidden" }}>
+                      <div style={{ height: "120px", background: "linear-gradient(45deg, #121822, #1c2638)", position: "relative" }}>
+                        <div style={{ position: "absolute", bottom: "-20px", left: "20px", width: "60px", height: "60px", borderRadius: "10px", background: "linear-gradient(135deg, #2081E2, #00E599)", border: "3px solid #04060A" }}></div>
+                      </div>
+                      <div style={{ padding: "30px 1.5rem 1.5rem" }}>
+                        <h3 style={{ margin: 0 }}>{collection.name}</h3>
+                        <div style={{ fontSize: "0.9rem", color: "#8A939B", marginBottom: "1rem" }}>{collection.symbol}</div>
+                        
+                        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{collection.minted}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#8A939B" }}>Items</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{(collection.royaltyBps / 100).toFixed(1)}%</div>
+                            <div style={{ fontSize: "0.75rem", color: "#8A939B" }}>Royalty</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{dedicatedHash ? "Isolated" : "Shared"}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#8A939B" }}>Mode</div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <Link className="btn" to={`/collections/${collection.collectionId}`} style={{ flex: 1, padding: "0.6rem", fontSize: "0.9rem", background: "#2081E2" }}>Manage</Link>
+                          <Link className="btn btn-secondary" to="/mint" style={{ flex: 1, padding: "0.6rem", fontSize: "0.9rem" }}>Mint Item</Link>
+                        </div>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-                    <div className="token-actions" style={{ borderTop: "none", marginTop: 0, paddingTop: 0 }}>
-                      <Link className="btn" to={`/collections/${collection.collectionId}`}>
-                        <FolderOpen size={14} /> Manage
-                      </Link>
-                      <Link className="btn btn-secondary" to="/mint">
-                        <Settings size={14} /> Mint
-                      </Link>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
+        {tab === "activity" && (
+          <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
+            <Loader2 size={48} color="#8A939B" className="animate-spin" style={{ marginBottom: "1rem" }} />
+            <h3>Activity tracking coming soon</h3>
+            <p className="hint">We are integrating historical data for your wallet.</p>
+          </div>
+        )}
+      </div>
 
-      {loading ? (
-        <p className="hint" style={{ alignItems: "center", display: "flex", gap: "0.4rem" }}>
-          <Loader2 size={14} /> Syncing portfolio...
-        </p>
-      ) : null}
-
-      {message ? <p className="success">{message}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
+      {message ? <p className="success" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{message}</p> : null}
+      {error ? <p className="error" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{error}</p> : null}
     </div>
   );
 }

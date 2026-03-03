@@ -25,7 +25,8 @@
     "smoke:e2e": "node scripts/smoke-e2e.mjs",
     "lint": "npm run lint --workspaces",
     "format": "npm run format --workspaces",
-    "check": "npm run typecheck --workspaces"
+    "check": "npm run typecheck --workspaces",
+    "vercel-build": "npm run build --workspace @platform/neo-sdk && npm run build --workspace @platform/web"
   },
   "engines": {
     "node": ">=20.0.0"

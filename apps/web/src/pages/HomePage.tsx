@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Layers, Rocket, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Layers, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
 import { fetchCollections, fetchStats } from "../lib/api";
 import { shortHash } from "../lib/marketplace";
@@ -38,117 +38,147 @@ export function HomePage() {
     };
   }, []);
 
-  const featuredCollections = useMemo(() => collections.slice(0, 6), [collections]);
+  const featuredCollections = useMemo(() => collections.slice(0, 8), [collections]);
 
   return (
-    <div className="stack-lg fade-in">
-      <section className="panel" style={{ padding: "3rem" }}>
-        <div className="stack-md" style={{ maxWidth: "760px" }}>
-          <h1 className="title title-highlight" style={{ fontSize: "clamp(2rem, 4vw, 3.5rem)", lineHeight: 1.1 }}>
-            Publish, Showcase, and Trade NFTs on Neo N3
+    <div className="stack-lg fade-in" style={{ gap: "4rem" }}>
+      {/* Hero Section */}
+      <section style={{ 
+        display: "grid", 
+        gridTemplateColumns: "1fr 1fr", 
+        gap: "2rem", 
+        alignItems: "center",
+        padding: "4rem 0",
+        minHeight: "70vh"
+      }}>
+        <div className="stack-md">
+          <h1 style={{ fontSize: "4.5rem", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.04em", margin: 0 }}>
+            Discover, collect, and sell extraordinary NFTs
           </h1>
-          <p className="hint" style={{ fontSize: "1.05rem", lineHeight: 1.7 }}>
-            R3E marketplace supports both shared factory collections and dedicated NFT contracts. Metadata is GhostMarket
-            compatible, and each NFT can be listed or purchased directly on-chain.
+          <p style={{ fontSize: "1.5rem", color: "#8A939B", lineHeight: 1.4, maxWidth: "540px", margin: "1.5rem 0" }}>
+            The world's first and largest digital marketplace for crypto collectibles and non-fungible tokens (NFTs).
           </p>
-          <div className="chip-row" style={{ marginTop: "0.5rem" }}>
-            <span className="chip">Dialect {contractDialect.toUpperCase()}</span>
-            <span className="chip">NEP-11 / NEP-24</span>
-            <span className="chip">GhostMarket Compatible</span>
+          <div style={{ display: "flex", gap: "1rem" }}>
+            <Link className="btn btn-lg" to="/explore" style={{ padding: "1.2rem 2.5rem", borderRadius: "12px", background: "#2081E2", color: "#fff" }}>
+              Explore
+            </Link>
+            <Link className="btn btn-secondary btn-lg" to="/collections/new" style={{ padding: "1.2rem 2.5rem", borderRadius: "12px" }}>
+              Create
+            </Link>
           </div>
-          <div className="token-actions" style={{ borderTop: "none", marginTop: "0.25rem", paddingTop: 0 }}>
-            <Link className="btn" to="/explore">
-              <Rocket size={16} /> Explore Marketplace
-            </Link>
-            <Link className="btn btn-secondary" to="/collections/new">
-              <Sparkles size={16} /> Launch Collection
-            </Link>
-            <Link className="btn btn-secondary" to="/mint">
-              Mint NFT
-            </Link>
+        </div>
+        
+        <div style={{ position: "relative" }}>
+          <div className="panel" style={{ padding: 0, borderRadius: "20px", overflow: "hidden", border: "1px solid rgba(255, 255, 255, 0.1)" }}>
+            <img 
+              src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?auto=format&fit=crop&q=80&w=1000" 
+              alt="Hero NFT" 
+              style={{ width: "100%", height: "450px", objectFit: "cover" }} 
+            />
+            <div style={{ padding: "1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div style={{ width: "45px", height: "45px", borderRadius: "50%", background: "linear-gradient(45deg, #00E599, #00D4FF)" }}></div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Ethereal Horizon #42</div>
+                <div style={{ color: "#2081E2", fontSize: "0.9rem" }}>R3E Studios</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="metric-grid">
-        <article className="metric-card">
-          <p>Total Collections</p>
-          <h2>{stats?.collectionCount ?? "-"}</h2>
+      {/* Stats Section */}
+      <section className="metric-grid" style={{ background: "rgba(255, 255, 255, 0.03)", padding: "2rem", borderRadius: "20px", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+        <article style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "0.9rem", color: "#8A939B", fontWeight: 600, textTransform: "uppercase" }}>Collections</div>
+          <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{stats?.collectionCount ?? "-"}</div>
         </article>
-        <article className="metric-card">
-          <p>Total NFTs</p>
-          <h2>{stats?.tokenCount ?? "-"}</h2>
+        <article style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "0.9rem", color: "#8A939B", fontWeight: 600, textTransform: "uppercase" }}>Total Items</div>
+          <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{stats?.tokenCount ?? "-"}</div>
         </article>
-        <article className="metric-card">
-          <p>Total Transfers</p>
-          <h2>{stats?.transferCount ?? "-"}</h2>
-        </article>
-      </section>
-
-      <section className="grid-two">
-        <article className="panel" style={{ minHeight: "260px" }}>
-          <div className="panel-header">
-            <h3 style={{ alignItems: "center", display: "flex", gap: "0.5rem", margin: 0 }}>
-              <Layers size={18} /> Shared Factory Mode
-            </h3>
-          </div>
-          <p className="hint" style={{ lineHeight: 1.7 }}>
-            Deploy collection metadata on the platform factory (single NEP-11 contract). Collection ownership is separated
-            by `collectionId`, similar to storefront-style models.
-          </p>
-          <div className="chip-row" style={{ marginTop: "1rem" }}>
-            <span className="chip">No extra deployment fee</span>
-            <span className="chip">Fast launch</span>
-          </div>
-        </article>
-
-        <article className="panel" style={{ minHeight: "260px" }}>
-          <div className="panel-header">
-            <h3 style={{ alignItems: "center", display: "flex", gap: "0.5rem", margin: 0 }}>
-              <ShieldCheck size={18} /> Dedicated Contract Mode
-            </h3>
-          </div>
-          <p className="hint" style={{ lineHeight: 1.7 }}>
-            For C# mode, each collection can deploy its own isolated NFT contract from template. This costs 10 GAS and is
-            suited for advanced creators needing full contract-level isolation.
-          </p>
-          <div className="chip-row" style={{ marginTop: "1rem" }}>
-            <span className="chip">10 GAS deployment</span>
-            <span className="chip">Per-collection contract hash</span>
-          </div>
+        <article style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "0.9rem", color: "#8A939B", fontWeight: 600, textTransform: "uppercase" }}>Volume</div>
+          <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{stats?.transferCount ?? "-"} <span style={{ fontSize: "1rem" }}>GAS</span></div>
         </article>
       </section>
 
-      <section className="panel">
-        <div className="panel-header">
-          <h3>Featured Collections</h3>
-          <Link className="btn btn-secondary" to="/explore">
-            View All
+      {/* Mode Selection Section */}
+      <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
+        <div className="panel" style={{ padding: "2.5rem", background: "rgba(32, 129, 226, 0.05)", borderColor: "rgba(32, 129, 226, 0.2)" }}>
+          <div className="stack-sm">
+            <Layers size={32} color="#2081E2" />
+            <h2 style={{ fontSize: "1.8rem", margin: "1rem 0" }}>Shared Factory</h2>
+            <p style={{ color: "#8A939B", lineHeight: 1.6 }}>
+              Launch your collection instantly on our shared NEP-11 contract. Perfect for creators who want to get started without high deployment costs.
+            </p>
+            <div className="chip-row" style={{ marginTop: "1rem" }}>
+              <span className="chip" style={{ background: "rgba(0, 229, 153, 0.1)", borderColor: "rgba(0, 229, 153, 0.2)", color: "#00E599" }}>Low Cost</span>
+              <span className="chip">Instant Launch</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="panel" style={{ padding: "2.5rem", background: "rgba(0, 229, 153, 0.05)", borderColor: "rgba(0, 229, 153, 0.2)" }}>
+          <div className="stack-sm">
+            <ShieldCheck size={32} color="#00E599" />
+            <h2 style={{ fontSize: "1.8rem", margin: "1rem 0" }}>Dedicated Contract</h2>
+            <p style={{ color: "#8A939B", lineHeight: 1.6 }}>
+              Deploy a dedicated NFT contract for complete ownership and isolation. Customize your contract hash and manage everything independently.
+            </p>
+            <div className="chip-row" style={{ marginTop: "1rem" }}>
+              <span className="chip" style={{ background: "rgba(32, 129, 226, 0.1)", borderColor: "rgba(32, 129, 226, 0.2)", color: "#2081E2" }}>10 GAS Fee</span>
+              <span className="chip">Full Isolation</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Collections Grid */}
+      <section>
+        <div className="panel-header" style={{ marginBottom: "2rem" }}>
+          <h2 style={{ fontSize: "2rem", fontWeight: 700 }}>Notable Collections</h2>
+          <Link to="/explore" style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, color: "#2081E2" }}>
+            See all <ArrowRight size={18} />
           </Link>
         </div>
 
         {loading ? (
-          <p className="hint">Loading collections...</p>
+          <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="panel" style={{ height: "380px", background: "rgba(255,255,255,0.05)" }}></div>
+            ))}
+          </div>
         ) : featuredCollections.length === 0 ? (
-          <p className="hint">No collections yet. Create the first one.</p>
+          <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
+            <Sparkles size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
+            <h3>No collections found</h3>
+            <p className="hint">Be the first to create an amazing NFT collection on Neo N3!</p>
+            <Link className="btn" to="/collections/new" style={{ marginTop: "1.5rem" }}>Create Collection</Link>
+          </div>
         ) : (
-          <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
+          <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
             {featuredCollections.map((collection) => (
               <Link
-                className="token-card"
                 key={collection.collectionId}
-                style={{ color: "inherit", textDecoration: "none" }}
                 to={`/collections/${collection.collectionId}`}
+                style={{ textDecoration: "none", color: "inherit" }}
               >
-                <div className="stack-sm">
-                  <strong>{collection.name}</strong>
-                  <span className="hint">{collection.symbol}</span>
+                <div className="panel" style={{ padding: 0, overflow: "hidden", transition: "transform 0.2s" }} onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-8px)"} onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+                  <div style={{ height: "200px", background: `linear-gradient(45deg, #121822, #1c2638)`, position: "relative" }}>
+                    {/* Placeholder for collection banner */}
+                    <div style={{ position: "absolute", bottom: "-30px", left: "20px", width: "80px", height: "80px", borderRadius: "12px", border: "4px solid #04060A", background: "#1c2638", overflow: "hidden" }}>
+                       <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg, #2081E2, #00E599)" }}></div>
+                    </div>
+                  </div>
+                  <div style={{ padding: "40px 1.5rem 1.5rem" }}>
+                    <h3 style={{ margin: 0, fontSize: "1.25rem" }}>{collection.name}</h3>
+                    <div style={{ color: "#8A939B", fontSize: "0.9rem", margin: "0.25rem 0 1rem" }}>by {shortHash(collection.owner)}</div>
+                    <div className="chip-row">
+                      <span className="chip" style={{ fontSize: "0.75rem" }}>{collection.minted} items</span>
+                      <span className="chip" style={{ fontSize: "0.75rem" }}>{(collection.royaltyBps / 100).toFixed(1)}% royalty</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="chip-row">
-                  <span className="chip">Minted {collection.minted}</span>
-                  <span className="chip">Royalty {(collection.royaltyBps / 100).toFixed(2)}%</span>
-                </div>
-                <span className="hint">Owner {shortHash(collection.owner)}</span>
               </Link>
             ))}
           </div>
