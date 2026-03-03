@@ -3,7 +3,7 @@ import pino from "pino";
 
 import { decodeStackItem, NeoRpcService } from "@platform/neo-sdk";
 
-import type { AppConfig } from "../config.js";
+import type { ResolvedNetworkAppConfig } from "../config.js";
 import { AppDb } from "../db.js";
 
 interface RawNotification {
@@ -109,7 +109,7 @@ export class IndexerService {
   private chainHeightFetchInFlight: Promise<number | null> | null = null;
 
   constructor(
-    private readonly config: AppConfig,
+    private readonly config: ResolvedNetworkAppConfig,
     private readonly db: AppDb,
   ) {
     this.rpc = new NeoRpcService({

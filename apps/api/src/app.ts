@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 
-import { type ApiNetworkName, loadConfig } from "./config.js";
+import { type ApiNetworkName, type ResolvedNetworkAppConfig, loadConfig } from "./config.js";
 import { AppDb } from "./db.js";
 import { type ApiRouteNetworkContext, createHttpRouter } from "./routes/http.js";
 import { IndexerService } from "./services/indexer.js";
@@ -17,7 +17,7 @@ export function createApp() {
       continue;
     }
 
-    const networkConfig = {
+    const networkConfig: ResolvedNetworkAppConfig = {
       ...config,
       DB_FILE: runtime.dbFile,
       NEO_RPC_URL: runtime.rpcUrl,

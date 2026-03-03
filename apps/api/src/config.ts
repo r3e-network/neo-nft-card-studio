@@ -9,6 +9,12 @@ export type ApiNetworkName = "mainnet" | "testnet" | "private";
 
 const API_NETWORKS: ApiNetworkName[] = ["mainnet", "testnet", "private"];
 const DEFAULT_DB_FILE = process.env.VERCEL ? "/tmp/nft-platform.db" : "apps/api/data/nft-platform.db";
+const BUILTIN_DEFAULTS: Partial<Record<ApiNetworkName, { rpcUrl?: string; contractHash?: string }>> = {
+  testnet: {
+    rpcUrl: "http://seed2t5.neo.org:20332",
+    contractHash: "0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22",
+  },
+};
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === "string") {
@@ -42,12 +48,6 @@ function normalizeContractHash(input: string): string {
   const noPrefix = trimmed.replace(/^0x/i, "");
   return `0x${noPrefix.toLowerCase()}`;
 }
-
-const requiredHashFromEnv = z
-  .string()
-  .trim()
-  .regex(UINT160_HASH_REGEX, "Contract hash must be a 20-byte hexadecimal script hash")
-  .transform((value) => normalizeContractHash(value));
 
 const optionalHashFromEnv = z.preprocess(
   emptyStringToUndefined,
@@ -83,11 +83,11 @@ const configSchema = z.object({
   DB_FILE_MAINNET: optionalStringFromEnv,
   DB_FILE_TESTNET: optionalStringFromEnv,
   DB_FILE_PRIVATE: optionalStringFromEnv,
-  NEO_RPC_URL: z.string().url(),
+  NEO_RPC_URL: optionalUrlFromEnv,
   NEO_RPC_URL_MAINNET: optionalUrlFromEnv,
   NEO_RPC_URL_TESTNET: optionalUrlFromEnv,
   NEO_RPC_URL_PRIVATE: optionalUrlFromEnv,
-  NEO_CONTRACT_HASH: requiredHashFromEnv,
+  NEO_CONTRACT_HASH: optionalHashFromEnv,
   NEO_CONTRACT_HASH_MAINNET: optionalHashFromEnv,
   NEO_CONTRACT_HASH_TESTNET: optionalHashFromEnv,
   NEO_CONTRACT_HASH_PRIVATE: optionalHashFromEnv,
@@ -145,6 +145,11 @@ export interface AppConfig extends RawAppConfig {
   SUPABASE_DB_KEY?: string;
   NETWORKS: Partial<Record<ApiNetworkName, ApiNetworkConfig>>;
 }
+
+export type ResolvedNetworkAppConfig = Omit<AppConfig, "NEO_RPC_URL" | "NEO_CONTRACT_HASH"> & {
+  NEO_RPC_URL: string;
+  NEO_CONTRACT_HASH: string;
+};
 
 function resolveSupabaseKey(config: RawAppConfig): string | undefined {
   const candidates = [
@@ -266,9 +271,16 @@ function getNetworkEnvValues(config: RawAppConfig, network: ApiNetworkName): {
 function resolveNetworkConfig(config: RawAppConfig, network: ApiNetworkName): ApiNetworkConfig | null {
   const envValues = getNetworkEnvValues(config, network);
   const isDefault = network === config.NEO_DEFAULT_NETWORK;
+  const builtIn = BUILTIN_DEFAULTS[network];
 
-  const rpcUrl = envValues.rpcUrl ?? (isDefault ? config.NEO_RPC_URL : undefined);
-  const contractHash = envValues.contractHash ?? (isDefault ? config.NEO_CONTRACT_HASH : undefined);
+  const rpcUrl =
+    envValues.rpcUrl ??
+    (isDefault ? normalizeOptional(config.NEO_RPC_URL) : undefined) ??
+    builtIn?.rpcUrl;
+  const contractHash =
+    envValues.contractHash ??
+    (isDefault ? normalizeOptional(config.NEO_CONTRACT_HASH) : undefined) ??
+    builtIn?.contractHash;
 
   const hasAnyNetworkSpecificValue =
     !!envValues.dbFile ||
@@ -287,7 +299,7 @@ function resolveNetworkConfig(config: RawAppConfig, network: ApiNetworkName): Ap
 
   if (!rpcUrl || !contractHash) {
     throw new Error(
-      `Incomplete network config for ${network}: both NEO_RPC_URL_${network.toUpperCase()} and NEO_CONTRACT_HASH_${network.toUpperCase()} are required`,
+      `Incomplete network config for ${network}: both rpcUrl and contractHash are required (via env overrides or built-in defaults).`,
     );
   }
 

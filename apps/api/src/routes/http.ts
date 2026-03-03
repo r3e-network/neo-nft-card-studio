@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 
-import type { ApiNetworkName, AppConfig } from "../config.js";
+import type { ApiNetworkName, AppConfig, ResolvedNetworkAppConfig } from "../config.js";
 import type { IndexerService } from "../services/indexer.js";
 import { AppDb } from "../db.js";
 import { resolveNeoFsUri } from "../services/neofs.js";
@@ -377,7 +377,7 @@ export interface ApiRouteNetworkContext {
   network: ApiNetworkName;
   db: AppDb;
   indexer: IndexerService;
-  config: AppConfig;
+  config: ResolvedNetworkAppConfig;
 }
 
 type ApiRouteNetworkContextMap = Partial<Record<ApiNetworkName, ApiRouteNetworkContext>>;

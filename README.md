@@ -62,16 +62,18 @@ cp .env.example .env
 - 所有 `*_CONTRACT_HASH*` 必须是 20-byte 十六进制脚本哈希（40 hex，可带 `0x`/`0X` 前缀；系统会归一化为小写 `0x...`）
 - API 多网络（同一个 API 实例可同时服务多链环境）：
   - 默认网络：`NEO_DEFAULT_NETWORK=mainnet|testnet|private`
-  - 基础配置（默认网络必填）：`NEO_RPC_URL`、`NEO_CONTRACT_HASH`、`DB_FILE`
+  - 基础配置：`DB_FILE`（`NEO_RPC_URL`、`NEO_CONTRACT_HASH` 现在可选，代码内置 testnet 默认值）
+  - 内置 testnet 默认：`NEO_RPC_URL=http://seed2t5.neo.org:20332`、`NEO_CONTRACT_HASH=0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22`
   - 可选多网络覆盖：`NEO_RPC_URL_MAINNET/TESTNET/PRIVATE`、`NEO_CONTRACT_HASH_MAINNET/TESTNET/PRIVATE`、`DB_FILE_MAINNET/TESTNET/PRIVATE`
   - 查询接口可带 `?network=mainnet|testnet|private`，前端会按钱包网络自动附加
 - 前端默认以钱包当前网络为准：连接钱包后自动识别 `mainnet/testnet/private` 并切换对应配置
+  - 内置 testnet 默认：`VITE_NEO_RPC_URL=http://seed2t5.neo.org:20332`、`VITE_NEO_CONTRACT_HASH=0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22`
   - 可选覆盖：`VITE_NEO_RPC_URL_MAINNET/TESTNET/PRIVATE`
   - 可选覆盖：`VITE_NEO_CONTRACT_HASH_MAINNET/TESTNET/PRIVATE`
   - 可选覆盖：`VITE_API_BASE_URL_MAINNET/TESTNET/PRIVATE`
 - 读请求说明：链上读请求绑定钱包网络（钱包若暴露 `rpcUrl` 则优先使用；否则使用该网络预设 RPC）；写请求始终走钱包 `invoke`。
 - 安全兜底：当钱包未连接或网络无法识别（`unknown`）时，前端会 fail-closed，拒绝继续发起链请求，避免误落到默认网络。
-- 主网注意：若钱包在 mainnet，必须提供 `VITE_NEO_CONTRACT_HASH_MAINNET`，否则前端会拒绝执行合约调用（避免误用测试网 hash）。
+- 主网注意：若钱包在 mainnet 且你部署了独立主网合约，建议显式设置 `VITE_NEO_CONTRACT_HASH_MAINNET` 与 `NEO_CONTRACT_HASH_MAINNET` 覆盖默认值。
 - `INDEXER_ENABLE_EVENTS`: 是否启用事件索引（`rust` 方言建议按需开启）
 - `NEOFS_*`: NeoFS 网关与 URI 解析配置（支持 `neofs://<container>/<object>`）
 - `GHOSTMARKET_*`: GhostMarket 链接模板和兼容性检测配置

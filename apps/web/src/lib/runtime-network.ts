@@ -27,24 +27,17 @@ export function getRuntimeNetworkConfig(): RuntimeNetworkConfig {
 
   let rpcUrl = "";
   if (!unknownWalletNetwork) {
-    rpcUrl = walletNetwork?.rpcUrl || profile.rpcUrl || "";
-  }
-  if (!rpcUrl && (network === "testnet" || (!walletBound && network === "unknown"))) {
+    rpcUrl = walletNetwork?.rpcUrl || profile.rpcUrl || APP_CONFIG.rpcUrl;
+  } else if (!walletBound) {
     rpcUrl = APP_CONFIG.rpcUrl;
   }
   const apiBaseUrl = profile.apiBaseUrl || APP_CONFIG.apiBaseUrl;
 
   let contractHash = "";
   if (!unknownWalletNetwork) {
-    if (network === "mainnet") {
-      contractHash = profile.contractHash ?? "";
-    } else if (network === "private") {
-      contractHash = profile.contractHash ?? "";
-    } else if (network === "testnet") {
-      contractHash = profile.contractHash || APP_CONFIG.contractHash;
-    } else {
-      contractHash = APP_CONFIG.contractHash;
-    }
+    contractHash = profile.contractHash || APP_CONFIG.contractHash;
+  } else if (!walletBound) {
+    contractHash = APP_CONFIG.contractHash;
   }
 
   return {
