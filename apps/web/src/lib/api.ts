@@ -36,13 +36,8 @@ function getApiClient() {
 function getNetworkQueryParams(
   params?: Record<string, string | number | boolean | undefined>,
 ): Record<string, string | number | boolean> | undefined {
-  const walletNetwork = getRuntimeWalletNetwork();
   const runtime = getRuntimeNetworkConfig();
   const next: Record<string, string | number | boolean> = {};
-
-  if (!walletNetwork || runtime.network === "unknown") {
-    throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
-  }
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -53,11 +48,11 @@ function getNetworkQueryParams(
     }
   }
 
-  if (runtime.network === "mainnet" || runtime.network === "testnet" || runtime.network === "private") {
-    next.network = runtime.network;
-  }
+  // Always use a valid network, fallback to testnet for initial load/explore
+  const network = runtime.network === "unknown" ? "testnet" : runtime.network;
+  next.network = network;
 
-  return Object.keys(next).length > 0 ? next : undefined;
+  return next;
 }
 
 export async function fetchHealth(): Promise<HealthDto> {

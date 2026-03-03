@@ -480,14 +480,14 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     handler: (context: ApiRouteNetworkContext, req: Request, res: Response) => void | Promise<void>,
   ) {
     return async (req: Request, res: Response, next: NextFunction) => {
-      const context = resolveContextOrReply(req, res);
-      if (!context) {
-        return;
-      }
-
       try {
+        const context = resolveContextOrReply(req, res);
+        if (!context) {
+          return;
+        }
         await handler(context, req, res);
       } catch (error) {
+        console.error("Network context handler error:", error);
         next(error);
       }
     };

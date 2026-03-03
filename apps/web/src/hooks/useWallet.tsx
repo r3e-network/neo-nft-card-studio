@@ -149,19 +149,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
-
-        if (!session.network || session.network.network === "unknown") {
-          throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
-        }
       },
       invoke: async (payload: WalletInvokeRequest) => {
         const session = await syncWalletSession();
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
-        }
-
-        if (!session.network || session.network.network === "unknown") {
-          throw new Error("Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.");
         }
 
         const result = await invokeNeoWallet(payload);

@@ -429,15 +429,20 @@ function normalizeNetworkName(value: unknown, magic: number | null): NeoWalletNe
     }
   }
 
-  if (text.includes("mainnet") || text.includes("main_net")) {
+  if (text.includes("mainnet") || text.includes("main_net") || text.includes("main net")) {
     return "mainnet";
   }
 
-  if (text.includes("testnet") || text.includes("test_net")) {
+  if (text.includes("testnet") || text.includes("test_net") || text.includes("test net")) {
     return "testnet";
   }
 
   if (magic && magic > 0) {
+    return "private";
+  }
+
+  // If we have a magic but it's not standard, it's likely a private net
+  if (magic !== null) {
     return "private";
   }
 
