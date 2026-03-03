@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
+    "vercel-build": "npm run build",
     "lint": "echo 'No lint configured for web'",
     "format": "echo 'No format step for web'"
   },
