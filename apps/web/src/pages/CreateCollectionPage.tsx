@@ -228,8 +228,8 @@ export function CreateCollectionPage() {
               </div>
 
               <div className="form-grid">
-                <label className="full">
-                  Logo Image
+                <div className="full">
+                  <span style={{ fontSize: "0.9rem", fontWeight: 500, color: "var(--text-muted)", display: "block", marginBottom: "0.25rem" }}>Logo Image</span>
                   <div className="upload-area" onClick={() => fileInputRef.current?.click()} style={{ borderStyle: "dashed", padding: "3rem" }}>
                     {file ? (
                       <div className="stack-sm flex-center">
@@ -246,7 +246,7 @@ export function CreateCollectionPage() {
                     )}
                     <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
                   </div>
-                </label>
+                </div>
 
                 <label>
                   Collection Name *

@@ -194,8 +194,8 @@ export function MintNftPage() {
               </div>
 
               <div className="form-grid">
-                <label className="full">
-                  Upload Artwork *
+                <div className="full">
+                  <span style={{ fontSize: "0.9rem", fontWeight: 500, color: "var(--text-muted)", display: "block", marginBottom: "0.25rem" }}>Upload Artwork *</span>
                   <div className="upload-area" onClick={() => fileInputRef.current?.click()} style={{ borderStyle: "dashed", padding: "4rem 2rem" }}>
                     {file ? (
                       <div className="stack-md flex-center">
@@ -220,7 +220,7 @@ export function MintNftPage() {
                     )}
                     <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
                   </div>
-                </label>
+                </div>
 
                 <label className="full">
                   Select Collection *
