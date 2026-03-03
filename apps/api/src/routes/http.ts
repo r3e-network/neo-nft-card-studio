@@ -580,7 +580,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/health",
-    withNetworkContext((context, _req, res) => {
+    withNetworkContext(async (context, _req, res) => {
       const chainBlockHeight = context.indexer.getLastKnownChainBlockHeight();
       void context.indexer.getChainBlockHeight();
 
@@ -598,7 +598,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
           chainBlockHeight,
           reachable: typeof chainBlockHeight === "number",
         },
-        stats: context.db.getStats(),
+        stats: await context.db.getStats(),
         timestamp: new Date().toISOString(),
       });
     }),
@@ -1088,21 +1088,21 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/stats",
-    withNetworkContext((context, _req, res) => {
-      res.json(context.db.getStats());
+    withNetworkContext(async (context, _req, res) => {
+      res.json(await context.db.getStats());
     }),
   );
 
   router.get(
     "/market/listings",
-    withNetworkContext((context, req, res) => {
+    withNetworkContext(async (context, req, res) => {
       const parsed = queryMarketListingsSchema.safeParse(req.query);
       if (!parsed.success) {
         res.status(400).json({ message: "Invalid query", error: parsed.error.flatten() });
         return;
       }
 
-      const rows = context.db.listMarketListings({
+      const rows = await context.db.listMarketListings({
         collectionId: parsed.data.collectionId,
         owner: parsed.data.owner,
         listedOnly: parsed.data.listedOnly,
@@ -1151,16 +1151,16 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/collections",
-    withNetworkContext((context, req, res) => {
+    withNetworkContext(async (context, req, res) => {
       const owner = typeof req.query.owner === "string" ? req.query.owner : undefined;
-      res.json(context.db.listCollections(owner));
+      res.json(await context.db.listCollections(owner));
     }),
   );
 
   router.get(
     "/collections/:collectionId",
-    withNetworkContext((context, req, res) => {
-      const collection = context.db.getCollection(req.params.collectionId);
+    withNetworkContext(async (context, req, res) => {
+      const collection = await context.db.getCollection(req.params.collectionId);
       if (!collection) {
         res.status(404).json({ message: "Collection not found" });
         return;
@@ -1172,15 +1172,15 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/collections/:collectionId/tokens",
-    withNetworkContext((context, req, res) => {
-      res.json(context.db.listCollectionTokens(req.params.collectionId));
+    withNetworkContext(async (context, req, res) => {
+      res.json(await context.db.listCollectionTokens(req.params.collectionId));
     }),
   );
 
   router.get(
     "/tokens/:tokenId",
-    withNetworkContext((context, req, res) => {
-      const token = context.db.getToken(req.params.tokenId);
+    withNetworkContext(async (context, req, res) => {
+      const token = await context.db.getToken(req.params.tokenId);
       if (!token) {
         res.status(404).json({ message: "Token not found" });
         return;
@@ -1192,14 +1192,14 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
   router.get(
     "/wallets/:address/tokens",
-    withNetworkContext((context, req, res) => {
-      res.json(context.db.listWalletTokens(req.params.address));
+    withNetworkContext(async (context, req, res) => {
+      res.json(await context.db.listWalletTokens(req.params.address));
     }),
   );
 
   router.get(
     "/transfers",
-    withNetworkContext((context, req, res) => {
+    withNetworkContext(async (context, req, res) => {
       const parsed = queryLimitSchema.safeParse(req.query);
       if (!parsed.success) {
         res.status(400).json({ message: "Invalid query", error: parsed.error.flatten() });
@@ -1207,7 +1207,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       }
 
       const tokenId = typeof req.query.tokenId === "string" ? req.query.tokenId : undefined;
-      res.json(context.db.listTransfers(tokenId, parsed.data.limit));
+      res.json(await context.db.listTransfers(tokenId, parsed.data.limit));
     }),
   );
 

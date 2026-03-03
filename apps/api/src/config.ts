@@ -115,6 +115,8 @@ const configSchema = z.object({
   INDEXER_BATCH_SIZE: z.coerce.number().int().positive().default(30),
   INDEXER_START_BLOCK: z.coerce.number().int().nonnegative().default(0),
   INDEXER_ENABLE_EVENTS: booleanFromEnv.optional(),
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_ANON_KEY: z.string().trim().optional(),
 });
 
 type RawAppConfig = z.infer<typeof configSchema>;

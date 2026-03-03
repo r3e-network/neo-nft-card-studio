@@ -1,3 +1,4 @@
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
@@ -75,31 +76,53 @@ CREATE INDEX IF NOT EXISTS idx_token_listings_updated ON token_listings(updated_
 `;
 
 export class AppDb {
-  private readonly db: Database.Database;
+  private readonly sqlite: Database.Database | null = null;
+  private readonly supabase: SupabaseClient | null = null;
 
-  constructor(dbPath: string) {
-    const dir = path.dirname(dbPath);
-    if (dir && dir !== ".") {
-      fs.mkdirSync(dir, { recursive: true });
+  constructor(dbPath: string, supabaseUrl?: string, supabaseKey?: string) {
+    if (supabaseUrl && supabaseKey) {
+      this.supabase = createClient(supabaseUrl, supabaseKey);
+    } else {
+      const dir = path.dirname(dbPath);
+      if (dir && dir !== ".") {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      this.sqlite = new Database(dbPath);
+      this.sqlite.pragma("journal_mode = WAL");
+      this.sqlite.exec(SCHEMA_SQL);
+      this.ensureCollectionContractHashColumn();
     }
-
-    this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
-    this.db.exec(SCHEMA_SQL);
-    this.ensureCollectionContractHashColumn();
   }
 
   close(): void {
-    this.db.close();
+    this.sqlite?.close();
   }
 
-  getSyncState(key: string): string | null {
-    const row = this.db.prepare("SELECT value FROM sync_state WHERE key = ?").get(key) as { value: string } | undefined;
+  async getSyncState(key: string): Promise<string | null> {
+    if (this.supabase) {
+      const { data, error } = await this.supabase
+        .from("sync_state")
+        .select("value")
+        .eq("key", key)
+        .single();
+      if (error) return null;
+      return data?.value ?? null;
+    }
+
+    const row = this.sqlite!.prepare("SELECT value FROM sync_state WHERE key = ?").get(key) as { value: string } | undefined;
     return row?.value ?? null;
   }
 
-  setSyncState(key: string, value: string): void {
-    this.db
+  async setSyncState(key: string, value: string): Promise<void> {
+    if (this.supabase) {
+      await this.supabase
+        .from("sync_state")
+        .upsert({ key, value }, { onConflict: "key" });
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `INSERT INTO sync_state(key, value)
          VALUES(?, ?)
@@ -109,15 +132,39 @@ export class AppDb {
   }
 
   private ensureCollectionContractHashColumn(): void {
-    const tableInfo = this.db.prepare("PRAGMA table_info(collections)").all() as Array<{ name: string }>;
+    if (!this.sqlite) return;
+    const tableInfo = this.sqlite.prepare("PRAGMA table_info(collections)").all() as Array<{ name: string }>;
     const hasColumn = tableInfo.some((column) => column.name === "contract_hash");
     if (!hasColumn) {
-      this.db.exec("ALTER TABLE collections ADD COLUMN contract_hash TEXT");
+      this.sqlite.exec("ALTER TABLE collections ADD COLUMN contract_hash TEXT");
     }
   }
 
-  upsertCollection(input: CollectionRecord): void {
-    this.db
+  async upsertCollection(input: CollectionRecord): Promise<void> {
+    if (this.supabase) {
+      const { error } = await this.supabase
+        .from("collections")
+        .upsert({
+          collection_id: input.collectionId,
+          owner: input.owner,
+          name: input.name,
+          symbol: input.symbol,
+          description: input.description,
+          base_uri: input.baseUri,
+          contract_hash: input.contractHash ?? null,
+          max_supply: input.maxSupply,
+          minted: input.minted,
+          royalty_bps: input.royaltyBps,
+          transferable: input.transferable,
+          paused: input.paused,
+          created_at: input.createdAt,
+          updated_at: input.updatedAt,
+        }, { onConflict: "collection_id" });
+      if (error) throw error;
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `INSERT INTO collections(
           collection_id, owner, name, symbol, description, base_uri, contract_hash, max_supply,
@@ -146,8 +193,16 @@ export class AppDb {
       });
   }
 
-  setCollectionContractHash(collectionId: string, contractHash: string, updatedAt: string): void {
-    this.db
+  async setCollectionContractHash(collectionId: string, contractHash: string, updatedAt: string): Promise<void> {
+    if (this.supabase) {
+      await this.supabase
+        .from("collections")
+        .update({ contract_hash: contractHash, updated_at: updatedAt })
+        .eq("collection_id", collectionId);
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `UPDATE collections
          SET contract_hash = ?, updated_at = ?
@@ -156,8 +211,17 @@ export class AppDb {
       .run(contractHash, updatedAt, collectionId);
   }
 
-  listCollectionContractHashes(): string[] {
-    const rows = this.db
+  async listCollectionContractHashes(): Promise<string[]> {
+    if (this.supabase) {
+      const { data, error } = await this.supabase
+        .from("collections")
+        .select("contract_hash")
+        .not("contract_hash", "is", null);
+      if (error) return [];
+      return data.map(r => r.contract_hash).filter(Boolean) as string[];
+    }
+
+    const rows = this.sqlite!
       .prepare(
         `SELECT contract_hash AS contractHash
          FROM collections
@@ -169,8 +233,25 @@ export class AppDb {
     return rows.map((row) => row.contractHash);
   }
 
-  upsertToken(input: TokenRecord): void {
-    this.db
+  async upsertToken(input: TokenRecord): Promise<void> {
+    if (this.supabase) {
+      const { error } = await this.supabase
+        .from("tokens")
+        .upsert({
+          token_id: input.tokenId,
+          collection_id: input.collectionId,
+          owner: input.owner,
+          uri: input.uri,
+          properties_json: input.propertiesJson,
+          burned: input.burned,
+          minted_at: input.mintedAt,
+          updated_at: input.updatedAt,
+        }, { onConflict: "token_id" });
+      if (error) throw error;
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `INSERT INTO tokens(
           token_id, collection_id, owner, uri, properties_json, burned, minted_at, updated_at
@@ -188,8 +269,16 @@ export class AppDb {
       .run(input);
   }
 
-  markTokenOwner(tokenId: string, owner: string, updatedAt: string): void {
-    this.db
+  async markTokenOwner(tokenId: string, owner: string, updatedAt: string): Promise<void> {
+    if (this.supabase) {
+      await this.supabase
+        .from("tokens")
+        .update({ owner, updated_at: updatedAt })
+        .eq("token_id", tokenId);
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `UPDATE tokens
          SET owner = ?, updated_at = ?
@@ -198,8 +287,22 @@ export class AppDb {
       .run(owner, updatedAt, tokenId);
   }
 
-  insertTransfer(input: TransferRecord): void {
-    this.db
+  async insertTransfer(input: TransferRecord): Promise<void> {
+    if (this.supabase) {
+      await this.supabase
+        .from("transfers")
+        .insert({
+          txid: input.txid,
+          token_id: input.tokenId,
+          from_address: input.fromAddress,
+          to_address: input.toAddress,
+          block_index: input.blockIndex,
+          timestamp: input.timestamp,
+        });
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `INSERT INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
          VALUES(@txid, @tokenId, @fromAddress, @toAddress, @blockIndex, @timestamp)`,
@@ -207,10 +310,21 @@ export class AppDb {
       .run(input);
   }
 
-  applyTransfer(input: TransferRecord): void {
-    const txn = this.db.transaction((record: TransferRecord) => {
+  async applyTransfer(input: TransferRecord): Promise<void> {
+    if (this.supabase) {
+      // In Supabase we don't have built-in easy synchronous transactions across tables like this
+      // but we can perform them sequentially or use a RPC function.
+      // For simplicity here, we do it sequentially.
+      if (input.toAddress) {
+        await this.markTokenOwner(input.tokenId, input.toAddress, input.timestamp);
+      }
+      await this.insertTransfer(input);
+      return;
+    }
+
+    const txn = this.sqlite!.transaction((record: TransferRecord) => {
       if (record.toAddress) {
-        this.db
+        this.sqlite!
           .prepare(
             `UPDATE tokens
              SET owner = ?, updated_at = ?
@@ -219,7 +333,7 @@ export class AppDb {
           .run(record.toAddress, record.timestamp, record.tokenId);
       }
 
-      this.db
+      this.sqlite!
         .prepare(
           `INSERT INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
            VALUES(@txid, @tokenId, @fromAddress, @toAddress, @blockIndex, @timestamp)`,
@@ -230,8 +344,22 @@ export class AppDb {
     txn(input);
   }
 
-  upsertTokenListing(input: TokenListingRecord): void {
-    this.db
+  async upsertTokenListing(input: TokenListingRecord): Promise<void> {
+    if (this.supabase) {
+      await this.supabase
+        .from("token_listings")
+        .upsert({
+          token_id: input.tokenId,
+          seller: input.seller,
+          price: input.price,
+          listed: input.listed,
+          listed_at: input.listedAt,
+          updated_at: input.updatedAt,
+        }, { onConflict: "token_id" });
+      return;
+    }
+
+    this.sqlite!
       .prepare(
         `INSERT INTO token_listings(
           token_id, seller, price, listed, listed_at, updated_at
@@ -248,12 +376,66 @@ export class AppDb {
       .run(input);
   }
 
-  listMarketListings(input?: {
+  async listMarketListings(input?: {
     collectionId?: string;
     owner?: string;
     listedOnly?: boolean;
     limit?: number;
-  }): MarketListingRecord[] {
+  }): Promise<MarketListingRecord[]> {
+    if (this.supabase) {
+      let query = this.supabase
+        .from("tokens")
+        .select(`
+          tokenId:token_id,
+          collectionId:collection_id,
+          owner,
+          uri,
+          propertiesJson:properties_json,
+          burned,
+          mintedAt:minted_at,
+          tokenUpdatedAt:updated_at,
+          collections!inner (
+            collectionOwner:owner,
+            collectionName:name,
+            collectionSymbol:symbol,
+            collectionDescription:description,
+            collectionBaseUri:base_uri,
+            collectionContractHash:contract_hash,
+            collectionMaxSupply:max_supply,
+            collectionMinted:minted,
+            collectionRoyaltyBps:royalty_bps,
+            collectionTransferable:transferable,
+            collectionPaused:paused,
+            collectionCreatedAt:created_at,
+            collectionUpdatedAt:updated_at
+          ),
+          token_listings (
+            listed,
+            seller,
+            price,
+            listedAt:listed_at,
+            listingUpdatedAt:updated_at
+          )
+        `)
+        .eq("burned", 0);
+
+      if (input?.collectionId) query = query.eq("collection_id", input.collectionId);
+      if (input?.owner) query = query.eq("owner", input.owner);
+      if (input?.listedOnly) query = query.eq("token_listings.listed", 1);
+
+      const { data, error } = await query
+        .order("token_id", { ascending: false }) // Simplified ordering for now
+        .limit(Math.min(input?.limit ?? 100, 500));
+
+      if (error) return [];
+
+      return (data as any[]).map(item => ({
+        ...item,
+        ...item.collections,
+        ...(item.token_listings?.[0] || { listed: 0, seller: null, price: null, listedAt: null, listingUpdatedAt: null })
+      }));
+    }
+
     const limit = Math.min(Math.max(input?.limit ?? 100, 1), 500);
     const whereClauses = ["t.burned = 0"];
     const params: Array<string | number> = [];
@@ -310,12 +492,39 @@ export class AppDb {
       LIMIT ?
     `;
 
-    return this.db.prepare(sql).all(...params) as MarketListingRecord[];
+    return this.sqlite!.prepare(sql).all(...params) as MarketListingRecord[];
   }
 
-  listCollections(owner?: string): CollectionRecord[] {
+  async listCollections(owner?: string): Promise<CollectionRecord[]> {
+    if (this.supabase) {
+      let query = this.supabase
+        .from("collections")
+        .select(`
+          collectionId:collection_id,
+          owner,
+          name,
+          symbol,
+          description,
+          baseUri:base_uri,
+          contractHash:contract_hash,
+          maxSupply:max_supply,
+          minted,
+          royaltyBps:royalty_bps,
+          transferable,
+          paused,
+          createdAt:created_at,
+          updatedAt:updated_at
+        `);
+      
+      if (owner) query = query.eq("owner", owner);
+      
+      const { data, error } = await query.order("created_at", { ascending: false });
+      if (error) return [];
+      return data as CollectionRecord[];
+    }
+
     if (owner) {
-      return this.db
+      return this.sqlite!
         .prepare(
           `SELECT
             collection_id AS collectionId,
@@ -339,7 +548,7 @@ export class AppDb {
         .all(owner) as CollectionRecord[];
     }
 
-    return this.db
+    return this.sqlite!
       .prepare(
         `SELECT
           collection_id AS collectionId,
@@ -362,8 +571,34 @@ export class AppDb {
       .all() as CollectionRecord[];
   }
 
-  getCollection(collectionId: string): CollectionRecord | null {
-    const row = this.db
+  async getCollection(collectionId: string): Promise<CollectionRecord | null> {
+    if (this.supabase) {
+      const { data, error } = await this.supabase
+        .from("collections")
+        .select(`
+          collectionId:collection_id,
+          owner,
+          name,
+          symbol,
+          description,
+          baseUri:base_uri,
+          contractHash:contract_hash,
+          maxSupply:max_supply,
+          minted,
+          royaltyBps:royalty_bps,
+          transferable,
+          paused,
+          createdAt:created_at,
+          updatedAt:updated_at
+        `)
+        .eq("collection_id", collectionId)
+        .single();
+      
+      if (error) return null;
+      return data as CollectionRecord;
+    }
+
+    const row = this.sqlite!
       .prepare(
         `SELECT
           collection_id AS collectionId,
@@ -388,8 +623,29 @@ export class AppDb {
     return row ?? null;
   }
 
-  listCollectionTokens(collectionId: string): TokenRecord[] {
-    return this.db
+  async listCollectionTokens(collectionId: string): Promise<TokenRecord[]> {
+    if (this.supabase) {
+      const { data, error } = await this.supabase
+        .from("tokens")
+        .select(`
+          tokenId:token_id,
+          collectionId:collection_id,
+          owner,
+          uri,
+          propertiesJson:properties_json,
+          burned,
+          mintedAt:minted_at,
+          updatedAt:updated_at
+        `)
+        .eq("collection_id", collectionId)
+        .eq("burned", 0)
+        .order("minted_at", { ascending: false });
+      
+      if (error) return [];
+      return data as TokenRecord[];
+    }
+
+    return this.sqlite!
       .prepare(
         `SELECT
           token_id AS tokenId,
@@ -408,8 +664,29 @@ export class AppDb {
       .all(collectionId) as TokenRecord[];
   }
 
-  listWalletTokens(owner: string): TokenRecord[] {
-    return this.db
+  async listWalletTokens(owner: string): Promise<TokenRecord[]> {
+    if (this.supabase) {
+      const { data, error } = await this.supabase
+        .from("tokens")
+        .select(`
+          tokenId:token_id,
+          collectionId:collection_id,
+          owner,
+          uri,
+          propertiesJson:properties_json,
+          burned,
+          mintedAt:minted_at,
+          updatedAt:updated_at
+        `)
+        .eq("owner", owner)
+        .eq("burned", 0)
+        .order("updated_at", { ascending: false });
+      
+      if (error) return [];
+      return data as TokenRecord[];
+    }
+
+    return this.sqlite!
       .prepare(
         `SELECT
           token_id AS tokenId,
@@ -428,8 +705,28 @@ export class AppDb {
       .all(owner) as TokenRecord[];
   }
 
-  getToken(tokenId: string): TokenRecord | null {
-    const row = this.db
+  async getToken(tokenId: string): Promise<TokenRecord | null> {
+    if (this.supabase) {
+      const { data, error } = await this.supabase
+        .from("tokens")
+        .select(`
+          tokenId:token_id,
+          collectionId:collection_id,
+          owner,
+          uri,
+          propertiesJson:properties_json,
+          burned,
+          mintedAt:minted_at,
+          updatedAt:updated_at
+        `)
+        .eq("token_id", tokenId)
+        .single();
+      
+      if (error) return null;
+      return data as TokenRecord;
+    }
+
+    const row = this.sqlite!
       .prepare(
         `SELECT
           token_id AS tokenId,
@@ -448,9 +745,31 @@ export class AppDb {
     return row ?? null;
   }
 
-  listTransfers(tokenId?: string, limit = 100): TransferRecord[] {
+  async listTransfers(tokenId?: string, limit = 100): Promise<TransferRecord[]> {
+    if (this.supabase) {
+      let query = this.supabase
+        .from("transfers")
+        .select(`
+          txid,
+          tokenId:token_id,
+          fromAddress:from_address,
+          toAddress:to_address,
+          blockIndex:block_index,
+          timestamp
+        `);
+      
+      if (tokenId) query = query.eq("token_id", tokenId);
+      
+      const { data, error } = await query
+        .order("id", { ascending: false })
+        .limit(limit);
+      
+      if (error) return [];
+      return data as TransferRecord[];
+    }
+
     if (tokenId) {
-      return this.db
+      return this.sqlite!
         .prepare(
           `SELECT
             txid,
@@ -467,7 +786,7 @@ export class AppDb {
         .all(tokenId, limit) as TransferRecord[];
     }
 
-    return this.db
+    return this.sqlite!
       .prepare(
         `SELECT
           txid,
@@ -483,10 +802,24 @@ export class AppDb {
       .all(limit) as TransferRecord[];
   }
 
-  getStats(): { collectionCount: number; tokenCount: number; transferCount: number } {
-    const collectionCount = (this.db.prepare("SELECT COUNT(1) AS count FROM collections").get() as { count: number }).count;
-    const tokenCount = (this.db.prepare("SELECT COUNT(1) AS count FROM tokens WHERE burned = 0").get() as { count: number }).count;
-    const transferCount = (this.db.prepare("SELECT COUNT(1) AS count FROM transfers").get() as { count: number }).count;
+  async getStats(): Promise<{ collectionCount: number; tokenCount: number; transferCount: number }> {
+    if (this.supabase) {
+      const [{ count: collectionCount }, { count: tokenCount }, { count: transferCount }] = await Promise.all([
+        this.supabase.from("collections").select("*", { count: "exact", head: true }),
+        this.supabase.from("tokens").select("*", { count: "exact", head: true }).eq("burned", 0),
+        this.supabase.from("transfers").select("*", { count: "exact", head: true }),
+      ]);
+
+      return {
+        collectionCount: collectionCount || 0,
+        tokenCount: tokenCount || 0,
+        transferCount: transferCount || 0,
+      };
+    }
+
+    const collectionCount = (this.sqlite!.prepare("SELECT COUNT(1) AS count FROM collections").get() as { count: number }).count;
+    const tokenCount = (this.sqlite!.prepare("SELECT COUNT(1) AS count FROM tokens WHERE burned = 0").get() as { count: number }).count;
+    const transferCount = (this.sqlite!.prepare("SELECT COUNT(1) AS count FROM transfers").get() as { count: number }).count;
 
     return { collectionCount, tokenCount, transferCount };
   }

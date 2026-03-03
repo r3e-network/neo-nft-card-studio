@@ -188,8 +188,8 @@ export class IndexerService {
     };
   }
 
-  getCurrentSyncBlock(): number {
-    const saved = this.db.getSyncState(SYNC_BLOCK_KEY);
+  async getCurrentSyncBlock(): Promise<number> {
+    const saved = await this.db.getSyncState(SYNC_BLOCK_KEY);
     if (saved === null) {
       return this.config.INDEXER_START_BLOCK;
     }
@@ -221,8 +221,8 @@ export class IndexerService {
       if (chainHeight === null) {
         return;
       }
-      let cursor = this.getCurrentSyncBlock();
-      const trackedHashes = this.getTrackedContractHashes();
+      let cursor = await this.getCurrentSyncBlock();
+      const trackedHashes = await this.getTrackedContractHashes();
 
       if (cursor < this.config.INDEXER_START_BLOCK) {
         cursor = this.config.INDEXER_START_BLOCK;
@@ -236,7 +236,7 @@ export class IndexerService {
 
       for (let index = cursor; index <= target; index += 1) {
         await this.indexBlock(index, trackedHashes);
-        this.db.setSyncState(SYNC_BLOCK_KEY, (index + 1).toString());
+        await this.db.setSyncState(SYNC_BLOCK_KEY, (index + 1).toString());
       }
 
       this.log.info({ cursor: target + 1, chainHeight }, "Indexed blocks");
@@ -260,9 +260,9 @@ export class IndexerService {
     }
   }
 
-  private getTrackedContractHashes(): Set<string> {
+  private async getTrackedContractHashes(): Promise<Set<string>> {
     const tracked = new Set<string>([normalizeHash(this.config.NEO_CONTRACT_HASH)]);
-    const discovered = this.db.listCollectionContractHashes();
+    const discovered = await this.db.listCollectionContractHashes();
     discovered.forEach((hash) => {
       const normalized = normalizeHash(hash);
       if (normalized) {
@@ -301,7 +301,7 @@ export class IndexerService {
 
     for (const notification of matched) {
       const args = stackItemsFromNotification(notification);
-      this.handleNotification(
+      await this.handleNotification(
         notification.eventname,
         args,
         txid,
@@ -313,7 +313,7 @@ export class IndexerService {
     }
   }
 
-  private handleNotification(
+  private async handleNotification(
     eventName: string,
     args: unknown[],
     txid: string,
@@ -321,7 +321,7 @@ export class IndexerService {
     timestamp: string,
     sourceContractHash: string,
     trackedHashes: Set<string>,
-  ): void {
+  ): Promise<void> {
     const platformHash = normalizeHash(this.config.NEO_CONTRACT_HASH);
     const sourceIsPlatform = sourceContractHash === platformHash;
 
@@ -331,7 +331,7 @@ export class IndexerService {
           return;
         }
 
-        this.db.upsertCollection({
+        await this.db.upsertCollection({
           collectionId: valueAsString(args[0]),
           owner: formatNeoAddress(args[1]),
           name: valueAsString(args[2]),
@@ -355,7 +355,7 @@ export class IndexerService {
           return;
         }
 
-        this.db.upsertToken({
+        await this.db.upsertToken({
           tokenId: valueAsString(args[0]),
           collectionId: valueAsString(args[1]),
           owner: formatNeoAddress(args[2]),
@@ -377,7 +377,7 @@ export class IndexerService {
         const toAddress = formatNeoAddress(args[1]) || null;
         const tokenId = valueAsString(args[3]);
 
-        this.db.applyTransfer({
+        await this.db.applyTransfer({
           txid,
           tokenId,
           fromAddress,
@@ -399,7 +399,7 @@ export class IndexerService {
           return;
         }
 
-        this.db.setCollectionContractHash(collectionId, deployedContractHash, timestamp);
+        await this.db.setCollectionContractHash(collectionId, deployedContractHash, timestamp);
         trackedHashes.add(deployedContractHash);
         return;
       }
@@ -421,7 +421,7 @@ export class IndexerService {
             ? new Date(listedAtSeconds * 1000).toISOString()
             : timestamp;
 
-        this.db.upsertTokenListing({
+        await this.db.upsertTokenListing({
           tokenId,
           seller: formatNeoAddress(args[1]),
           price: listed ? valueAsString(args[2]) : "0",
@@ -448,7 +448,7 @@ export class IndexerService {
             ? new Date(matchedAtSeconds * 1000).toISOString()
             : timestamp;
 
-        this.db.upsertTokenListing({
+        await this.db.upsertTokenListing({
           tokenId,
           seller: formatNeoAddress(args[1]),
           price: "0",

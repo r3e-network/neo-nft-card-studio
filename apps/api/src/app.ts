@@ -27,7 +27,7 @@ export function createApp() {
       NEO_CONTRACT_DIALECT: runtime.contractDialect,
     };
 
-    const db = new AppDb(runtime.dbFile);
+    const db = new AppDb(runtime.dbFile, config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
     const indexer = new IndexerService(networkConfig, db);
 
     networkContexts[network] = {
