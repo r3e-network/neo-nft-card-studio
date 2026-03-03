@@ -578,6 +578,32 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     }
   }
 
+  router.post(
+    "/sync",
+    withNetworkContext(async (context, _req, res) => {
+      try {
+        const chainHeight = await context.indexer.getChainBlockHeight();
+        const startBlock = await context.indexer.getCurrentSyncBlock();
+        
+        // Process a batch of blocks (e.g. 50 blocks or 10 seconds worth)
+        // This is safe for Vercel's 10-60s execution limit
+        await context.indexer.runSyncBatch(20); 
+        
+        const newHeight = await context.indexer.getCurrentSyncBlock();
+        
+        res.json({
+          status: "sync_completed",
+          previousBlock: startBlock,
+          currentBlock: newHeight,
+          targetHeight: chainHeight,
+          syncedCount: newHeight - startBlock
+        });
+      } catch (error) {
+        res.status(500).json({ status: "error", message: error instanceof Error ? error.message : String(error) });
+      }
+    }),
+  );
+
   router.get(
     "/health",
     withNetworkContext(async (context, _req, res) => {

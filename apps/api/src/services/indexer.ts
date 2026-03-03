@@ -209,6 +209,28 @@ export class IndexerService {
     return this.chainHeightFetchInFlight;
   }
 
+  async runSyncBatch(batchSize: number): Promise<void> {
+    const chainHeight = await this.getChainBlockHeight();
+    if (chainHeight === null) return;
+
+    let cursor = await this.getCurrentSyncBlock();
+    if (cursor < this.config.INDEXER_START_BLOCK) {
+      cursor = this.config.INDEXER_START_BLOCK;
+    }
+
+    if (cursor > chainHeight) return;
+
+    const target = Math.min(chainHeight, cursor + batchSize - 1);
+    const trackedHashes = await this.getTrackedContractHashes();
+
+    this.log.info({ from: cursor, to: target }, "Running one-off sync batch");
+
+    for (let index = cursor; index <= target; index += 1) {
+      await this.indexBlock(index, trackedHashes);
+      await this.db.setSyncState(SYNC_BLOCK_KEY, (index + 1).toString());
+    }
+  }
+
   private async tick(): Promise<void> {
     if (this.isRunning) {
       return;

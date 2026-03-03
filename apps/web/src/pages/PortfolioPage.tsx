@@ -101,6 +101,7 @@ export function PortfolioPage() {
     setError("");
 
     try {
+      // Try DB first
       const [ownedCollections, collected] = await Promise.all([
         fetchCollections(wallet.address),
         fetchMarketListings({ owner: wallet.address, limit: 500 }),
@@ -108,6 +109,11 @@ export function PortfolioPage() {
 
       setCreatedCollections(ownedCollections);
       setCollectedListings(collected.filter((entry) => entry.token.burned !== 1));
+
+      // Trigger a sync in background if DB is empty but we just minted something
+      if (collected.length === 0) {
+        void fetch("/api/sync?network=testnet", { method: "POST" }).catch(() => {});
+      }
     } catch (err) {
       setError(toUserErrorMessage(t, err));
       setCollectedListings([]);
