@@ -12,7 +12,6 @@
       "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
-        "buildCommand": "npm run vercel-build",
         "distDir": "apps/web/dist"
       }
     }
@@ -29,14 +28,6 @@
     {
       "source": "/((?!api/).*)",
       "destination": "/$1"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
-      ]
     }
   ]
 }
