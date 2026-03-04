@@ -168,7 +168,21 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     }
   }
 
-  const nestedKeys = ["provider", "dapp", "n3", "N3", "wallet", "client", "default"];
+  const nestedKeys = [
+    "provider",
+    "dapp",
+    "n3",
+    "N3",
+    "wallet",
+    "client",
+    "default",
+    "api",
+    "bridge",
+    "neoline",
+    "n3Provider",
+    "N3Provider",
+    "sdk",
+  ];
   for (const key of nestedKeys) {
     const resolved = resolveNestedProvider(record[key], depth + 1);
     if (resolved) {
@@ -430,16 +444,28 @@ function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
 
 function hasRequestAccountCapability(provider: NeoLineN3Provider): boolean {
   const record = asRecord(provider);
-  if (!record || typeof record.request !== "function") {
+  if (
+    !record
+    || (
+      typeof record.request !== "function"
+      && typeof record.send !== "function"
+      && typeof record.sendAsync !== "function"
+    )
+  ) {
     return false;
   }
 
   return (
     typeof record.enable === "function"
+    || typeof record.connect === "function"
+    || typeof record.requestAccounts === "function"
+    || typeof record.getAddress === "function"
+    || typeof record.getWalletAddress === "function"
     || typeof record.getNetwork === "function"
     || typeof record.getNetworks === "function"
     || typeof record.invoke === "function"
     || typeof record.invokeFunction === "function"
+    || record.isNEOLine === true
   );
 }
 
@@ -901,23 +927,85 @@ async function requestProvider(
     throw new Error("provider is not available");
   }
 
-  if (typeof record.request === "function") {
-    const requestFn = record.request as (...args: unknown[]) => Promise<unknown>;
-
-    try {
-      return unwrapRpcResponse(await requestFn.call(provider, payload));
-    } catch {
-      return unwrapRpcResponse(await requestFn.call(provider, payload.method, payload.params));
+  const callWithCallbackFallback = async (
+    fn: (...args: unknown[]) => unknown,
+    argsList: unknown[][],
+  ): Promise<unknown> => {
+    let lastError: unknown;
+    for (const args of argsList) {
+      try {
+        const result = fn.call(provider, ...args);
+        if (isPromiseLike(result)) {
+          return unwrapRpcResponse(await result);
+        }
+        if (result !== undefined) {
+          return unwrapRpcResponse(result);
+        }
+      } catch (error) {
+        lastError = error;
+      }
     }
+
+    const callbackTimeoutMs = 1500;
+    for (const args of argsList) {
+      try {
+        return await new Promise<unknown>((resolve, reject) => {
+          let settled = false;
+          const timer = globalThis.setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              reject(new Error("provider callback request timeout"));
+            }
+          }, callbackTimeoutMs);
+
+          const callback = (error: unknown, response?: unknown) => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            globalThis.clearTimeout(timer);
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve(unwrapRpcResponse(response));
+          };
+
+          try {
+            fn.call(provider, ...args, callback);
+          } catch (error) {
+            if (!settled) {
+              settled = true;
+              globalThis.clearTimeout(timer);
+              reject(error);
+            }
+          }
+        });
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+    throw new Error("provider request failed");
+  };
+
+  if (typeof record.request === "function") {
+    const requestFn = record.request as (...args: unknown[]) => unknown;
+    return await callWithCallbackFallback(requestFn, [
+      [payload],
+      [payload.method, payload.params],
+    ]);
   }
 
   if (typeof record.send === "function") {
-    const sendFn = record.send as (...args: unknown[]) => Promise<unknown>;
-    try {
-      return unwrapRpcResponse(await sendFn.call(provider, payload));
-    } catch {
-      return unwrapRpcResponse(await sendFn.call(provider, payload.method, payload.params));
-    }
+    const sendFn = record.send as (...args: unknown[]) => unknown;
+    return await callWithCallbackFallback(sendFn, [
+      [payload],
+      [payload.method, payload.params],
+    ]);
   }
 
   if (typeof record.sendAsync === "function") {
@@ -953,18 +1041,18 @@ async function requestProvider(
   throw new Error("request/send/sendAsync is not available");
 }
 
-async function ensureProviderEnabled(provider: NeoLineN3Provider): Promise<void> {
+async function ensureProviderEnabled(provider: NeoLineN3Provider): Promise<unknown | undefined> {
   const providerRecord = asRecord(provider);
   if (!providerRecord || typeof providerRecord.enable !== "function") {
-    return;
+    return undefined;
   }
 
   if (enableAttemptedProviders.has(providerRecord)) {
-    return;
+    return undefined;
   }
 
   enableAttemptedProviders.add(providerRecord);
-  await (providerRecord.enable as () => Promise<unknown>).call(provider);
+  return await (providerRecord.enable as () => Promise<unknown>).call(provider);
 }
 
 async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<NeoLineAccount | null> {
@@ -1019,12 +1107,21 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
       { method: "requestAccounts" },
       { method: "wallet_requestAccounts" },
       { method: "neo_requestAccounts" },
+      { method: "connect" },
+      { method: "wallet_connect" },
+      { method: "neo_connect" },
+      { method: "n3_getAccount" },
+      { method: "n3_getAccounts" },
+      { method: "getWalletAccount" },
       { method: "getAddress" },
       { method: "wallet_getAddress" },
       { method: "wallet.getAddress" },
       { method: "getAccount", params: [] },
       { method: "getAccounts", params: [] },
       { method: "requestAccounts", params: [] },
+      { method: "connect", params: [] },
+      { method: "wallet_connect", params: [] },
+      { method: "neo_connect", params: [] },
     ];
 
     for (const payload of attempts) {
@@ -1056,8 +1153,15 @@ async function findAccountAcrossProviders(
     }
 
     try {
+      let enabledResult: unknown = undefined;
       if (enableBeforeRead) {
-        await ensureProviderEnabled(provider);
+        enabledResult = await ensureProviderEnabled(provider);
+      }
+
+      const enabledAccount = normalizeAccount(enabledResult);
+      if (enabledAccount) {
+        cachedProvider = provider;
+        return { account: enabledAccount, lastAvailable };
       }
 
       const account = await readAccountFromProvider(provider);
