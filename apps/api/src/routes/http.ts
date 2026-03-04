@@ -464,6 +464,18 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
     const context = networkContexts[selectedNetwork];
     if (!context) {
+      // Be tolerant for single-network deployments (e.g. only testnet configured).
+      // Some frontend bundles or stale caches may still send `network=mainnet`.
+      if (availableNetworks.length === 1) {
+        const fallbackNetwork = availableNetworks[0];
+        const fallbackContext = networkContexts[fallbackNetwork];
+        if (fallbackContext) {
+          res.setHeader("x-network-fallback-from", selectedNetwork);
+          res.setHeader("x-network-fallback-to", fallbackNetwork);
+          return fallbackContext;
+        }
+      }
+
       res.status(404).json({
         message: `Network '${selectedNetwork}' is not configured on this API instance`,
         requestedNetwork: selectedNetwork,
