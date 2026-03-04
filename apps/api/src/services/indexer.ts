@@ -50,7 +50,13 @@ interface RawContractState {
   manifest?: RawContractManifest;
 }
 
-const SYNC_BLOCK_KEY = "last_synced_block";
+interface RawNeotubeContractResponse {
+  data?: {
+    block_index?: unknown;
+  };
+}
+
+const SYNC_BLOCK_KEY_PREFIX = "last_synced_block";
 
 function normalizeHash(hash: string): string {
   if (!hash || hash.length === 0) {
@@ -99,6 +105,35 @@ function valueAsString(input: unknown): string {
   return input?.toString() ?? "";
 }
 
+function parseUnixTimestampMs(input: unknown): number | null {
+  const raw = typeof input === "number" ? input : Number(input);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return null;
+  }
+
+  // Chain events may emit either seconds or milliseconds.
+  if (raw >= 1_000_000_000_000) {
+    return Math.floor(raw);
+  }
+
+  return Math.floor(raw * 1000);
+}
+
+function unixTimestampToIso(input: unknown, fallbackIso: string): string {
+  const millis = parseUnixTimestampMs(input);
+  if (millis === null) {
+    return fallbackIso;
+  }
+
+  const date = new Date(millis);
+  const time = date.getTime();
+  if (!Number.isFinite(time)) {
+    return fallbackIso;
+  }
+
+  return date.toISOString();
+}
+
 export class IndexerService {
   private readonly log = pino({ name: "indexer" });
   private readonly rpc: NeoRpcService;
@@ -117,6 +152,78 @@ export class IndexerService {
       contractHash: config.NEO_CONTRACT_HASH,
     });
     this.eventsEnabled = config.INDEXER_ENABLE_EVENTS ?? config.NEO_CONTRACT_DIALECT !== "rust";
+  }
+
+  private getSyncStateKey(): string {
+    return `${SYNC_BLOCK_KEY_PREFIX}:${normalizeHash(this.config.NEO_CONTRACT_HASH)}`;
+  }
+
+  private static parseNonNegativeInteger(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      return Math.floor(value);
+    }
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return Math.floor(parsed);
+      }
+    }
+
+    return null;
+  }
+
+  private async resolveNeotubeBootstrapBlock(): Promise<number | null> {
+    if (!this.config.NEOTUBE_ENABLED || this.config.NETWORK_NAME === "private") {
+      return null;
+    }
+
+    const contractHash = normalizeHash(this.config.NEO_CONTRACT_HASH);
+    if (!contractHash) {
+      return null;
+    }
+
+    const baseUrl = this.config.NEOTUBE_API_BASE_URL.replace(/\/+$/, "");
+    const endpoint = `${baseUrl}/v1/contract/${contractHash}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.NEOTUBE_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(endpoint, {
+        headers: {
+          Network: this.config.NETWORK_NAME,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        this.log.warn(
+          { endpoint, status: response.status, network: this.config.NETWORK_NAME },
+          "Neotube contract probe failed",
+        );
+        return null;
+      }
+
+      const payload = (await response.json()) as RawNeotubeContractResponse;
+      const blockIndex = IndexerService.parseNonNegativeInteger(payload?.data?.block_index);
+      if (blockIndex === null) {
+        this.log.warn(
+          { endpoint, network: this.config.NETWORK_NAME },
+          "Neotube contract probe returned no deployment block",
+        );
+        return null;
+      }
+
+      return blockIndex;
+    } catch (error) {
+      this.log.warn(
+        { err: error, endpoint, network: this.config.NETWORK_NAME },
+        "Neotube contract probe failed",
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   start(): void {
@@ -193,7 +300,7 @@ export class IndexerService {
   }
 
   async getCurrentSyncBlock(): Promise<number> {
-    const saved = await this.db.getSyncState(SYNC_BLOCK_KEY);
+    const saved = await this.db.getSyncState(this.getSyncStateKey());
     if (saved === null) {
       return this.config.INDEXER_START_BLOCK;
     }
@@ -201,20 +308,31 @@ export class IndexerService {
   }
 
   private async resolveSyncCursor(chainHeight: number): Promise<number> {
-    const saved = await this.db.getSyncState(SYNC_BLOCK_KEY);
+    const syncStateKey = this.getSyncStateKey();
+    const saved = await this.db.getSyncState(syncStateKey);
     const parsedSaved = saved === null ? Number.NaN : Number(saved);
     if (Number.isFinite(parsedSaved) && parsedSaved >= 0) {
       if (parsedSaved >= this.config.INDEXER_START_BLOCK) {
         return parsedSaved;
       }
 
-      await this.db.setSyncState(SYNC_BLOCK_KEY, this.config.INDEXER_START_BLOCK.toString());
+      await this.db.setSyncState(syncStateKey, this.config.INDEXER_START_BLOCK.toString());
       return this.config.INDEXER_START_BLOCK;
     }
 
     let bootstrapFrom = this.config.INDEXER_START_BLOCK;
+    const neotubeBootstrapBlock = await this.resolveNeotubeBootstrapBlock();
+    if (neotubeBootstrapBlock !== null) {
+      bootstrapFrom = Math.max(bootstrapFrom, neotubeBootstrapBlock);
+      this.log.info(
+        { contractHash: this.config.NEO_CONTRACT_HASH, bootstrapFrom, neotubeBootstrapBlock },
+        "No sync cursor found, bootstrapping from Neotube deployment block",
+      );
+    }
+
     const window = this.config.INDEXER_BOOTSTRAP_BLOCK_WINDOW;
     if (
+      neotubeBootstrapBlock === null &&
       bootstrapFrom === 0
       && window > 0
       && chainHeight > window
@@ -226,7 +344,7 @@ export class IndexerService {
       );
     }
 
-    await this.db.setSyncState(SYNC_BLOCK_KEY, bootstrapFrom.toString());
+    await this.db.setSyncState(syncStateKey, bootstrapFrom.toString());
     return bootstrapFrom;
   }
 
@@ -248,6 +366,7 @@ export class IndexerService {
     if (chainHeight === null) return;
 
     const cursor = await this.resolveSyncCursor(chainHeight);
+    const syncStateKey = this.getSyncStateKey();
 
     if (cursor > chainHeight) return;
 
@@ -258,7 +377,7 @@ export class IndexerService {
 
     for (let index = cursor; index <= target; index += 1) {
       await this.indexBlock(index, trackedHashes);
-      await this.db.setSyncState(SYNC_BLOCK_KEY, (index + 1).toString());
+      await this.db.setSyncState(syncStateKey, (index + 1).toString());
     }
   }
 
@@ -275,6 +394,7 @@ export class IndexerService {
         return;
       }
       const cursor = await this.resolveSyncCursor(chainHeight);
+      const syncStateKey = this.getSyncStateKey();
       const trackedHashes = await this.getTrackedContractHashes();
 
       if (cursor > chainHeight) {
@@ -285,7 +405,7 @@ export class IndexerService {
 
       for (let index = cursor; index <= target; index += 1) {
         await this.indexBlock(index, trackedHashes);
-        await this.db.setSyncState(SYNC_BLOCK_KEY, (index + 1).toString());
+        await this.db.setSyncState(syncStateKey, (index + 1).toString());
       }
 
       this.log.info({ cursor: target + 1, chainHeight }, "Indexed blocks");
@@ -346,7 +466,8 @@ export class IndexerService {
       return;
     }
 
-    const timestamp = blockTime ? new Date(blockTime * 1000).toISOString() : new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    const timestamp = unixTimestampToIso(blockTime, nowIso);
 
     for (const notification of matched) {
       const args = stackItemsFromNotification(notification);
@@ -380,6 +501,8 @@ export class IndexerService {
           return;
         }
 
+        const eventTime = unixTimestampToIso(args[11], timestamp);
+
         await this.db.upsertCollection({
           collectionId: valueAsString(args[0]),
           owner: formatNeoAddress(args[1]),
@@ -393,7 +516,7 @@ export class IndexerService {
           royaltyBps: Number(args[8] ?? 0),
           transferable: valueAsBool(args[9]),
           paused: valueAsBool(args[10]),
-          createdAt: new Date(Number(args[11] ?? 0) * 1000).toISOString(),
+          createdAt: eventTime,
           updatedAt: timestamp,
         });
         return;
@@ -404,6 +527,8 @@ export class IndexerService {
           return;
         }
 
+        const mintedAt = unixTimestampToIso(args[6], timestamp);
+
         await this.db.upsertToken({
           tokenId: valueAsString(args[0]),
           collectionId: valueAsString(args[1]),
@@ -411,7 +536,7 @@ export class IndexerService {
           uri: valueAsString(args[3]),
           propertiesJson: valueAsString(args[4]),
           burned: valueAsBool(args[5]),
-          mintedAt: new Date(Number(args[6] ?? 0) * 1000).toISOString(),
+          mintedAt,
           updatedAt: timestamp,
         });
         return;
@@ -464,11 +589,7 @@ export class IndexerService {
         }
 
         const listed = valueAsBool(args[3]);
-        const listedAtSeconds = Number(args[4] ?? 0);
-        const listedAt =
-          Number.isFinite(listedAtSeconds) && listedAtSeconds > 0
-            ? new Date(listedAtSeconds * 1000).toISOString()
-            : timestamp;
+        const listedAt = unixTimestampToIso(args[4], timestamp);
 
         await this.db.upsertTokenListing({
           tokenId,
@@ -491,11 +612,7 @@ export class IndexerService {
           return;
         }
 
-        const matchedAtSeconds = Number(args[4] ?? 0);
-        const listedAt =
-          Number.isFinite(matchedAtSeconds) && matchedAtSeconds > 0
-            ? new Date(matchedAtSeconds * 1000).toISOString()
-            : timestamp;
+        const listedAt = unixTimestampToIso(args[4], timestamp);
 
         await this.db.upsertTokenListing({
           tokenId,

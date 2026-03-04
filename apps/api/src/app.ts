@@ -19,6 +19,7 @@ export function createApp() {
 
     const networkConfig: ResolvedNetworkAppConfig = {
       ...config,
+      NETWORK_NAME: network,
       DB_FILE: runtime.dbFile,
       NEO_RPC_URL: runtime.rpcUrl,
       NEO_CONTRACT_HASH: runtime.contractHash,

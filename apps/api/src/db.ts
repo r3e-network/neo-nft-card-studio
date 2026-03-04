@@ -244,7 +244,7 @@ export class AppDb {
           created_at: input.createdAt,
           updated_at: input.updatedAt,
         }, { onConflict: "collection_id" });
-      if (error) throw error;
+      assertSupabaseSuccess(error, `upsert collections collection_id='${input.collectionId}'`);
       return;
     }
 
@@ -332,7 +332,7 @@ export class AppDb {
           minted_at: input.mintedAt,
           updated_at: input.updatedAt,
         }, { onConflict: "token_id" });
-      if (error) throw error;
+      assertSupabaseSuccess(error, `upsert tokens token_id='${input.tokenId}'`);
       return;
     }
 

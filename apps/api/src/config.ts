@@ -12,7 +12,7 @@ const DEFAULT_DB_FILE = process.env.VERCEL ? "/tmp/nft-platform.db" : "apps/api/
 const BUILTIN_DEFAULTS: Partial<Record<ApiNetworkName, { rpcUrl?: string; contractHash?: string }>> = {
   testnet: {
     rpcUrl: "http://seed2t5.neo.org:20332",
-    contractHash: "0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22",
+    contractHash: "0x81f129ab82e0f41bba5048872405db66cbddb968",
   },
 };
 
@@ -117,6 +117,9 @@ const configSchema = z.object({
   INDEXER_BOOTSTRAP_BLOCK_WINDOW: z.coerce.number().int().nonnegative().default(2000),
   INDEXER_START_BLOCK: z.coerce.number().int().nonnegative().default(0),
   INDEXER_ENABLE_EVENTS: booleanFromEnv.optional(),
+  NEOTUBE_ENABLED: booleanFromEnv.default(true),
+  NEOTUBE_API_BASE_URL: z.string().url().default("https://api.neotube.io"),
+  NEOTUBE_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   SUPABASE_URL: optionalUrlFromEnv,
   NEXT_PUBLIC_SUPABASE_URL: optionalUrlFromEnv,
   SUPABASE_PROJECT_URL: optionalUrlFromEnv,
@@ -148,6 +151,7 @@ export interface AppConfig extends RawAppConfig {
 }
 
 export type ResolvedNetworkAppConfig = Omit<AppConfig, "NEO_RPC_URL" | "NEO_CONTRACT_HASH"> & {
+  NETWORK_NAME: ApiNetworkName;
   NEO_RPC_URL: string;
   NEO_CONTRACT_HASH: string;
 };
