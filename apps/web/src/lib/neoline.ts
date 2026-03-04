@@ -466,12 +466,12 @@ async function warmUpFactoryProviders(): Promise<void> {
         continue;
       }
 
-      attemptedFactoryRoots.add(record);
       const created = await resolveFactoryProviderAsync(initFactory);
       if (!created) {
         continue;
       }
 
+      attemptedFactoryRoots.add(record);
       pushDeferredProviderCandidate(created);
     }
   })().finally(() => {
