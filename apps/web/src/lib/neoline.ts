@@ -1019,16 +1019,12 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
       { method: "requestAccounts" },
       { method: "wallet_requestAccounts" },
       { method: "neo_requestAccounts" },
-      { method: "eth_requestAccounts" },
-      { method: "eth_accounts" },
       { method: "getAddress" },
       { method: "wallet_getAddress" },
       { method: "wallet.getAddress" },
       { method: "getAccount", params: [] },
       { method: "getAccounts", params: [] },
       { method: "requestAccounts", params: [] },
-      { method: "eth_requestAccounts", params: [] },
-      { method: "eth_accounts", params: [] },
     ];
 
     for (const payload of attempts) {
