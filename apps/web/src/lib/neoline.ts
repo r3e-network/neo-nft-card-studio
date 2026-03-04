@@ -66,7 +66,7 @@ const N3_REQUEST_EVENT = "NEOLine.N3.EVENT.REQUEST";
 const NEO_REQUEST_EVENT = "NEOLine.NEO.EVENT.REQUEST";
 const PROVIDER_READY_WAIT_MS = 5000;
 const FACTORY_INIT_TIMEOUT_MS = 3000;
-const WALLET_GLOBAL_HINT_REGEX = /(neoline|o3|onegate|n3wallet|neo.*line)/i;
+const WALLET_GLOBAL_HINT_REGEX = /(neolinen3|o3|onegate|n3wallet)/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
@@ -130,9 +130,14 @@ function hasNeoN3AccountHints(value: unknown): boolean {
     || typeof record.getAddress === "function"
     || typeof record.getWalletAddress === "function"
     || typeof record.requestAccounts === "function"
+    || typeof record.connect === "function"
+    || typeof record.getNetwork === "function"
+    || typeof record.getNetworks === "function"
     || typeof record.invoke === "function"
     || typeof record.invokeFunction === "function"
     || typeof record.enable === "function"
+    || typeof record.Init === "function"
+    || typeof record.init === "function"
   ) {
     return true;
   }
@@ -144,6 +149,19 @@ function hasNeoN3AccountHints(value: unknown): boolean {
 function isLikelyEvmOnlyProvider(value: unknown): boolean {
   const record = asRecord(value);
   if (!record) {
+    return false;
+  }
+
+  // NeoLine N3 wrappers often expose isNEOLine + chainId/networkVersion alongside N3 factories/events.
+  if (
+    record.isNEOLine === true
+    && (
+      typeof record.Init === "function"
+      || typeof record.init === "function"
+      || record.EVENT !== undefined
+      || record.EVENTLIST !== undefined
+    )
+  ) {
     return false;
   }
 
@@ -162,6 +180,14 @@ function isLikelyEvmOnlyProvider(value: unknown): boolean {
   }
 
   return !hasNeoN3AccountHints(record);
+}
+
+function getNestedField(value: unknown, key: string): unknown {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  return record[key];
 }
 
 function resolveFactoryProvider(value: unknown): unknown {
@@ -417,8 +443,10 @@ async function warmUpFactoryProviders(): Promise<void> {
     const roots: unknown[] = [
       window.NEOLineN3,
       window.neoLineN3,
-      window.NEOLine,
-      window.neoLine,
+      getNestedField(window.NEOLine, "N3"),
+      getNestedField(window.NEOLine, "n3"),
+      getNestedField(window.neoLine, "N3"),
+      getNestedField(window.neoLine, "n3"),
       window.o3dapi,
       window.o3dapi?.n3,
       window.o3dapi?.n3?.dapp,
@@ -459,8 +487,10 @@ function collectResolvedProviders(): NeoLineN3Provider[] {
   const candidates: unknown[] = [
     window.NEOLineN3,
     window.neoLineN3,
-    window.NEOLine,
-    window.neoLine,
+    getNestedField(window.NEOLine, "N3"),
+    getNestedField(window.NEOLine, "n3"),
+    getNestedField(window.neoLine, "N3"),
+    getNestedField(window.neoLine, "n3"),
     window.o3dapi,
     window.o3dapi?.n3,
     window.o3dapi?.n3?.dapp,
