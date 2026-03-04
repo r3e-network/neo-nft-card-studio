@@ -4,6 +4,8 @@ declare global {
   interface Window {
     NEOLineN3?: unknown;
     neoLineN3?: unknown;
+    NEOLine?: unknown;
+    neoLine?: unknown;
     o3dapi?: {
       n3: {
         dapp: unknown;
@@ -50,13 +52,31 @@ const NEO_MAINNET_MAGIC = 860833102;
 const NEO_TESTNET_MAGIC = 894710606;
 const N3_READY_EVENT = "NEOLine.N3.EVENT.READY";
 const NEO_READY_EVENT = "NEOLine.NEO.EVENT.READY";
+const N3_REQUEST_EVENT = "NEOLine.N3.EVENT.REQUEST";
+const NEO_REQUEST_EVENT = "NEOLine.NEO.EVENT.REQUEST";
 const PROVIDER_READY_WAIT_MS = 5000;
+const FACTORY_INIT_TIMEOUT_MS = 3000;
+const WALLET_GLOBAL_HINT_REGEX = /(neoline|o3|onegate|n3wallet|neo.*line)/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
     return null;
   }
   return value as Record<string, unknown>;
+}
+
+function pushUniqueUnknown(list: unknown[], value: unknown): void {
+  if (value === null || value === undefined) {
+    return;
+  }
+  if (!list.includes(value)) {
+    list.push(value);
+  }
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  const record = asRecord(value);
+  return !!record && typeof record.then === "function";
 }
 
 function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
@@ -155,13 +175,214 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
 let cachedProvider: NeoLineN3Provider | null = null;
 const enableAttemptedProviders = new WeakSet<object>();
 let pendingReadyWait: Promise<void> | null = null;
+let pendingFactoryWarmup: Promise<void> | null = null;
+let readyEventListenersInstalled = false;
+const attemptedFactoryRoots = new WeakSet<object>();
+const deferredProviderCandidates: unknown[] = [];
+
+function pushDeferredProviderCandidate(value: unknown): void {
+  pushUniqueUnknown(deferredProviderCandidates, value);
+}
+
+function collectWindowHintCandidates(): unknown[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const hints: unknown[] = [];
+  let keys: string[] = [];
+  try {
+    keys = Object.getOwnPropertyNames(window);
+  } catch {
+    return hints;
+  }
+
+  const windowRecord = window as unknown as Record<string, unknown>;
+  for (const key of keys) {
+    if (!WALLET_GLOBAL_HINT_REGEX.test(key)) {
+      continue;
+    }
+    try {
+      pushUniqueUnknown(hints, windowRecord[key]);
+    } catch {
+      // Ignore globals that throw on read
+    }
+  }
+
+  return hints;
+}
+
+function collectWalletGlobalNames(): string[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  let keys: string[] = [];
+  try {
+    keys = Object.getOwnPropertyNames(window);
+  } catch {
+    return [];
+  }
+
+  return keys.filter((key) => WALLET_GLOBAL_HINT_REGEX.test(key)).slice(0, 12);
+}
+
+function buildNoWalletFoundErrorMessage(): string {
+  const base = "No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.";
+  const names = collectWalletGlobalNames();
+  if (names.length === 0) {
+    return base;
+  }
+  return `${base} Detected wallet-like globals: ${names.join(", ")}.`;
+}
+
+function collectReadyEventCandidates(event: Event | null | undefined): unknown[] {
+  if (!event) {
+    return [];
+  }
+
+  const customEvent = event as CustomEvent<unknown>;
+  const detail = customEvent.detail;
+  const candidates: unknown[] = [detail];
+  const detailRecord = asRecord(detail);
+  if (detailRecord) {
+    const nestedKeys = ["provider", "api", "wallet", "n3", "N3", "NEOLineN3", "neoLineN3", "data", "result"];
+    for (const key of nestedKeys) {
+      pushUniqueUnknown(candidates, detailRecord[key]);
+    }
+  }
+  return candidates;
+}
+
+function captureReadyEventCandidates(event: Event | null | undefined): void {
+  const candidates = collectReadyEventCandidates(event);
+  for (const candidate of candidates) {
+    pushDeferredProviderCandidate(candidate);
+  }
+}
+
+function dispatchProviderRequestEvents(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  for (const eventName of [N3_REQUEST_EVENT, NEO_REQUEST_EVENT]) {
+    try {
+      window.dispatchEvent(new Event(eventName));
+    } catch {
+      // Ignore unsupported custom event dispatch behavior.
+    }
+  }
+}
+
+function ensureReadyEventListenersInstalled(): void {
+  if (typeof window === "undefined" || readyEventListenersInstalled) {
+    return;
+  }
+
+  const onReady = (event: Event) => {
+    captureReadyEventCandidates(event);
+  };
+
+  window.addEventListener(N3_READY_EVENT, onReady as EventListener);
+  window.addEventListener(NEO_READY_EVENT, onReady as EventListener);
+  readyEventListenersInstalled = true;
+}
+
+async function resolveFactoryProviderAsync(value: unknown): Promise<unknown> {
+  if (typeof value !== "function") {
+    return null;
+  }
+
+  let created: unknown = null;
+  try {
+    created = new (value as new () => unknown)();
+  } catch {
+    try {
+      created = (value as () => unknown)();
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isPromiseLike(created)) {
+    return created;
+  }
+
+  try {
+    const timeout = new Promise<null>((resolve) => {
+      window.setTimeout(() => resolve(null), FACTORY_INIT_TIMEOUT_MS);
+    });
+    const resolved = await Promise.race([created, timeout]);
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
+async function warmUpFactoryProviders(): Promise<void> {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (pendingFactoryWarmup) {
+    return pendingFactoryWarmup;
+  }
+
+  pendingFactoryWarmup = (async () => {
+    const roots: unknown[] = [
+      window.NEOLineN3,
+      window.neoLineN3,
+      window.NEOLine,
+      window.neoLine,
+      window.o3dapi,
+      window.o3dapi?.n3,
+      window.o3dapi?.n3?.dapp,
+      window.OneGateProvider,
+      ...deferredProviderCandidates,
+      ...collectWindowHintCandidates(),
+    ];
+
+    for (const root of roots) {
+      const record = asRecord(root);
+      if (!record || attemptedFactoryRoots.has(record)) {
+        continue;
+      }
+
+      const initFactory = record.Init ?? record.init;
+      if (typeof initFactory !== "function") {
+        continue;
+      }
+
+      attemptedFactoryRoots.add(record);
+      const created = await resolveFactoryProviderAsync(initFactory);
+      if (!created) {
+        continue;
+      }
+
+      pushDeferredProviderCandidate(created);
+    }
+  })().finally(() => {
+    pendingFactoryWarmup = null;
+  });
+
+  return pendingFactoryWarmup;
+}
 
 function collectResolvedProviders(): NeoLineN3Provider[] {
+  ensureReadyEventListenersInstalled();
+
   const candidates: unknown[] = [
     window.NEOLineN3,
     window.neoLineN3,
+    window.NEOLine,
+    window.neoLine,
+    window.o3dapi,
+    window.o3dapi?.n3,
     window.o3dapi?.n3?.dapp,
     window.OneGateProvider,
+    ...deferredProviderCandidates,
+    ...collectWindowHintCandidates(),
   ];
 
   const resolvedProviders: NeoLineN3Provider[] = [];
@@ -221,6 +442,8 @@ async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Prom
     return;
   }
 
+  ensureReadyEventListenersInstalled();
+
   if (collectResolvedProviders().length > 0) {
     return;
   }
@@ -248,7 +471,8 @@ async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Prom
       resolve();
     };
 
-    const onReady = () => {
+    const onReady = (event: Event) => {
+      captureReadyEventCandidates(event);
       cleanup();
     };
 
@@ -264,18 +488,22 @@ async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Prom
 
     window.addEventListener(N3_READY_EVENT, onReady as EventListener, { once: true });
     window.addEventListener(NEO_READY_EVENT, onReady as EventListener, { once: true });
+    dispatchProviderRequestEvents();
   });
 
   return pendingReadyWait;
 }
 
 export function getNeoProvider(): NeoLineN3Provider | null {
+  ensureReadyEventListenersInstalled();
+
   if (cachedProvider) {
     return cachedProvider;
   }
 
   const resolvedProviders = collectResolvedProviders();
   if (resolvedProviders.length === 0) {
+    dispatchProviderRequestEvents();
     return null;
   }
 
@@ -751,12 +979,21 @@ async function findAccountAcrossProviders(
 }
 
 async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
+  ensureReadyEventListenersInstalled();
+
   let providers = getCandidateProvidersInPriorityOrder();
   if (providers.length > 0) {
     return providers;
   }
 
+  await warmUpFactoryProviders();
+  providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length > 0) {
+    return providers;
+  }
+
   await waitForNeoProviderReady();
+  await warmUpFactoryProviders();
   cachedProvider = null;
   providers = getCandidateProvidersInPriorityOrder();
   return providers;
@@ -765,7 +1002,7 @@ async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
 export async function connectNeoWallet(): Promise<NeoLineAccount> {
   let providers = await loadProvidersWithReadySync();
   if (providers.length === 0) {
-    throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
+    throw new Error(buildNoWalletFoundErrorMessage());
   }
 
   const firstTry = await findAccountAcrossProviders(providers, true);
@@ -793,7 +1030,7 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
     throw new Error(`Connected wallet provider does not expose a compatible account API. Available keys: ${firstTry.lastAvailable}`);
   }
 
-  throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
+  throw new Error(buildNoWalletFoundErrorMessage());
 }
 
 export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount | null> {
@@ -983,7 +1220,7 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
   };
 
   if (providers.length === 0) {
-    throw new Error("No Neo N3 wallet found.");
+    throw new Error(buildNoWalletFoundErrorMessage());
   }
 
   const firstTry = await invokeWithProviders();
@@ -1009,5 +1246,5 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
     throw new Error(`Connected wallet provider does not expose a compatible invoke API. Available keys: ${firstTry.lastAvailable}`);
   }
 
-  throw new Error("No Neo N3 wallet found.");
+  throw new Error(buildNoWalletFoundErrorMessage());
 }
