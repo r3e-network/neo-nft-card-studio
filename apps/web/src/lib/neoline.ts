@@ -48,6 +48,9 @@ export interface NeoLineN3Provider {
 
 const NEO_MAINNET_MAGIC = 860833102;
 const NEO_TESTNET_MAGIC = 894710606;
+const N3_READY_EVENT = "NEOLine.N3.EVENT.READY";
+const NEO_READY_EVENT = "NEOLine.NEO.EVENT.READY";
+const PROVIDER_READY_WAIT_MS = 5000;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
@@ -93,8 +96,31 @@ function resolveFactoryProvider(value: unknown): unknown {
   }
 }
 
+function hasReadyEventOnlyShape(value: unknown): boolean {
+  const record = asRecord(value);
+  if (!record) {
+    return false;
+  }
+
+  const keys = Object.keys(record);
+  if (keys.length === 0) {
+    return false;
+  }
+
+  const hasOnlyEventKeys = keys.every((key) => key === "EVENT" || key === "EVENTLIST");
+  if (!hasOnlyEventKeys) {
+    return false;
+  }
+
+  return !hasProviderMethod(value);
+}
+
 function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | null {
   if (depth > 3 || !value) {
+    return null;
+  }
+
+  if (hasReadyEventOnlyShape(value)) {
     return null;
   }
 
@@ -128,6 +154,7 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
 
 let cachedProvider: NeoLineN3Provider | null = null;
 const enableAttemptedProviders = new WeakSet<object>();
+let pendingReadyWait: Promise<void> | null = null;
 
 function collectResolvedProviders(): NeoLineN3Provider[] {
   const candidates: unknown[] = [
@@ -187,6 +214,49 @@ function getCandidateProvidersInPriorityOrder(): NeoLineN3Provider[] {
   }
 
   return [cachedProvider, ...resolved.filter((provider) => provider !== cachedProvider)];
+}
+
+async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Promise<void> {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (collectResolvedProviders().length > 0) {
+    return;
+  }
+
+  if (pendingReadyWait) {
+    return pendingReadyWait;
+  }
+
+  pendingReadyWait = new Promise<void>((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.removeEventListener(N3_READY_EVENT, onReady as EventListener);
+      window.removeEventListener(NEO_READY_EVENT, onReady as EventListener);
+      window.clearTimeout(timer);
+      pendingReadyWait = null;
+      resolve();
+    };
+
+    const onReady = () => {
+      cleanup();
+    };
+
+    const timer = window.setTimeout(() => {
+      cleanup();
+    }, timeoutMs);
+
+    window.addEventListener(N3_READY_EVENT, onReady as EventListener, { once: true });
+    window.addEventListener(NEO_READY_EVENT, onReady as EventListener, { once: true });
+  });
+
+  return pendingReadyWait;
 }
 
 export function getNeoProvider(): NeoLineN3Provider | null {
@@ -639,7 +709,12 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
 }
 
 export async function connectNeoWallet(): Promise<NeoLineAccount> {
-  const providers = getCandidateProvidersInPriorityOrder();
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length === 0) {
+    await waitForNeoProviderReady();
+    providers = getCandidateProvidersInPriorityOrder();
+  }
+
   if (providers.length === 0) {
     throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
   }
@@ -673,7 +748,12 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
 }
 
 export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount | null> {
-  const providers = getCandidateProvidersInPriorityOrder();
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length === 0) {
+    await waitForNeoProviderReady();
+    providers = getCandidateProvidersInPriorityOrder();
+  }
+
   if (providers.length === 0) {
     return null;
   }
@@ -702,7 +782,12 @@ export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount
 }
 
 export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwork> {
-  const providers = getCandidateProvidersInPriorityOrder();
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length === 0) {
+    await waitForNeoProviderReady();
+    providers = getCandidateProvidersInPriorityOrder();
+  }
+
   if (providers.length === 0) {
     return {
       network: "unknown",
@@ -785,7 +870,12 @@ export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwo
 }
 
 export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<NeoLineInvokeResult> {
-  const providers = getCandidateProvidersInPriorityOrder();
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length === 0) {
+    await waitForNeoProviderReady();
+    providers = getCandidateProvidersInPriorityOrder();
+  }
+
   if (providers.length === 0) {
     throw new Error("No Neo N3 wallet found.");
   }
