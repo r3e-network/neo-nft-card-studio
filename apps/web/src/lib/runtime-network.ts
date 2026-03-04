@@ -19,6 +19,29 @@ export function getRuntimeWalletNetwork(): NeoWalletNetwork | null {
   return walletNetwork;
 }
 
+function shouldAvoidInsecureHttpRpc(): boolean {
+  return typeof window !== "undefined" && window.location.protocol === "https:";
+}
+
+function normalizeRpcUrl(url: string | undefined): string {
+  return (url ?? "").trim();
+}
+
+function chooseRuntimeRpcUrl(profileRpcUrl: string | undefined): string {
+  const walletRpcUrl = normalizeRpcUrl(walletNetwork?.rpcUrl);
+  const fallbackRpcUrl = normalizeRpcUrl(profileRpcUrl) || normalizeRpcUrl(APP_CONFIG.rpcUrl);
+
+  if (!walletRpcUrl) {
+    return fallbackRpcUrl;
+  }
+
+  if (shouldAvoidInsecureHttpRpc() && walletRpcUrl.toLowerCase().startsWith("http://")) {
+    return fallbackRpcUrl;
+  }
+
+  return walletRpcUrl;
+}
+
 export function getRuntimeNetworkConfig(): RuntimeNetworkConfig {
   const walletBound = walletNetwork !== null;
   const network = walletNetwork?.network ?? "unknown";
@@ -27,7 +50,7 @@ export function getRuntimeNetworkConfig(): RuntimeNetworkConfig {
 
   let rpcUrl = "";
   if (!unknownWalletNetwork) {
-    rpcUrl = walletNetwork?.rpcUrl || profile.rpcUrl || APP_CONFIG.rpcUrl;
+    rpcUrl = chooseRuntimeRpcUrl(profile.rpcUrl);
   } else if (!walletBound) {
     rpcUrl = APP_CONFIG.rpcUrl;
   }

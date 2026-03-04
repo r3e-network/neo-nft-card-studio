@@ -4,13 +4,21 @@ import { decodeStackItem } from "./stack.js";
 import type { ContractArgument, RpcConfig } from "./types.js";
 
 const DEFAULT_TESTNET_RPC_FAILOVERS: Record<string, string[]> = {
+  "https://n3seed1.ngd.network:20332": [
+    "https://n3seed2.ngd.network:20332",
+  ],
+  "https://n3seed2.ngd.network:20332": [
+    "https://n3seed1.ngd.network:20332",
+  ],
   "http://seed2t5.neo.org:20332": [
     "http://seed1t5.neo.org:20332",
-    "https://rpc.t5.n3.nspcc.ru",
+    "https://n3seed1.ngd.network:20332",
+    "https://n3seed2.ngd.network:20332",
   ],
   "http://seed1t5.neo.org:20332": [
     "http://seed2t5.neo.org:20332",
-    "https://rpc.t5.n3.nspcc.ru",
+    "https://n3seed1.ngd.network:20332",
+    "https://n3seed2.ngd.network:20332",
   ],
 };
 
@@ -22,6 +30,10 @@ interface RawInvocationResult {
 
 function normalizeRpcUrl(input: string): string {
   return input.trim().replace(/\/+$/, "");
+}
+
+function isBrowserHttpsPage(): boolean {
+  return typeof window !== "undefined" && window.location.protocol === "https:";
 }
 
 function resolveRpcUrls(primary: string): string[] {
@@ -44,7 +56,12 @@ function resolveRpcUrls(primary: string): string[] {
     }
   }
 
-  return urls;
+  if (!isBrowserHttpsPage()) {
+    return urls;
+  }
+
+  const secureUrls = urls.filter((url) => !url.toLowerCase().startsWith("http://"));
+  return secureUrls.length > 0 ? secureUrls : urls;
 }
 
 export class NeoRpcService {

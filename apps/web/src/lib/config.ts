@@ -1,6 +1,6 @@
 export type ContractDialect = "csharp" | "solidity" | "rust";
 export type WalletNetworkName = "mainnet" | "testnet" | "private" | "unknown";
-const DEFAULT_TESTNET_RPC_URL = "http://seed2t5.neo.org:20332";
+const DEFAULT_TESTNET_RPC_URL = "https://n3seed1.ngd.network:20332";
 const DEFAULT_TESTNET_CONTRACT_HASH = "0x81f129ab82e0f41bba5048872405db66cbddb968";
 
 function normalizeDialect(input: string | undefined): ContractDialect {
