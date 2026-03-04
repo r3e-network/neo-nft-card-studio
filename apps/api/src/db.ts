@@ -375,6 +375,20 @@ export class AppDb {
 
   async insertTransfer(input: TransferRecord): Promise<void> {
     if (this.supabase) {
+      const existing = await this.supabase
+        .from("transfers")
+        .select("id")
+        .eq("txid", input.txid)
+        .eq("token_id", input.tokenId)
+        .eq("block_index", input.blockIndex)
+        .maybeSingle();
+      if (existing.error && !isSupabaseNoRowsError(existing.error)) {
+        assertSupabaseSuccess(existing.error, `read transfer txid='${input.txid}' token_id='${input.tokenId}'`);
+      }
+      if (existing.data) {
+        return;
+      }
+
       const { error } = await this.supabase
         .from("transfers")
         .insert({
@@ -386,6 +400,20 @@ export class AppDb {
           timestamp: input.timestamp,
         });
       assertSupabaseSuccess(error, `insert transfer txid='${input.txid}' token_id='${input.tokenId}'`);
+      return;
+    }
+
+    const existing = this.sqlite!
+      .prepare(
+        `SELECT 1 AS found
+         FROM transfers
+         WHERE txid = ?
+           AND token_id = ?
+           AND block_index = ?
+         LIMIT 1`,
+      )
+      .get(input.txid, input.tokenId, input.blockIndex) as { found: number } | undefined;
+    if (existing?.found === 1) {
       return;
     }
 
@@ -418,6 +446,20 @@ export class AppDb {
              WHERE token_id = ?`,
           )
           .run(record.toAddress, record.timestamp, record.tokenId);
+      }
+
+      const existing = this.sqlite!
+        .prepare(
+          `SELECT 1 AS found
+           FROM transfers
+           WHERE txid = ?
+             AND token_id = ?
+             AND block_index = ?
+           LIMIT 1`,
+        )
+        .get(record.txid, record.tokenId, record.blockIndex) as { found: number } | undefined;
+      if (existing?.found === 1) {
+        return;
       }
 
       this.sqlite!

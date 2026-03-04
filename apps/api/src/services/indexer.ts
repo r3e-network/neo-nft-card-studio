@@ -1,4 +1,4 @@
-import { wallet } from "@cityofzion/neon-js";
+import { u, wallet } from "@cityofzion/neon-js";
 import pino from "pino";
 
 import { decodeStackItem, NeoRpcService } from "@platform/neo-sdk";
@@ -57,6 +57,7 @@ interface RawNeotubeContractResponse {
 }
 
 const SYNC_BLOCK_KEY_PREFIX = "last_synced_block";
+const UINT160_HASH_WITH_PREFIX_REGEX = /^0x[0-9a-f]{40}$/;
 
 function normalizeHash(hash: string): string {
   if (!hash || hash.length === 0) {
@@ -90,10 +91,23 @@ function formatNeoAddress(input: unknown): string {
     return value;
   }
 
-  try {
-    return wallet.getAddressFromScriptHash(value);
-  } catch {
+  const normalized = value.replace(/^0x/i, "");
+  if (!/^[0-9a-fA-F]{40}$/.test(normalized)) {
     return value;
+  }
+
+  const direct = normalized.toLowerCase();
+  const reversed = u.reverseHex(direct).toLowerCase();
+
+  try {
+    // Hash160 values emitted in VM notifications are little-endian script hashes.
+    return wallet.getAddressFromScriptHash(reversed);
+  } catch {
+    try {
+      return wallet.getAddressFromScriptHash(direct);
+    } catch {
+      return value;
+    }
   }
 }
 
@@ -224,6 +238,27 @@ export class IndexerService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async resolveContractHashFromEventValue(input: unknown): Promise<string> {
+    const normalized = normalizeHash(valueAsString(input));
+    if (!UINT160_HASH_WITH_PREFIX_REGEX.test(normalized)) {
+      return "";
+    }
+
+    const reversed = `0x${u.reverseHex(normalized.slice(2)).toLowerCase()}`;
+    const candidates = [...new Set([normalized, reversed])];
+
+    for (const candidate of candidates) {
+      try {
+        await this.rpc.getContractState(candidate);
+        return candidate;
+      } catch {
+        // try next candidate
+      }
+    }
+
+    return normalized;
   }
 
   start(): void {
@@ -568,7 +603,7 @@ export class IndexerService {
         }
 
         const collectionId = valueAsString(args[0]);
-        const deployedContractHash = normalizeHash(valueAsString(args[2]));
+        const deployedContractHash = await this.resolveContractHashFromEventValue(args[2]);
         if (!collectionId || !deployedContractHash) {
           return;
         }

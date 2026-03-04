@@ -584,8 +584,8 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       try {
         const requestedBatch = Number.parseInt((req.query.batch as string | undefined) ?? "", 10);
         const batchSize = Number.isFinite(requestedBatch)
-          ? Math.min(Math.max(requestedBatch, 1), 300)
-          : Math.min(Math.max(context.config.INDEXER_BATCH_SIZE * 4, 40), 120);
+          ? Math.min(Math.max(requestedBatch, 1), 2000)
+          : Math.min(Math.max(context.config.INDEXER_BATCH_SIZE * 8, 80), 400);
 
         const chainHeight = await context.indexer.getChainBlockHeight();
         const startBlock = await context.indexer.getCurrentSyncBlock();
