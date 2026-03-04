@@ -56,7 +56,7 @@ export function HomePage() {
             Discover, collect, and sell extraordinary NFTs
           </h1>
           <p style={{ fontSize: "1.5rem", color: "#8A939B", lineHeight: 1.4, maxWidth: "540px", margin: "1.5rem 0" }}>
-            The world's first and largest digital marketplace for crypto collectibles and non-fungible tokens (NFTs).
+            A Neo N3 NFT platform to launch collections, mint assets, and trade on-chain with factory and dedicated contract modes.
           </p>
           <div style={{ display: "flex", gap: "1rem" }}>
             <Link className="btn btn-lg" to="/explore" style={{ padding: "1.2rem 2.5rem", borderRadius: "12px", background: "#2081E2", color: "#fff" }}>
