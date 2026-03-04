@@ -4,61 +4,13 @@ import { ImageOff, Loader2, Search, ShoppingCart, Tag, Filter } from "lucide-rea
 import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
-import { fetchMarketListings, getNeoFsResourceProxyUrl } from "../lib/api";
+import { fetchMarketListings } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import { formatGasAmount, isZeroUInt160Hash, shortHash, tokenSerial } from "../lib/marketplace";
+import { buildNftFallbackImage, parseTokenProperties, pickTokenMediaUri } from "../lib/nft-media";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
-
-function isNeoFsUri(value: string): boolean {
-  return /^neofs:(\/\/)?/i.test(value.trim());
-}
-
-function parseTokenProperties(raw: string): Record<string, unknown> {
-  if (!raw || raw.trim().length === 0) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function pickTokenMediaUri(token: TokenDto, properties: Record<string, unknown>): string {
-  const candidates = [
-    properties.image,
-    properties.image_url,
-    properties.imageUrl,
-    properties.animation_url,
-    properties.animationUrl,
-    token.uri,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate !== "string") {
-      continue;
-    }
-
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    if (isNeoFsUri(trimmed)) {
-      return getNeoFsResourceProxyUrl(trimmed);
-    }
-
-    if (/^https?:\/\//i.test(trimmed) || /^data:/i.test(trimmed)) {
-      return trimmed;
-    }
-  }
-
-  return "";
-}
 
 function resolveCollectionContractHash(collection: CollectionDto): string | null {
   if (!collection.contractHash) {
@@ -246,6 +198,7 @@ export function ExplorePage() {
               typeof properties.name === "string" && properties.name.trim().length > 0
                 ? properties.name.trim()
                 : `${card.collection.symbol} #${tokenSerial(card.token.tokenId)}`;
+            const fallbackImage = buildNftFallbackImage(tokenName, card.token.tokenId, card.collection.name);
             const isOwner = wallet.address === card.token.owner;
             const isBuying = actionTokenId === card.token.tokenId;
 
@@ -258,13 +211,16 @@ export function ExplorePage() {
                 onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}
               >
                 <Link to={`/collections/${card.collection.collectionId}`} style={{ display: "block" }}>
-                  {media ? (
-                    <img alt={tokenName} src={media} style={{ width: "100%", height: "280px", objectFit: "cover" }} />
-                  ) : (
-                    <div style={{ width: "100%", height: "280px", background: "#1c2638", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <ImageOff color="#8aa0bf" size={40} />
-                    </div>
-                  )}
+                  <img
+                    alt={tokenName}
+                    onError={(event) => {
+                      if (event.currentTarget.src !== fallbackImage) {
+                        event.currentTarget.src = fallbackImage;
+                      }
+                    }}
+                    src={media || fallbackImage}
+                    style={{ width: "100%", height: "280px", objectFit: "cover" }}
+                  />
                 </Link>
 
                 <div style={{ padding: "1.2rem" }}>
