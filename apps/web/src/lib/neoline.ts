@@ -59,6 +59,7 @@ export interface NeoLineN3Provider {
 
 const NEO_MAINNET_MAGIC = 860833102;
 const NEO_TESTNET_MAGIC = 894710606;
+const NEO_N3_ADDRESS_REGEX = /^N[1-9A-HJ-NP-Za-km-z]{33}$/;
 const N3_READY_EVENT = "NEOLine.N3.EVENT.READY";
 const NEO_READY_EVENT = "NEOLine.NEO.EVENT.READY";
 const N3_REQUEST_EVENT = "NEOLine.N3.EVENT.REQUEST";
@@ -94,6 +95,10 @@ function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
     return false;
   }
 
+  if (isLikelyEvmOnlyProvider(record)) {
+    return false;
+  }
+
   const methodKeys = [
     "getAccount",
     "getAccounts",
@@ -111,6 +116,52 @@ function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
     "enable",
   ];
   return methodKeys.some((key) => typeof record[key] === "function");
+}
+
+function hasNeoN3AccountHints(value: unknown): boolean {
+  const record = asRecord(value);
+  if (!record) {
+    return false;
+  }
+
+  if (
+    typeof record.getAccount === "function"
+    || typeof record.getAccounts === "function"
+    || typeof record.getAddress === "function"
+    || typeof record.getWalletAddress === "function"
+    || typeof record.requestAccounts === "function"
+    || typeof record.invoke === "function"
+    || typeof record.invokeFunction === "function"
+    || typeof record.enable === "function"
+  ) {
+    return true;
+  }
+
+  const nestedKeys = ["NEOLineN3", "neoLineN3", "n3", "N3", "n3Provider", "N3Provider", "dapp", "api"];
+  return nestedKeys.some((key) => record[key] !== undefined && record[key] !== null);
+}
+
+function isLikelyEvmOnlyProvider(value: unknown): boolean {
+  const record = asRecord(value);
+  if (!record) {
+    return false;
+  }
+
+  const hasEvmMarkers =
+    record.isMetaMask === true
+    || record.isCoinbaseWallet === true
+    || record.isBraveWallet === true
+    || record.isRabby === true
+    || record.isNEOLine === true
+    || record.chainId !== undefined
+    || record.networkVersion !== undefined
+    || record.selectedAddress !== undefined;
+
+  if (!hasEvmMarkers) {
+    return false;
+  }
+
+  return !hasNeoN3AccountHints(record);
 }
 
 function resolveFactoryProvider(value: unknown): unknown {
@@ -188,6 +239,10 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     if (resolved) {
       return resolved;
     }
+  }
+
+  if (isLikelyEvmOnlyProvider(value)) {
+    return null;
   }
 
   if (hasReadyEventOnlyShape(value)) {
@@ -420,6 +475,9 @@ function collectResolvedProviders(): NeoLineN3Provider[] {
     if (!resolved) {
       continue;
     }
+    if (isLikelyEvmOnlyProvider(resolved)) {
+      continue;
+    }
     if (!resolvedProviders.includes(resolved)) {
       resolvedProviders.push(resolved);
     }
@@ -431,6 +489,9 @@ function collectResolvedProviders(): NeoLineN3Provider[] {
 function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
   const record = asRecord(provider);
   if (!record) {
+    return false;
+  }
+  if (isLikelyEvmOnlyProvider(record)) {
     return false;
   }
 
@@ -446,6 +507,7 @@ function hasRequestAccountCapability(provider: NeoLineN3Provider): boolean {
   const record = asRecord(provider);
   if (
     !record
+    || isLikelyEvmOnlyProvider(record)
     || (
       typeof record.request !== "function"
       && typeof record.send !== "function"
@@ -465,12 +527,15 @@ function hasRequestAccountCapability(provider: NeoLineN3Provider): boolean {
     || typeof record.getNetworks === "function"
     || typeof record.invoke === "function"
     || typeof record.invokeFunction === "function"
-    || record.isNEOLine === true
   );
 }
 
 function getCandidateProvidersInPriorityOrder(): NeoLineN3Provider[] {
   const resolved = collectResolvedProviders();
+  if (cachedProvider && isLikelyEvmOnlyProvider(cachedProvider)) {
+    cachedProvider = null;
+  }
+
   if (!cachedProvider) {
     return resolved;
   }
@@ -622,7 +687,7 @@ function extractLabel(value: unknown): string | undefined {
 
 function normalizeAccount(value: unknown): NeoLineAccount | null {
   const address = extractAddress(value);
-  if (!address) {
+  if (!address || !NEO_N3_ADDRESS_REGEX.test(address)) {
     return null;
   }
   return {
@@ -994,18 +1059,12 @@ async function requestProvider(
 
   if (typeof record.request === "function") {
     const requestFn = record.request as (...args: unknown[]) => unknown;
-    return await callWithCallbackFallback(requestFn, [
-      [payload],
-      [payload.method, payload.params],
-    ]);
+    return await callWithCallbackFallback(requestFn, [[payload]]);
   }
 
   if (typeof record.send === "function") {
     const sendFn = record.send as (...args: unknown[]) => unknown;
-    return await callWithCallbackFallback(sendFn, [
-      [payload],
-      [payload.method, payload.params],
-    ]);
+    return await callWithCallbackFallback(sendFn, [[payload]]);
   }
 
   if (typeof record.sendAsync === "function") {
@@ -1098,30 +1157,10 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
     const attempts: Array<{ method: string; params?: unknown }> = [
       { method: "getAccount" },
       { method: "getAccounts" },
-      { method: "wallet_getAccount" },
-      { method: "wallet_getAccounts" },
-      { method: "wallet.getAccount" },
-      { method: "wallet.getAccounts" },
-      { method: "neo_getAccount" },
-      { method: "neo_getAccounts" },
-      { method: "requestAccounts" },
-      { method: "wallet_requestAccounts" },
-      { method: "neo_requestAccounts" },
-      { method: "connect" },
-      { method: "wallet_connect" },
-      { method: "neo_connect" },
-      { method: "n3_getAccount" },
-      { method: "n3_getAccounts" },
-      { method: "getWalletAccount" },
       { method: "getAddress" },
-      { method: "wallet_getAddress" },
-      { method: "wallet.getAddress" },
-      { method: "getAccount", params: [] },
-      { method: "getAccounts", params: [] },
-      { method: "requestAccounts", params: [] },
-      { method: "connect", params: [] },
-      { method: "wallet_connect", params: [] },
-      { method: "neo_connect", params: [] },
+      { method: "getWalletAddress" },
+      { method: "requestAccounts" },
+      { method: "connect" },
     ];
 
     for (const payload of attempts) {
@@ -1288,10 +1327,6 @@ export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwo
         const requestAttempts: Array<{ method: string; params?: unknown }> = [
           { method: "getNetwork" },
           { method: "getNetworks" },
-          { method: "wallet_getNetwork" },
-          { method: "wallet.getNetwork" },
-          { method: "neo_getNetwork" },
-          { method: "neo_getNetworks" },
         ];
 
         for (const payload of requestAttempts) {
