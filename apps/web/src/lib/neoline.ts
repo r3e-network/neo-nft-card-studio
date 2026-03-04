@@ -40,10 +40,19 @@ export interface NeoLineInvokeResult {
 export interface NeoLineN3Provider {
   getAccount?: () => Promise<unknown>;
   getAccounts?: () => Promise<unknown>;
+  getAddress?: () => Promise<unknown>;
+  getWalletAddress?: () => Promise<unknown>;
+  requestAccounts?: () => Promise<unknown>;
+  connect?: () => Promise<unknown>;
   getNetwork?: () => Promise<unknown>;
   getNetworks?: () => Promise<unknown>;
   enable?: () => Promise<unknown>;
   request?: ((payload: { method: string; params?: unknown }) => Promise<unknown>) | ((method: string, params?: unknown) => Promise<unknown>);
+  send?: ((payload: { method: string; params?: unknown }) => Promise<unknown>) | ((method: string, params?: unknown) => Promise<unknown>);
+  sendAsync?: (
+    payload: { method: string; params?: unknown; id?: number; jsonrpc?: string },
+    callback: (error: unknown, response?: unknown) => void,
+  ) => void;
   invoke?: (payload: WalletInvokeRequest) => Promise<unknown>;
   invokeFunction?: (payload: WalletInvokeRequest) => Promise<unknown>;
 }
@@ -88,9 +97,15 @@ function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
   const methodKeys = [
     "getAccount",
     "getAccounts",
+    "getAddress",
+    "getWalletAddress",
+    "requestAccounts",
+    "connect",
     "getNetwork",
     "getNetworks",
     "request",
+    "send",
+    "sendAsync",
     "invoke",
     "invokeFunction",
     "enable",
@@ -844,6 +859,17 @@ function listProviderKeys(provider: NeoLineN3Provider): string {
   return record ? Object.keys(record).join(", ") : "";
 }
 
+function unwrapRpcResponse(value: unknown): unknown {
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+  if ("result" in record) {
+    return record.result;
+  }
+  return value;
+}
+
 async function tryCallProviderMethod(
   provider: NeoLineN3Provider,
   methodName: keyof NeoLineN3Provider,
@@ -871,17 +897,60 @@ async function requestProvider(
   payload: { method: string; params?: unknown },
 ): Promise<unknown> {
   const record = asRecord(provider);
-  if (!record || typeof record.request !== "function") {
-    throw new Error("request is not available");
+  if (!record) {
+    throw new Error("provider is not available");
   }
 
-  const requestFn = record.request as (...args: unknown[]) => Promise<unknown>;
+  if (typeof record.request === "function") {
+    const requestFn = record.request as (...args: unknown[]) => Promise<unknown>;
 
-  try {
-    return await requestFn.call(provider, payload);
-  } catch {
-    return await requestFn.call(provider, payload.method, payload.params);
+    try {
+      return unwrapRpcResponse(await requestFn.call(provider, payload));
+    } catch {
+      return unwrapRpcResponse(await requestFn.call(provider, payload.method, payload.params));
+    }
   }
+
+  if (typeof record.send === "function") {
+    const sendFn = record.send as (...args: unknown[]) => Promise<unknown>;
+    try {
+      return unwrapRpcResponse(await sendFn.call(provider, payload));
+    } catch {
+      return unwrapRpcResponse(await sendFn.call(provider, payload.method, payload.params));
+    }
+  }
+
+  if (typeof record.sendAsync === "function") {
+    const sendAsyncFn = record.sendAsync as (
+      request: { method: string; params?: unknown; id?: number; jsonrpc?: string },
+      callback: (error: unknown, response?: unknown) => void,
+    ) => void;
+
+    return await new Promise<unknown>((resolve, reject) => {
+      try {
+        sendAsyncFn.call(
+          provider,
+          {
+            id: Date.now(),
+            jsonrpc: "2.0",
+            method: payload.method,
+            params: payload.params,
+          },
+          (error, response) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve(unwrapRpcResponse(response));
+          },
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  throw new Error("request/send/sendAsync is not available");
 }
 
 async function ensureProviderEnabled(provider: NeoLineN3Provider): Promise<void> {
@@ -915,19 +984,51 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
     }
   }
 
+  const addressMethods: Array<keyof NeoLineN3Provider> = [
+    "getAddress",
+    "getWalletAddress",
+    "requestAccounts",
+    "connect",
+  ];
+  for (const methodName of addressMethods) {
+    const value = await tryCallProviderMethod(provider, methodName);
+    if (value !== undefined) {
+      const account = normalizeAccount(value);
+      if (account) {
+        return account;
+      }
+    }
+  }
+
   const providerRecord = asRecord(provider);
   const directAccount = normalizeAccount(providerRecord?.account ?? providerRecord?.selectedAddress ?? providerRecord?.address);
   if (directAccount) {
     return directAccount;
   }
 
-  if (providerRecord?.request) {
+  if (providerRecord?.request || providerRecord?.send || providerRecord?.sendAsync) {
     const attempts: Array<{ method: string; params?: unknown }> = [
       { method: "getAccount" },
+      { method: "getAccounts" },
       { method: "wallet_getAccount" },
+      { method: "wallet_getAccounts" },
       { method: "wallet.getAccount" },
+      { method: "wallet.getAccounts" },
       { method: "neo_getAccount" },
+      { method: "neo_getAccounts" },
+      { method: "requestAccounts" },
+      { method: "wallet_requestAccounts" },
+      { method: "neo_requestAccounts" },
+      { method: "eth_requestAccounts" },
+      { method: "eth_accounts" },
+      { method: "getAddress" },
+      { method: "wallet_getAddress" },
+      { method: "wallet.getAddress" },
       { method: "getAccount", params: [] },
+      { method: "getAccounts", params: [] },
+      { method: "requestAccounts", params: [] },
+      { method: "eth_requestAccounts", params: [] },
+      { method: "eth_accounts", params: [] },
     ];
 
     for (const payload of attempts) {
