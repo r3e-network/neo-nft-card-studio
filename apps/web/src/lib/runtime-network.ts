@@ -35,7 +35,10 @@ export function getRuntimeNetworkConfig(): RuntimeNetworkConfig {
 
   let contractHash = "";
   if (!unknownWalletNetwork) {
-    contractHash = profile.contractHash || APP_CONFIG.contractHash;
+    // When wallet is bound to a specific network (e.g. mainnet), only use that
+    // network's explicit contract hash. Do not silently fallback to the global
+    // testnet hash, otherwise API calls can be routed to unsupported networks.
+    contractHash = walletBound ? profile.contractHash || "" : profile.contractHash || APP_CONFIG.contractHash;
   } else if (!walletBound) {
     contractHash = APP_CONFIG.contractHash;
   }
