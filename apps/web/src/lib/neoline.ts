@@ -112,20 +112,12 @@ function hasReadyEventOnlyShape(value: unknown): boolean {
     return false;
   }
 
-  return !hasProviderMethod(value);
+  return true;
 }
 
 function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | null {
   if (depth > 3 || !value) {
     return null;
-  }
-
-  if (hasReadyEventOnlyShape(value)) {
-    return null;
-  }
-
-  if (hasProviderMethod(value)) {
-    return value;
   }
 
   const record = asRecord(value);
@@ -134,7 +126,7 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
   }
 
   const initProvider = resolveFactoryProvider(record.Init ?? record.init);
-  if (initProvider) {
+  if (initProvider && initProvider !== value) {
     const resolved = resolveNestedProvider(initProvider, depth + 1);
     if (resolved) {
       return resolved;
@@ -147,6 +139,14 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     if (resolved) {
       return resolved;
     }
+  }
+
+  if (hasReadyEventOnlyShape(value)) {
+    return null;
+  }
+
+  if (hasProviderMethod(value)) {
+    return value;
   }
 
   return null;
@@ -718,18 +718,12 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
   return null;
 }
 
-export async function connectNeoWallet(): Promise<NeoLineAccount> {
-  let providers = getCandidateProvidersInPriorityOrder();
-  if (providers.length === 0) {
-    await waitForNeoProviderReady();
-    providers = getCandidateProvidersInPriorityOrder();
-  }
-
-  if (providers.length === 0) {
-    throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
-  }
-
+async function findAccountAcrossProviders(
+  providers: NeoLineN3Provider[],
+  enableBeforeRead: boolean,
+): Promise<{ account: NeoLineAccount | null; lastAvailable: string }> {
   let lastAvailable = "";
+
   for (const provider of providers) {
     const providerRecord = asRecord(provider);
     if (providerRecord && typeof providerRecord.enable === "function") {
@@ -737,11 +731,14 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
     }
 
     try {
-      await ensureProviderEnabled(provider);
+      if (enableBeforeRead) {
+        await ensureProviderEnabled(provider);
+      }
+
       const account = await readAccountFromProvider(provider);
       if (account) {
         cachedProvider = provider;
-        return account;
+        return { account, lastAvailable };
       }
     } catch {
       // Try next provider
@@ -750,53 +747,155 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
     lastAvailable = listProviderKeys(provider);
   }
 
-  if (lastAvailable) {
-    throw new Error(`Connected wallet provider does not expose a compatible account API. Available keys: ${lastAvailable}`);
+  return { account: null, lastAvailable };
+}
+
+async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length > 0) {
+    return providers;
+  }
+
+  await waitForNeoProviderReady();
+  cachedProvider = null;
+  providers = getCandidateProvidersInPriorityOrder();
+  return providers;
+}
+
+export async function connectNeoWallet(): Promise<NeoLineAccount> {
+  let providers = await loadProvidersWithReadySync();
+  if (providers.length === 0) {
+    throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
+  }
+
+  const firstTry = await findAccountAcrossProviders(providers, true);
+  if (firstTry.account) {
+    return firstTry.account;
+  }
+
+  // Some wallets expose a placeholder object first and hydrate real methods slightly later.
+  // Force one additional ready-sync pass before failing.
+  await waitForNeoProviderReady();
+  cachedProvider = null;
+  providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length > 0) {
+    const secondTry = await findAccountAcrossProviders(providers, true);
+    if (secondTry.account) {
+      return secondTry.account;
+    }
+
+    if (secondTry.lastAvailable) {
+      throw new Error(`Connected wallet provider does not expose a compatible account API. Available keys: ${secondTry.lastAvailable}`);
+    }
+  }
+
+  if (firstTry.lastAvailable) {
+    throw new Error(`Connected wallet provider does not expose a compatible account API. Available keys: ${firstTry.lastAvailable}`);
   }
 
   throw new Error("No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.");
 }
 
 export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount | null> {
-  let providers = getCandidateProvidersInPriorityOrder();
-  if (providers.length === 0) {
-    await waitForNeoProviderReady();
-    providers = getCandidateProvidersInPriorityOrder();
-  }
-
+  let providers = await loadProvidersWithReadySync();
   if (providers.length === 0) {
     return null;
   }
 
-  for (const provider of providers) {
-    try {
-      if (!silent) {
-        await ensureProviderEnabled(provider);
-      }
-    } catch {
-      // ignore provider enable errors for background sync
-    }
+  const firstTry = await findAccountAcrossProviders(providers, !silent);
+  if (firstTry.account) {
+    return firstTry.account;
+  }
 
-    try {
-      const account = await readAccountFromProvider(provider);
-      if (account) {
-        cachedProvider = provider;
-        return account;
-      }
-    } catch {
-      // Try next provider
-    }
+  await waitForNeoProviderReady();
+  cachedProvider = null;
+  providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length === 0) {
+    return null;
+  }
+
+  const secondTry = await findAccountAcrossProviders(providers, !silent);
+  if (secondTry.account) {
+    return secondTry.account;
   }
 
   return null;
 }
 
 export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwork> {
-  let providers = getCandidateProvidersInPriorityOrder();
-  if (providers.length === 0) {
-    await waitForNeoProviderReady();
-    providers = getCandidateProvidersInPriorityOrder();
-  }
+  let providers = await loadProvidersWithReadySync();
+
+  const readNetworkFromProviders = async (): Promise<NeoWalletNetwork | null> => {
+    for (const provider of providers) {
+      try {
+        if (!silent) {
+          await ensureProviderEnabled(provider);
+        }
+      } catch {
+        // Some wallets reject background enable() calls but still expose network info.
+      }
+
+      const attempts: unknown[] = [];
+      const directNetwork = await tryCallProviderMethod(provider, "getNetwork");
+      if (directNetwork !== undefined) {
+        attempts.push(directNetwork);
+      }
+
+      const directNetworks = await tryCallProviderMethod(provider, "getNetworks");
+      if (directNetworks !== undefined) {
+        attempts.push(directNetworks);
+      }
+
+      if (asRecord(provider)?.request) {
+        const requestAttempts: Array<{ method: string; params?: unknown }> = [
+          { method: "getNetwork" },
+          { method: "getNetworks" },
+          { method: "wallet_getNetwork" },
+          { method: "wallet.getNetwork" },
+          { method: "neo_getNetwork" },
+          { method: "neo_getNetworks" },
+        ];
+
+        for (const payload of requestAttempts) {
+          try {
+            attempts.push(await requestProvider(provider, payload));
+          } catch {
+            // try next request shape
+          }
+        }
+      }
+
+      const providerRecord = asRecord(provider);
+      if (providerRecord) {
+        attempts.push(
+          providerRecord.network,
+          providerRecord.networks,
+          providerRecord.chain,
+          providerRecord.currentNetwork,
+          providerRecord.selectedNetwork,
+        );
+      }
+
+      for (const raw of attempts) {
+        const payload = pickNetworkPayload(raw);
+        const magic = extractNetworkMagic(payload);
+        const network = normalizeNetworkName(payload, magic);
+        const rpcUrl = extractRpcUrl(payload);
+
+        if (network !== "unknown" || magic !== null || rpcUrl) {
+          cachedProvider = provider;
+          return {
+            network,
+            magic,
+            rpcUrl,
+            raw: payload,
+          };
+        }
+      }
+    }
+
+    return null;
+  };
 
   if (providers.length === 0) {
     return {
@@ -805,71 +904,18 @@ export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwo
     };
   }
 
-  for (const provider of providers) {
-    try {
-      if (!silent) {
-        await ensureProviderEnabled(provider);
-      }
-    } catch {
-      // Some wallets reject background enable() calls but still expose network info.
-    }
+  const firstTry = await readNetworkFromProviders();
+  if (firstTry) {
+    return firstTry;
+  }
 
-    const attempts: unknown[] = [];
-    const directNetwork = await tryCallProviderMethod(provider, "getNetwork");
-    if (directNetwork !== undefined) {
-      attempts.push(directNetwork);
-    }
-
-    const directNetworks = await tryCallProviderMethod(provider, "getNetworks");
-    if (directNetworks !== undefined) {
-      attempts.push(directNetworks);
-    }
-
-    if (asRecord(provider)?.request) {
-      const requestAttempts: Array<{ method: string; params?: unknown }> = [
-        { method: "getNetwork" },
-        { method: "getNetworks" },
-        { method: "wallet_getNetwork" },
-        { method: "wallet.getNetwork" },
-        { method: "neo_getNetwork" },
-        { method: "neo_getNetworks" },
-      ];
-
-      for (const payload of requestAttempts) {
-        try {
-          attempts.push(await requestProvider(provider, payload));
-        } catch {
-          // try next request shape
-        }
-      }
-    }
-
-    const providerRecord = asRecord(provider);
-    if (providerRecord) {
-      attempts.push(
-        providerRecord.network,
-        providerRecord.networks,
-        providerRecord.chain,
-        providerRecord.currentNetwork,
-        providerRecord.selectedNetwork,
-      );
-    }
-
-    for (const raw of attempts) {
-      const payload = pickNetworkPayload(raw);
-      const magic = extractNetworkMagic(payload);
-      const network = normalizeNetworkName(payload, magic);
-      const rpcUrl = extractRpcUrl(payload);
-
-      if (network !== "unknown" || magic !== null || rpcUrl) {
-        cachedProvider = provider;
-        return {
-          network,
-          magic,
-          rpcUrl,
-          raw: payload,
-        };
-      }
+  await waitForNeoProviderReady();
+  cachedProvider = null;
+  providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length > 0) {
+    const secondTry = await readNetworkFromProviders();
+    if (secondTry) {
+      return secondTry;
     }
   }
 
@@ -880,68 +926,87 @@ export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwo
 }
 
 export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<NeoLineInvokeResult> {
-  let providers = getCandidateProvidersInPriorityOrder();
-  if (providers.length === 0) {
-    await waitForNeoProviderReady();
-    providers = getCandidateProvidersInPriorityOrder();
-  }
+  let providers = await loadProvidersWithReadySync();
+  const invokeWithProviders = async (): Promise<{ result: NeoLineInvokeResult | null; lastAvailable: string }> => {
+    let lastAvailable = "";
+
+    for (const provider of providers) {
+      const providerRecord = asRecord(provider);
+      if (providerRecord && typeof providerRecord.enable === "function") {
+        enableAttemptedProviders.delete(providerRecord);
+      }
+
+      try {
+        await ensureProviderEnabled(provider);
+      } catch {
+        // Try next provider
+        lastAvailable = listProviderKeys(provider);
+        continue;
+      }
+
+      const invokeResult = await tryCallProviderMethod(provider, "invoke", payload);
+      if (invokeResult !== undefined) {
+        cachedProvider = provider;
+        return { result: normalizeInvokeResult(invokeResult), lastAvailable };
+      }
+
+      const invokeFunctionResult = await tryCallProviderMethod(provider, "invokeFunction", payload);
+      if (invokeFunctionResult !== undefined) {
+        cachedProvider = provider;
+        return { result: normalizeInvokeResult(invokeFunctionResult), lastAvailable };
+      }
+
+      if (asRecord(provider)?.request) {
+        const attempts: Array<{ method: string; params: unknown }> = [
+          { method: "invoke", params: payload },
+          { method: "invoke", params: [payload] },
+          { method: "invokeFunction", params: payload },
+          { method: "invokeFunction", params: [payload] },
+          { method: "wallet.invoke", params: payload },
+        ];
+
+        for (const request of attempts) {
+          try {
+            const raw = await requestProvider(provider, request);
+            cachedProvider = provider;
+            return { result: normalizeInvokeResult(raw), lastAvailable };
+          } catch {
+            // try next invoke shape
+          }
+        }
+      }
+
+      lastAvailable = listProviderKeys(provider);
+    }
+
+    return { result: null, lastAvailable };
+  };
 
   if (providers.length === 0) {
     throw new Error("No Neo N3 wallet found.");
   }
 
-  let lastAvailable = "";
-  for (const provider of providers) {
-    const providerRecord = asRecord(provider);
-    if (providerRecord && typeof providerRecord.enable === "function") {
-      enableAttemptedProviders.delete(providerRecord);
-    }
-
-    try {
-      await ensureProviderEnabled(provider);
-    } catch {
-      // Try next provider
-      lastAvailable = listProviderKeys(provider);
-      continue;
-    }
-
-    const invokeResult = await tryCallProviderMethod(provider, "invoke", payload);
-    if (invokeResult !== undefined) {
-      cachedProvider = provider;
-      return normalizeInvokeResult(invokeResult);
-    }
-
-    const invokeFunctionResult = await tryCallProviderMethod(provider, "invokeFunction", payload);
-    if (invokeFunctionResult !== undefined) {
-      cachedProvider = provider;
-      return normalizeInvokeResult(invokeFunctionResult);
-    }
-
-    if (asRecord(provider)?.request) {
-      const attempts: Array<{ method: string; params: unknown }> = [
-        { method: "invoke", params: payload },
-        { method: "invoke", params: [payload] },
-        { method: "invokeFunction", params: payload },
-        { method: "invokeFunction", params: [payload] },
-        { method: "wallet.invoke", params: payload },
-      ];
-
-      for (const request of attempts) {
-        try {
-          const raw = await requestProvider(provider, request);
-          cachedProvider = provider;
-          return normalizeInvokeResult(raw);
-        } catch {
-          // try next invoke shape
-        }
-      }
-    }
-
-    lastAvailable = listProviderKeys(provider);
+  const firstTry = await invokeWithProviders();
+  if (firstTry.result) {
+    return firstTry.result;
   }
 
-  if (lastAvailable) {
-    throw new Error(`Connected wallet provider does not expose a compatible invoke API. Available keys: ${lastAvailable}`);
+  await waitForNeoProviderReady();
+  cachedProvider = null;
+  providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length > 0) {
+    const secondTry = await invokeWithProviders();
+    if (secondTry.result) {
+      return secondTry.result;
+    }
+
+    if (secondTry.lastAvailable) {
+      throw new Error(`Connected wallet provider does not expose a compatible invoke API. Available keys: ${secondTry.lastAvailable}`);
+    }
+  }
+
+  if (firstTry.lastAvailable) {
+    throw new Error(`Connected wallet provider does not expose a compatible invoke API. Available keys: ${firstTry.lastAvailable}`);
   }
 
   throw new Error("No Neo N3 wallet found.");
