@@ -152,6 +152,34 @@ function assertSupabaseSuccess(error: unknown, operation: string): void {
   throw new Error(`Supabase ${operation} failed: ${formatSupabaseError(error)}`);
 }
 
+function normalizeListedFlag(value: unknown): number {
+  if (value === true || value === 1) {
+    return 1;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+function parseTimestamp(input: string | null | undefined): number {
+  if (!input) {
+    return 0;
+  }
+
+  const parsed = Date.parse(input);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return parsed;
+}
+
 export class AppDb {
   private readonly sqlite: SqliteDatabase | null = null;
   private readonly supabase: SupabaseClient | null = null;
@@ -513,6 +541,8 @@ export class AppDb {
     limit?: number;
   }): Promise<MarketListingRecord[]> {
     if (this.supabase) {
+      const limit = Math.min(Math.max(input?.limit ?? 100, 1), 500);
+
       let query = this.supabase
         .from("tokens")
         .select(`
@@ -538,32 +568,99 @@ export class AppDb {
             collectionPaused:paused,
             collectionCreatedAt:created_at,
             collectionUpdatedAt:updated_at
-          ),
-          token_listings (
-            listed,
-            seller,
-            price,
-            listedAt:listed_at,
-            listingUpdatedAt:updated_at
           )
         `)
         .eq("burned", 0);
 
       if (input?.collectionId) query = query.eq("collection_id", input.collectionId);
       if (input?.owner) query = query.eq("owner", input.owner);
-      if (input?.listedOnly) query = query.eq("token_listings.listed", 1);
 
       const { data, error } = await query
-        .order("token_id", { ascending: false }) // Simplified ordering for now
-        .limit(Math.min(input?.limit ?? 100, 500));
+        .order("token_id", { ascending: false })
+        .limit(limit);
 
       if (error) return [];
 
-      return (data as any[]).map(item => ({
-        ...item,
-        ...item.collections,
-        ...(item.token_listings?.[0] || { listed: 0, seller: null, price: null, listedAt: null, listingUpdatedAt: null })
-      }));
+      const tokenRows = (data as any[] | null) ?? [];
+      if (tokenRows.length === 0) {
+        return [];
+      }
+
+      const tokenIds = tokenRows
+        .map((item) => item?.tokenId?.toString?.() ?? "")
+        .filter((tokenId) => tokenId.length > 0);
+
+      const listingsByTokenId = new Map<
+        string,
+        { listed: number; seller: string | null; price: string | null; listedAt: string | null; listingUpdatedAt: string | null }
+      >();
+
+      if (tokenIds.length > 0) {
+        const { data: listingRows, error: listingError } = await this.supabase
+          .from("token_listings")
+          .select(`
+            tokenId:token_id,
+            listed,
+            seller,
+            price,
+            listedAt:listed_at,
+            listingUpdatedAt:updated_at
+          `)
+          .in("token_id", tokenIds);
+
+        if (!listingError) {
+          for (const row of (listingRows as any[] | null) ?? []) {
+            const tokenId = row?.tokenId?.toString?.() ?? "";
+            if (!tokenId) {
+              continue;
+            }
+            listingsByTokenId.set(tokenId, {
+              listed: normalizeListedFlag(row?.listed),
+              seller: row?.seller ?? null,
+              price: row?.price?.toString?.() ?? null,
+              listedAt: row?.listedAt ?? null,
+              listingUpdatedAt: row?.listingUpdatedAt ?? null,
+            });
+          }
+        }
+      }
+
+      const merged = tokenRows.map((item) => {
+        const tokenId = item?.tokenId?.toString?.() ?? "";
+        const listing = listingsByTokenId.get(tokenId) ?? {
+          listed: 0,
+          seller: null,
+          price: null,
+          listedAt: null,
+          listingUpdatedAt: null,
+        };
+        return {
+          ...item,
+          ...item.collections,
+          listed: listing.listed,
+          seller: listing.seller,
+          price: listing.price,
+          listedAt: listing.listedAt,
+          listingUpdatedAt: listing.listingUpdatedAt,
+        } as MarketListingRecord;
+      });
+
+      const filtered = input?.listedOnly ? merged.filter((item) => item.listed === 1) : merged;
+
+      filtered.sort((left, right) => {
+        if (left.listed !== right.listed) {
+          return right.listed - left.listed;
+        }
+
+        const listingTimeDiff = parseTimestamp(right.listedAt) - parseTimestamp(left.listedAt);
+        if (listingTimeDiff !== 0) {
+          return listingTimeDiff;
+        }
+
+        return parseTimestamp(right.tokenUpdatedAt) - parseTimestamp(left.tokenUpdatedAt);
+      });
+
+      return filtered.slice(0, limit);
     }
 
     const limit = Math.min(Math.max(input?.limit ?? 100, 1), 500);

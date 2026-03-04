@@ -199,6 +199,51 @@ async function invokeAndWait(label, smartContract, rpcClient, contractHash, oper
   };
 }
 
+function extractEventStringValue(appLog, contractHash, eventName, eventArgIndex, label) {
+  const event = findNotification(appLog, contractHash, eventName);
+  if (!event?.state?.value?.[eventArgIndex]) {
+    throw new Error(`${label}: missing ${eventName} event value index ${eventArgIndex}`);
+  }
+
+  const decoded = decodeStackItem(event.state.value[eventArgIndex]);
+  if (!decoded || typeof decoded !== "string") {
+    throw new Error(`${label}: invalid ${eventName} decoded value: ${decoded}`);
+  }
+
+  return decoded;
+}
+
+function decodeTopStackItem(invokeResult, label) {
+  const stack = Array.isArray(invokeResult?.stack) ? invokeResult.stack : [];
+  if (stack.length === 0) {
+    throw new Error(`${label}: empty invoke stack`);
+  }
+  return decodeStackItem(stack[0]);
+}
+
+async function readTokenClass(contract, tokenId, label) {
+  const value = decodeTopStackItem(
+    await contract.testInvoke("getTokenClass", [byteArrayParamFromTextOrHex(tokenId)]),
+    `${label}:getTokenClass`,
+  );
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${label}: token class is not a number (${value})`);
+  }
+  return parsed;
+}
+
+async function assertTokenListed(contract, tokenId, label) {
+  const listed = decodeTopStackItem(
+    await contract.testInvoke("isTokenListed", [byteArrayParamFromTextOrHex(tokenId)]),
+    `${label}:isTokenListed`,
+  );
+  if (listed !== true) {
+    throw new Error(`${label}: token ${tokenId} is not listed`);
+  }
+  return true;
+}
+
 async function main() {
   const sellerWif = requireEnv("TESTNET_WIF");
   const rpcUrl = process.env.TESTNET_RPC_URL?.trim() || DEFAULT_RPC_URL;
@@ -218,8 +263,6 @@ async function main() {
   if (seller.address === buyer.address) {
     throw new Error("Seller and buyer addresses must be different");
   }
-
-  const recipient = new wallet.Account(wallet.generatePrivateKey());
 
   const rpcClient = new rpc.RPCClient(rpcUrl);
   const version = await rpcClient.getVersion();
@@ -247,6 +290,13 @@ async function main() {
     rpcUrl,
     networkMagic,
     factoryHash,
+    notes: {
+      tokenClassStandardValue: 0,
+      tokenClassMembershipValue: 1,
+      tokenClassCheckInProofValue: 2,
+      standardClassPublicMintExposed: false,
+      standardClassPublicMintReason: "Current C# contract only exposes mint() -> membership(1) and checkIn() -> proof(2)",
+    },
     seller: {
       address: seller.address,
     },
@@ -256,16 +306,44 @@ async function main() {
       generated: !process.env.TESTNET_BUYER_WIF,
       fundedGas: `${buyerFundGas}`,
     },
-    recipient: recipient.address,
     txids: {},
     shared: {
       collectionId: "",
-      tokenId: "",
+      contractHash: factoryHash,
+      tokens: {
+        minted: "",
+        dropClaimed: "",
+        checkInProof: "",
+      },
+      tokenClasses: {
+        minted: null,
+        dropClaimed: null,
+        checkInProof: null,
+      },
+      listed: {
+        minted: false,
+        dropClaimed: false,
+        checkInProof: false,
+      },
     },
     dedicated: {
       collectionId: "",
       contractHash: "",
-      tokenId: "",
+      tokens: {
+        minted: "",
+        dropClaimed: "",
+        checkInProof: "",
+      },
+      tokenClasses: {
+        minted: null,
+        dropClaimed: null,
+        checkInProof: null,
+      },
+      listed: {
+        minted: false,
+        dropClaimed: false,
+        checkInProof: false,
+      },
     },
     salePrice: salePrice.toString(),
   };
@@ -335,20 +413,19 @@ async function main() {
   );
   summary.txids.sharedCreateCollection = sharedCreate.txid;
 
-  const sharedCollectionEvent = findNotification(sharedCreate.appLog, factoryHash, "CollectionUpserted");
-  if (!sharedCollectionEvent?.state?.value?.[0]) {
-    throw new Error("Missing shared CollectionUpserted event");
-  }
-  const sharedCollectionId = decodeStackItem(sharedCollectionEvent.state.value[0]);
-  if (!sharedCollectionId || typeof sharedCollectionId !== "string") {
-    throw new Error(`Invalid shared collection id: ${sharedCollectionId}`);
-  }
+  const sharedCollectionId = extractEventStringValue(
+    sharedCreate.appLog,
+    factoryHash,
+    "CollectionUpserted",
+    0,
+    "shared:createCollection",
+  );
   summary.shared.collectionId = sharedCollectionId;
   log(`shared collectionId: ${sharedCollectionId}`);
 
-  log("mint shared token");
+  log("shared: mint membership token via mint()");
   const sharedMint = await invokeAndWait(
-    "sharedMint",
+    "sharedMintMembership",
     platformSeller,
     rpcClient,
     factoryHash,
@@ -363,59 +440,179 @@ async function main() {
         attributes: [
           { trait_type: "mode", value: "shared" },
           { trait_type: "seed", value: suffix },
+          { trait_type: "flow", value: "mint" },
         ],
       })),
     ],
   );
-  summary.txids.sharedMint = sharedMint.txid;
+  summary.txids.sharedMintMembership = sharedMint.txid;
+  const sharedMintedTokenId = extractEventStringValue(
+    sharedMint.appLog,
+    factoryHash,
+    "TokenUpserted",
+    0,
+    "shared:mint",
+  );
+  summary.shared.tokens.minted = sharedMintedTokenId;
+  log(`shared minted tokenId: ${sharedMintedTokenId}`);
 
-  const sharedTokenEvent = findNotification(sharedMint.appLog, factoryHash, "TokenUpserted");
-  if (!sharedTokenEvent?.state?.value?.[0]) {
-    throw new Error("Missing shared TokenUpserted event");
-  }
-  const sharedTokenId = decodeStackItem(sharedTokenEvent.state.value[0]);
-  if (!sharedTokenId || typeof sharedTokenId !== "string") {
-    throw new Error(`Invalid shared token id: ${sharedTokenId}`);
-  }
-  summary.shared.tokenId = sharedTokenId;
-  log(`shared tokenId: ${sharedTokenId}`);
+  log("shared: configure drop");
+  const sharedConfigureDrop = await invokeAndWait(
+    "sharedConfigureDrop",
+    platformSeller,
+    rpcClient,
+    factoryHash,
+    "configureDrop",
+    [
+      byteArrayParamFromTextOrHex(sharedCollectionId),
+      sc.ContractParam.boolean(true),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(5),
+      sc.ContractParam.boolean(false),
+    ],
+  );
+  summary.txids.sharedConfigureDrop = sharedConfigureDrop.txid;
 
-  log(`list shared token for sale: ${salePrice}`);
-  const sharedList = await invokeAndWait(
-    "sharedListTokenForSale",
+  log("shared: buyer claimDrop (membership)");
+  const sharedClaimDrop = await invokeAndWait(
+    "sharedClaimDrop",
+    platformBuyer,
+    rpcClient,
+    factoryHash,
+    "claimDrop",
+    [
+      byteArrayParamFromTextOrHex(sharedCollectionId),
+      sc.ContractParam.string(`${sharedBaseUri}drop-1.json`),
+      sc.ContractParam.string(
+        JSON.stringify({
+          name: `Live Shared Drop Token ${suffix}`,
+          image: "https://images.unsplash.com/photo-1522542550221-31fd19575a2d?w=1200",
+          attributes: [
+            { trait_type: "mode", value: "shared" },
+            { trait_type: "seed", value: suffix },
+            { trait_type: "flow", value: "drop" },
+          ],
+        }),
+      ),
+    ],
+  );
+  summary.txids.sharedClaimDrop = sharedClaimDrop.txid;
+  const sharedDropTokenId = extractEventStringValue(
+    sharedClaimDrop.appLog,
+    factoryHash,
+    "TokenUpserted",
+    0,
+    "shared:claimDrop",
+  );
+  summary.shared.tokens.dropClaimed = sharedDropTokenId;
+  log(`shared drop tokenId: ${sharedDropTokenId}`);
+
+  log("shared: configure check-in program");
+  const sharedConfigureCheckIn = await invokeAndWait(
+    "sharedConfigureCheckInProgram",
+    platformSeller,
+    rpcClient,
+    factoryHash,
+    "configureCheckInProgram",
+    [
+      byteArrayParamFromTextOrHex(sharedCollectionId),
+      sc.ContractParam.boolean(true),
+      sc.ContractParam.boolean(true),
+      sc.ContractParam.boolean(false),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.boolean(true),
+    ],
+  );
+  summary.txids.sharedConfigureCheckInProgram = sharedConfigureCheckIn.txid;
+
+  log("shared: buyer checkIn (proof)");
+  const sharedCheckIn = await invokeAndWait(
+    "sharedCheckIn",
+    platformBuyer,
+    rpcClient,
+    factoryHash,
+    "checkIn",
+    [
+      byteArrayParamFromTextOrHex(sharedCollectionId),
+      sc.ContractParam.string(`${sharedBaseUri}checkin-1.json`),
+      sc.ContractParam.string(
+        JSON.stringify({
+          name: `Live Shared Check-In Proof ${suffix}`,
+          image: "https://images.unsplash.com/photo-1516534775068-ba3e7458af70?w=1200",
+          attributes: [
+            { trait_type: "mode", value: "shared" },
+            { trait_type: "seed", value: suffix },
+            { trait_type: "flow", value: "check-in" },
+          ],
+        }),
+      ),
+    ],
+  );
+  summary.txids.sharedCheckIn = sharedCheckIn.txid;
+  const sharedProofTokenId = extractEventStringValue(
+    sharedCheckIn.appLog,
+    factoryHash,
+    "TokenUpserted",
+    0,
+    "shared:checkIn",
+  );
+  summary.shared.tokens.checkInProof = sharedProofTokenId;
+  log(`shared check-in proof tokenId: ${sharedProofTokenId}`);
+
+  log("shared: list minted token");
+  const sharedListMinted = await invokeAndWait(
+    "sharedListMinted",
     platformSeller,
     rpcClient,
     factoryHash,
     "listTokenForSale",
-    [byteArrayParamFromTextOrHex(sharedTokenId), sc.ContractParam.integer(salePrice)],
+    [byteArrayParamFromTextOrHex(sharedMintedTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.sharedListTokenForSale = sharedList.txid;
+  summary.txids.sharedListMinted = sharedListMinted.txid;
 
-  log("buyer buys shared token");
-  const sharedBuy = await invokeAndWait(
-    "sharedBuyToken",
+  log("shared: list drop token");
+  const sharedListDrop = await invokeAndWait(
+    "sharedListDropClaimed",
     platformBuyer,
     rpcClient,
     factoryHash,
-    "buyToken",
-    [byteArrayParamFromTextOrHex(sharedTokenId)],
+    "listTokenForSale",
+    [byteArrayParamFromTextOrHex(sharedDropTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.sharedBuyToken = sharedBuy.txid;
+  summary.txids.sharedListDropClaimed = sharedListDrop.txid;
 
-  log("buyer transfers shared token to recipient");
-  const sharedTransfer = await invokeAndWait(
-    "sharedTransfer",
+  log("shared: list check-in proof token");
+  const sharedListProof = await invokeAndWait(
+    "sharedListCheckInProof",
     platformBuyer,
     rpcClient,
     factoryHash,
-    "transfer",
-    [
-      sc.ContractParam.hash160(recipient.address),
-      byteArrayParamFromTextOrHex(sharedTokenId),
-      sc.ContractParam.any(null),
-    ],
+    "listTokenForSale",
+    [byteArrayParamFromTextOrHex(sharedProofTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.sharedTransfer = sharedTransfer.txid;
+  summary.txids.sharedListCheckInProof = sharedListProof.txid;
+
+  summary.shared.listed.minted = await assertTokenListed(platformSeller, sharedMintedTokenId, "shared:minted");
+  summary.shared.listed.dropClaimed = await assertTokenListed(platformSeller, sharedDropTokenId, "shared:dropClaimed");
+  summary.shared.listed.checkInProof = await assertTokenListed(platformSeller, sharedProofTokenId, "shared:checkInProof");
+
+  summary.shared.tokenClasses.minted = await readTokenClass(platformSeller, sharedMintedTokenId, "shared:minted");
+  summary.shared.tokenClasses.dropClaimed = await readTokenClass(platformSeller, sharedDropTokenId, "shared:dropClaimed");
+  summary.shared.tokenClasses.checkInProof = await readTokenClass(platformSeller, sharedProofTokenId, "shared:checkInProof");
+
+  if (summary.shared.tokenClasses.minted !== 1) {
+    throw new Error(`shared minted token class expected 1, got ${summary.shared.tokenClasses.minted}`);
+  }
+  if (summary.shared.tokenClasses.dropClaimed !== 1) {
+    throw new Error(`shared drop token class expected 1, got ${summary.shared.tokenClasses.dropClaimed}`);
+  }
+  if (summary.shared.tokenClasses.checkInProof !== 2) {
+    throw new Error(`shared check-in proof token class expected 2, got ${summary.shared.tokenClasses.checkInProof}`);
+  }
 
   const dedicatedName = `Live Dedicated ${suffix}`;
   const dedicatedSymbol = `LD${suffix.slice(-3)}`;
@@ -441,26 +638,23 @@ async function main() {
   );
   summary.txids.dedicatedCreateCollectionAndDeploy = dedicatedCreateDeploy.txid;
 
-  const dedicatedCollectionEvent = findNotification(dedicatedCreateDeploy.appLog, factoryHash, "CollectionUpserted");
-  if (!dedicatedCollectionEvent?.state?.value?.[0]) {
-    throw new Error("Missing dedicated CollectionUpserted event");
-  }
-  const dedicatedCollectionId = decodeStackItem(dedicatedCollectionEvent.state.value[0]);
-  if (!dedicatedCollectionId || typeof dedicatedCollectionId !== "string") {
-    throw new Error(`Invalid dedicated collection id: ${dedicatedCollectionId}`);
-  }
+  const dedicatedCollectionId = extractEventStringValue(
+    dedicatedCreateDeploy.appLog,
+    factoryHash,
+    "CollectionUpserted",
+    0,
+    "dedicated:createCollectionAndDeploy",
+  );
   summary.dedicated.collectionId = dedicatedCollectionId;
   log(`dedicated collectionId: ${dedicatedCollectionId}`);
 
-  const dedicatedDeployedEvent = findNotification(
+  const dedicatedRawHash = extractEventStringValue(
     dedicatedCreateDeploy.appLog,
     factoryHash,
     "CollectionContractDeployed",
+    2,
+    "dedicated:createCollectionAndDeploy",
   );
-  if (!dedicatedDeployedEvent?.state?.value?.[2]) {
-    throw new Error("Missing CollectionContractDeployed event for dedicated collection");
-  }
-  const dedicatedRawHash = decodeStackItem(dedicatedDeployedEvent.state.value[2]);
   const dedicatedContractHash = await resolveContractHashFromStackValue(rpcClient, dedicatedRawHash);
   summary.dedicated.contractHash = dedicatedContractHash;
   log(`dedicated contract: ${dedicatedContractHash}`);
@@ -472,9 +666,9 @@ async function main() {
   const dedicatedSeller = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), sellerConfig);
   const dedicatedBuyer = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), buyerConfig);
 
-  log("mint dedicated token");
+  log("dedicated: mint membership token via mint()");
   const dedicatedMint = await invokeAndWait(
-    "dedicatedMint",
+    "dedicatedMintMembership",
     dedicatedSeller,
     rpcClient,
     dedicatedContractHash,
@@ -489,59 +683,205 @@ async function main() {
         attributes: [
           { trait_type: "mode", value: "dedicated" },
           { trait_type: "seed", value: suffix },
+          { trait_type: "flow", value: "mint" },
         ],
       })),
     ],
   );
-  summary.txids.dedicatedMint = dedicatedMint.txid;
+  summary.txids.dedicatedMintMembership = dedicatedMint.txid;
+  const dedicatedMintedTokenId = extractEventStringValue(
+    dedicatedMint.appLog,
+    dedicatedContractHash,
+    "TokenUpserted",
+    0,
+    "dedicated:mint",
+  );
+  summary.dedicated.tokens.minted = dedicatedMintedTokenId;
+  log(`dedicated minted tokenId: ${dedicatedMintedTokenId}`);
 
-  const dedicatedTokenEvent = findNotification(dedicatedMint.appLog, dedicatedContractHash, "TokenUpserted");
-  if (!dedicatedTokenEvent?.state?.value?.[0]) {
-    throw new Error("Missing dedicated TokenUpserted event");
-  }
-  const dedicatedTokenId = decodeStackItem(dedicatedTokenEvent.state.value[0]);
-  if (!dedicatedTokenId || typeof dedicatedTokenId !== "string") {
-    throw new Error(`Invalid dedicated token id: ${dedicatedTokenId}`);
-  }
-  summary.dedicated.tokenId = dedicatedTokenId;
-  log(`dedicated tokenId: ${dedicatedTokenId}`);
+  log("dedicated: configure drop");
+  const dedicatedConfigureDrop = await invokeAndWait(
+    "dedicatedConfigureDrop",
+    dedicatedSeller,
+    rpcClient,
+    dedicatedContractHash,
+    "configureDrop",
+    [
+      byteArrayParamFromTextOrHex(dedicatedCollectionId),
+      sc.ContractParam.boolean(true),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(5),
+      sc.ContractParam.boolean(false),
+    ],
+  );
+  summary.txids.dedicatedConfigureDrop = dedicatedConfigureDrop.txid;
 
-  log("list dedicated token for sale");
-  const dedicatedList = await invokeAndWait(
-    "dedicatedListTokenForSale",
+  log("dedicated: buyer claimDrop (membership)");
+  const dedicatedClaimDrop = await invokeAndWait(
+    "dedicatedClaimDrop",
+    dedicatedBuyer,
+    rpcClient,
+    dedicatedContractHash,
+    "claimDrop",
+    [
+      byteArrayParamFromTextOrHex(dedicatedCollectionId),
+      sc.ContractParam.string(`${dedicatedBaseUri}drop-1.json`),
+      sc.ContractParam.string(
+        JSON.stringify({
+          name: `Live Dedicated Drop Token ${suffix}`,
+          image: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200",
+          attributes: [
+            { trait_type: "mode", value: "dedicated" },
+            { trait_type: "seed", value: suffix },
+            { trait_type: "flow", value: "drop" },
+          ],
+        }),
+      ),
+    ],
+  );
+  summary.txids.dedicatedClaimDrop = dedicatedClaimDrop.txid;
+  const dedicatedDropTokenId = extractEventStringValue(
+    dedicatedClaimDrop.appLog,
+    dedicatedContractHash,
+    "TokenUpserted",
+    0,
+    "dedicated:claimDrop",
+  );
+  summary.dedicated.tokens.dropClaimed = dedicatedDropTokenId;
+  log(`dedicated drop tokenId: ${dedicatedDropTokenId}`);
+
+  log("dedicated: configure check-in program");
+  const dedicatedConfigureCheckIn = await invokeAndWait(
+    "dedicatedConfigureCheckInProgram",
+    dedicatedSeller,
+    rpcClient,
+    dedicatedContractHash,
+    "configureCheckInProgram",
+    [
+      byteArrayParamFromTextOrHex(dedicatedCollectionId),
+      sc.ContractParam.boolean(true),
+      sc.ContractParam.boolean(true),
+      sc.ContractParam.boolean(false),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(0),
+      sc.ContractParam.boolean(true),
+    ],
+  );
+  summary.txids.dedicatedConfigureCheckInProgram = dedicatedConfigureCheckIn.txid;
+
+  log("dedicated: buyer checkIn (proof)");
+  const dedicatedCheckIn = await invokeAndWait(
+    "dedicatedCheckIn",
+    dedicatedBuyer,
+    rpcClient,
+    dedicatedContractHash,
+    "checkIn",
+    [
+      byteArrayParamFromTextOrHex(dedicatedCollectionId),
+      sc.ContractParam.string(`${dedicatedBaseUri}checkin-1.json`),
+      sc.ContractParam.string(
+        JSON.stringify({
+          name: `Live Dedicated Check-In Proof ${suffix}`,
+          image: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=1200",
+          attributes: [
+            { trait_type: "mode", value: "dedicated" },
+            { trait_type: "seed", value: suffix },
+            { trait_type: "flow", value: "check-in" },
+          ],
+        }),
+      ),
+    ],
+  );
+  summary.txids.dedicatedCheckIn = dedicatedCheckIn.txid;
+  const dedicatedProofTokenId = extractEventStringValue(
+    dedicatedCheckIn.appLog,
+    dedicatedContractHash,
+    "TokenUpserted",
+    0,
+    "dedicated:checkIn",
+  );
+  summary.dedicated.tokens.checkInProof = dedicatedProofTokenId;
+  log(`dedicated check-in proof tokenId: ${dedicatedProofTokenId}`);
+
+  log("dedicated: list minted token");
+  const dedicatedListMinted = await invokeAndWait(
+    "dedicatedListMinted",
     dedicatedSeller,
     rpcClient,
     dedicatedContractHash,
     "listTokenForSale",
-    [byteArrayParamFromTextOrHex(dedicatedTokenId), sc.ContractParam.integer(salePrice)],
+    [byteArrayParamFromTextOrHex(dedicatedMintedTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.dedicatedListTokenForSale = dedicatedList.txid;
+  summary.txids.dedicatedListMinted = dedicatedListMinted.txid;
 
-  log("buyer buys dedicated token");
-  const dedicatedBuy = await invokeAndWait(
-    "dedicatedBuyToken",
+  log("dedicated: list drop token");
+  const dedicatedListDrop = await invokeAndWait(
+    "dedicatedListDropClaimed",
     dedicatedBuyer,
     rpcClient,
     dedicatedContractHash,
-    "buyToken",
-    [byteArrayParamFromTextOrHex(dedicatedTokenId)],
+    "listTokenForSale",
+    [byteArrayParamFromTextOrHex(dedicatedDropTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.dedicatedBuyToken = dedicatedBuy.txid;
+  summary.txids.dedicatedListDropClaimed = dedicatedListDrop.txid;
 
-  log("buyer transfers dedicated token to recipient");
-  const dedicatedTransfer = await invokeAndWait(
-    "dedicatedTransfer",
+  log("dedicated: list check-in proof token");
+  const dedicatedListProof = await invokeAndWait(
+    "dedicatedListCheckInProof",
     dedicatedBuyer,
     rpcClient,
     dedicatedContractHash,
-    "transfer",
-    [
-      sc.ContractParam.hash160(recipient.address),
-      byteArrayParamFromTextOrHex(dedicatedTokenId),
-      sc.ContractParam.any(null),
-    ],
+    "listTokenForSale",
+    [byteArrayParamFromTextOrHex(dedicatedProofTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.dedicatedTransfer = dedicatedTransfer.txid;
+  summary.txids.dedicatedListCheckInProof = dedicatedListProof.txid;
+
+  summary.dedicated.listed.minted = await assertTokenListed(
+    dedicatedSeller,
+    dedicatedMintedTokenId,
+    "dedicated:minted",
+  );
+  summary.dedicated.listed.dropClaimed = await assertTokenListed(
+    dedicatedSeller,
+    dedicatedDropTokenId,
+    "dedicated:dropClaimed",
+  );
+  summary.dedicated.listed.checkInProof = await assertTokenListed(
+    dedicatedSeller,
+    dedicatedProofTokenId,
+    "dedicated:checkInProof",
+  );
+
+  summary.dedicated.tokenClasses.minted = await readTokenClass(
+    dedicatedSeller,
+    dedicatedMintedTokenId,
+    "dedicated:minted",
+  );
+  summary.dedicated.tokenClasses.dropClaimed = await readTokenClass(
+    dedicatedSeller,
+    dedicatedDropTokenId,
+    "dedicated:dropClaimed",
+  );
+  summary.dedicated.tokenClasses.checkInProof = await readTokenClass(
+    dedicatedSeller,
+    dedicatedProofTokenId,
+    "dedicated:checkInProof",
+  );
+
+  if (summary.dedicated.tokenClasses.minted !== 1) {
+    throw new Error(`dedicated minted token class expected 1, got ${summary.dedicated.tokenClasses.minted}`);
+  }
+  if (summary.dedicated.tokenClasses.dropClaimed !== 1) {
+    throw new Error(`dedicated drop token class expected 1, got ${summary.dedicated.tokenClasses.dropClaimed}`);
+  }
+  if (summary.dedicated.tokenClasses.checkInProof !== 2) {
+    throw new Error(
+      `dedicated check-in proof token class expected 2, got ${summary.dedicated.tokenClasses.checkInProof}`,
+    );
+  }
 
   log("completed on-chain live seeding");
   console.log(JSON.stringify(summary, null, 2));
