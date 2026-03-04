@@ -48,8 +48,13 @@ function getNetworkQueryParams(
     }
   }
 
-  // Always use a valid network, fallback to testnet for initial load/explore
-  const network = runtime.network === "unknown" ? "testnet" : runtime.network;
+  // Always use a valid network. If wallet is on mainnet/private but no contract is configured
+  // for that profile, fallback to testnet to avoid 404 API routes on single-network deployments.
+  const preferredNetwork = runtime.network === "unknown" ? "testnet" : runtime.network;
+  const network =
+    preferredNetwork !== "testnet" && (!runtime.contractHash || runtime.contractHash.trim().length === 0)
+      ? "testnet"
+      : preferredNetwork;
   next.network = network;
 
   return next;
