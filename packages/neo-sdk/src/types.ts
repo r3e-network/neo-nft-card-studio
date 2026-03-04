@@ -46,6 +46,7 @@ export interface MintRequest {
   to: string;
   tokenUri: string;
   propertiesJson: string;
+  tokenClass?: number | string;
   operatorRef?: string;
   toRef?: string;
   tokenUriRef?: string;

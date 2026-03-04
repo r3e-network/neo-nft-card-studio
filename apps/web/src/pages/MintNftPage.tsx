@@ -20,6 +20,7 @@ export function MintNftPage() {
   const [to, setTo] = useState("");
   const [tokenName, setTokenName] = useState("");
   const [description, setDescription] = useState("");
+  const [tokenClass, setTokenClass] = useState<"standard" | "membership" | "checkin_proof">("membership");
   const [file, setFile] = useState<File | null>(null);
   const [attributes, setAttributes] = useState<{ trait_type: string; value: string }[]>([]);
   
@@ -89,6 +90,7 @@ export function MintNftPage() {
       // 3. Determine target contract (Platform vs Dedicated)
       let client = getPlatformClient();
       let isDedicated = false;
+      const tokenClassValue = tokenClass === "standard" ? 0 : tokenClass === "membership" ? 1 : 2;
       
       if (contractDialect === "csharp" && collection.contractHash && collection.contractHash !== "0x0000000000000000000000000000000000000000") {
         client = getNftClientForHash(collection.contractHash);
@@ -102,6 +104,7 @@ export function MintNftPage() {
             to,
             tokenUri: neofsUri,
             propertiesJson,
+            tokenClass: tokenClassValue,
             operatorRef: "1",
             toRef: to,
             tokenUriRef: "2001",
@@ -122,7 +125,8 @@ export function MintNftPage() {
             collectionId: selectedCollectionId,
             to,
             tokenUri: neofsUri,
-            propertiesJson
+            propertiesJson,
+            ...(contractDialect === "csharp" ? { tokenClass: tokenClassValue } : {})
           }
         );
 
@@ -313,6 +317,20 @@ export function MintNftPage() {
                   </div>
                 )}
               </div>
+
+              <label className="full">
+                NFT Type
+                <select
+                  value={tokenClass}
+                  onChange={(event) => setTokenClass(event.target.value as "standard" | "membership" | "checkin_proof")}
+                  style={{ height: "55px", background: "rgba(255,255,255,0.02)", borderRadius: "12px" }}
+                >
+                  <option value="standard">Standard (tokenClass 0)</option>
+                  <option value="membership">Membership (tokenClass 1)</option>
+                  <option value="checkin_proof">Check-In Proof (tokenClass 2)</option>
+                </select>
+                <p className="hint">For check-in reward flow, you can also mint proof NFTs via the check-in program.</p>
+              </label>
 
               <label className="full">
                 Recipient Wallet Address

@@ -109,6 +109,52 @@ public partial class MultiTenantNftPlatform
         return MintCore(collectionId, to, tokenUri, propertiesJson, TokenClassMembership);
     }
 
+    public static ByteString mintStandard(ByteString collectionId, UInt160 to, string tokenUri, string propertiesJson)
+    {
+        AssertDirectInvocation();
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        if (!to.IsValid)
+        {
+            throw new Exception("Invalid recipient");
+        }
+
+        CollectionState collection = GetCollectionState(collectionId);
+        UInt160 sender = GetSenderChecked();
+        if (!CanManageCollection(collectionId, collection, sender))
+        {
+            throw new Exception("No authorization to mint");
+        }
+
+        return MintCore(collectionId, to, tokenUri, propertiesJson, TokenClassStandard);
+    }
+
+    public static ByteString mintWithClass(
+        ByteString collectionId,
+        UInt160 to,
+        string tokenUri,
+        string propertiesJson,
+        BigInteger tokenClass
+    )
+    {
+        AssertDirectInvocation();
+        AssertDedicatedContractMode();
+        collectionId = EnforceCollectionScope(collectionId);
+        if (!to.IsValid)
+        {
+            throw new Exception("Invalid recipient");
+        }
+
+        CollectionState collection = GetCollectionState(collectionId);
+        UInt160 sender = GetSenderChecked();
+        if (!CanManageCollection(collectionId, collection, sender))
+        {
+            throw new Exception("No authorization to mint");
+        }
+
+        return MintCore(collectionId, to, tokenUri, propertiesJson, tokenClass);
+    }
+
     private static ByteString MintCore(
         ByteString collectionId,
         UInt160 to,

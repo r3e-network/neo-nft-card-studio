@@ -294,8 +294,8 @@ async function main() {
       tokenClassStandardValue: 0,
       tokenClassMembershipValue: 1,
       tokenClassCheckInProofValue: 2,
-      standardClassPublicMintExposed: false,
-      standardClassPublicMintReason: "Current C# contract only exposes mint() -> membership(1) and checkIn() -> proof(2)",
+      standardClassPublicMintExposed: true,
+      standardClassPublicMintReason: "mintStandard() now supports class 0 minting in C# contracts",
     },
     seller: {
       address: seller.address,
@@ -311,17 +311,20 @@ async function main() {
       collectionId: "",
       contractHash: factoryHash,
       tokens: {
-        minted: "",
+        standardMinted: "",
+        membershipMinted: "",
         dropClaimed: "",
         checkInProof: "",
       },
       tokenClasses: {
-        minted: null,
+        standardMinted: null,
+        membershipMinted: null,
         dropClaimed: null,
         checkInProof: null,
       },
       listed: {
-        minted: false,
+        standardMinted: false,
+        membershipMinted: false,
         dropClaimed: false,
         checkInProof: false,
       },
@@ -330,17 +333,20 @@ async function main() {
       collectionId: "",
       contractHash: "",
       tokens: {
-        minted: "",
+        standardMinted: "",
+        membershipMinted: "",
         dropClaimed: "",
         checkInProof: "",
       },
       tokenClasses: {
-        minted: null,
+        standardMinted: null,
+        membershipMinted: null,
         dropClaimed: null,
         checkInProof: null,
       },
       listed: {
-        minted: false,
+        standardMinted: false,
+        membershipMinted: false,
         dropClaimed: false,
         checkInProof: false,
       },
@@ -423,8 +429,42 @@ async function main() {
   summary.shared.collectionId = sharedCollectionId;
   log(`shared collectionId: ${sharedCollectionId}`);
 
+  log("shared: mint standard token via mintStandard()");
+  const sharedMintStandard = await invokeAndWait(
+    "sharedMintStandard",
+    platformSeller,
+    rpcClient,
+    factoryHash,
+    "mintStandard",
+    [
+      byteArrayParamFromTextOrHex(sharedCollectionId),
+      sc.ContractParam.hash160(seller.address),
+      sc.ContractParam.string(`${sharedBaseUri}standard-1.json`),
+      sc.ContractParam.string(JSON.stringify({
+        name: `Live Shared Standard Token ${suffix}`,
+        image: "https://images.unsplash.com/photo-1463107971871-fbac9ddb920f?w=1200",
+        attributes: [
+          { trait_type: "mode", value: "shared" },
+          { trait_type: "seed", value: suffix },
+          { trait_type: "flow", value: "mint-standard" },
+          { trait_type: "tokenClass", value: "standard" },
+        ],
+      })),
+    ],
+  );
+  summary.txids.sharedMintStandard = sharedMintStandard.txid;
+  const sharedStandardTokenId = extractEventStringValue(
+    sharedMintStandard.appLog,
+    factoryHash,
+    "TokenUpserted",
+    0,
+    "shared:mintStandard",
+  );
+  summary.shared.tokens.standardMinted = sharedStandardTokenId;
+  log(`shared standard tokenId: ${sharedStandardTokenId}`);
+
   log("shared: mint membership token via mint()");
-  const sharedMint = await invokeAndWait(
+  const sharedMintMembership = await invokeAndWait(
     "sharedMintMembership",
     platformSeller,
     rpcClient,
@@ -433,28 +473,29 @@ async function main() {
     [
       byteArrayParamFromTextOrHex(sharedCollectionId),
       sc.ContractParam.hash160(seller.address),
-      sc.ContractParam.string(`${sharedBaseUri}seed-1.json`),
+      sc.ContractParam.string(`${sharedBaseUri}membership-1.json`),
       sc.ContractParam.string(JSON.stringify({
-        name: `Live Shared Token ${suffix}`,
+        name: `Live Shared Membership Token ${suffix}`,
         image: "https://images.unsplash.com/photo-1634973357973-f2ed2657db3c?w=1200",
         attributes: [
           { trait_type: "mode", value: "shared" },
           { trait_type: "seed", value: suffix },
-          { trait_type: "flow", value: "mint" },
+          { trait_type: "flow", value: "mint-membership" },
+          { trait_type: "tokenClass", value: "membership" },
         ],
       })),
     ],
   );
-  summary.txids.sharedMintMembership = sharedMint.txid;
-  const sharedMintedTokenId = extractEventStringValue(
-    sharedMint.appLog,
+  summary.txids.sharedMintMembership = sharedMintMembership.txid;
+  const sharedMembershipTokenId = extractEventStringValue(
+    sharedMintMembership.appLog,
     factoryHash,
     "TokenUpserted",
     0,
-    "shared:mint",
+    "shared:mintMembership",
   );
-  summary.shared.tokens.minted = sharedMintedTokenId;
-  log(`shared minted tokenId: ${sharedMintedTokenId}`);
+  summary.shared.tokens.membershipMinted = sharedMembershipTokenId;
+  log(`shared membership tokenId: ${sharedMembershipTokenId}`);
 
   log("shared: configure drop");
   const sharedConfigureDrop = await invokeAndWait(
@@ -563,16 +604,27 @@ async function main() {
   summary.shared.tokens.checkInProof = sharedProofTokenId;
   log(`shared check-in proof tokenId: ${sharedProofTokenId}`);
 
-  log("shared: list minted token");
-  const sharedListMinted = await invokeAndWait(
-    "sharedListMinted",
+  log("shared: list standard token");
+  const sharedListStandard = await invokeAndWait(
+    "sharedListStandardMinted",
     platformSeller,
     rpcClient,
     factoryHash,
     "listTokenForSale",
-    [byteArrayParamFromTextOrHex(sharedMintedTokenId), sc.ContractParam.integer(salePrice)],
+    [byteArrayParamFromTextOrHex(sharedStandardTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.sharedListMinted = sharedListMinted.txid;
+  summary.txids.sharedListStandardMinted = sharedListStandard.txid;
+
+  log("shared: list membership token");
+  const sharedListMembership = await invokeAndWait(
+    "sharedListMembershipMinted",
+    platformSeller,
+    rpcClient,
+    factoryHash,
+    "listTokenForSale",
+    [byteArrayParamFromTextOrHex(sharedMembershipTokenId), sc.ContractParam.integer(salePrice)],
+  );
+  summary.txids.sharedListMembershipMinted = sharedListMembership.txid;
 
   log("shared: list drop token");
   const sharedListDrop = await invokeAndWait(
@@ -596,16 +648,41 @@ async function main() {
   );
   summary.txids.sharedListCheckInProof = sharedListProof.txid;
 
-  summary.shared.listed.minted = await assertTokenListed(platformSeller, sharedMintedTokenId, "shared:minted");
+  summary.shared.listed.standardMinted = await assertTokenListed(
+    platformSeller,
+    sharedStandardTokenId,
+    "shared:standardMinted",
+  );
+  summary.shared.listed.membershipMinted = await assertTokenListed(
+    platformSeller,
+    sharedMembershipTokenId,
+    "shared:membershipMinted",
+  );
   summary.shared.listed.dropClaimed = await assertTokenListed(platformSeller, sharedDropTokenId, "shared:dropClaimed");
   summary.shared.listed.checkInProof = await assertTokenListed(platformSeller, sharedProofTokenId, "shared:checkInProof");
 
-  summary.shared.tokenClasses.minted = await readTokenClass(platformSeller, sharedMintedTokenId, "shared:minted");
+  summary.shared.tokenClasses.standardMinted = await readTokenClass(
+    platformSeller,
+    sharedStandardTokenId,
+    "shared:standardMinted",
+  );
+  summary.shared.tokenClasses.membershipMinted = await readTokenClass(
+    platformSeller,
+    sharedMembershipTokenId,
+    "shared:membershipMinted",
+  );
   summary.shared.tokenClasses.dropClaimed = await readTokenClass(platformSeller, sharedDropTokenId, "shared:dropClaimed");
   summary.shared.tokenClasses.checkInProof = await readTokenClass(platformSeller, sharedProofTokenId, "shared:checkInProof");
 
-  if (summary.shared.tokenClasses.minted !== 1) {
-    throw new Error(`shared minted token class expected 1, got ${summary.shared.tokenClasses.minted}`);
+  if (summary.shared.tokenClasses.standardMinted !== 0) {
+    throw new Error(
+      `shared standard token class expected 0, got ${summary.shared.tokenClasses.standardMinted}`,
+    );
+  }
+  if (summary.shared.tokenClasses.membershipMinted !== 1) {
+    throw new Error(
+      `shared membership token class expected 1, got ${summary.shared.tokenClasses.membershipMinted}`,
+    );
   }
   if (summary.shared.tokenClasses.dropClaimed !== 1) {
     throw new Error(`shared drop token class expected 1, got ${summary.shared.tokenClasses.dropClaimed}`);
@@ -666,8 +743,42 @@ async function main() {
   const dedicatedSeller = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), sellerConfig);
   const dedicatedBuyer = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), buyerConfig);
 
+  log("dedicated: mint standard token via mintStandard()");
+  const dedicatedMintStandard = await invokeAndWait(
+    "dedicatedMintStandard",
+    dedicatedSeller,
+    rpcClient,
+    dedicatedContractHash,
+    "mintStandard",
+    [
+      byteArrayParamFromTextOrHex(dedicatedCollectionId),
+      sc.ContractParam.hash160(seller.address),
+      sc.ContractParam.string(`${dedicatedBaseUri}standard-1.json`),
+      sc.ContractParam.string(JSON.stringify({
+        name: `Live Dedicated Standard Token ${suffix}`,
+        image: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=1200",
+        attributes: [
+          { trait_type: "mode", value: "dedicated" },
+          { trait_type: "seed", value: suffix },
+          { trait_type: "flow", value: "mint-standard" },
+          { trait_type: "tokenClass", value: "standard" },
+        ],
+      })),
+    ],
+  );
+  summary.txids.dedicatedMintStandard = dedicatedMintStandard.txid;
+  const dedicatedStandardTokenId = extractEventStringValue(
+    dedicatedMintStandard.appLog,
+    dedicatedContractHash,
+    "TokenUpserted",
+    0,
+    "dedicated:mintStandard",
+  );
+  summary.dedicated.tokens.standardMinted = dedicatedStandardTokenId;
+  log(`dedicated standard tokenId: ${dedicatedStandardTokenId}`);
+
   log("dedicated: mint membership token via mint()");
-  const dedicatedMint = await invokeAndWait(
+  const dedicatedMintMembership = await invokeAndWait(
     "dedicatedMintMembership",
     dedicatedSeller,
     rpcClient,
@@ -676,28 +787,29 @@ async function main() {
     [
       byteArrayParamFromTextOrHex(dedicatedCollectionId),
       sc.ContractParam.hash160(seller.address),
-      sc.ContractParam.string(`${dedicatedBaseUri}seed-1.json`),
+      sc.ContractParam.string(`${dedicatedBaseUri}membership-1.json`),
       sc.ContractParam.string(JSON.stringify({
-        name: `Live Dedicated Token ${suffix}`,
+        name: `Live Dedicated Membership Token ${suffix}`,
         image: "https://images.unsplash.com/photo-1639322537228-f710d846310a?w=1200",
         attributes: [
           { trait_type: "mode", value: "dedicated" },
           { trait_type: "seed", value: suffix },
-          { trait_type: "flow", value: "mint" },
+          { trait_type: "flow", value: "mint-membership" },
+          { trait_type: "tokenClass", value: "membership" },
         ],
       })),
     ],
   );
-  summary.txids.dedicatedMintMembership = dedicatedMint.txid;
-  const dedicatedMintedTokenId = extractEventStringValue(
-    dedicatedMint.appLog,
+  summary.txids.dedicatedMintMembership = dedicatedMintMembership.txid;
+  const dedicatedMembershipTokenId = extractEventStringValue(
+    dedicatedMintMembership.appLog,
     dedicatedContractHash,
     "TokenUpserted",
     0,
-    "dedicated:mint",
+    "dedicated:mintMembership",
   );
-  summary.dedicated.tokens.minted = dedicatedMintedTokenId;
-  log(`dedicated minted tokenId: ${dedicatedMintedTokenId}`);
+  summary.dedicated.tokens.membershipMinted = dedicatedMembershipTokenId;
+  log(`dedicated membership tokenId: ${dedicatedMembershipTokenId}`);
 
   log("dedicated: configure drop");
   const dedicatedConfigureDrop = await invokeAndWait(
@@ -806,16 +918,27 @@ async function main() {
   summary.dedicated.tokens.checkInProof = dedicatedProofTokenId;
   log(`dedicated check-in proof tokenId: ${dedicatedProofTokenId}`);
 
-  log("dedicated: list minted token");
-  const dedicatedListMinted = await invokeAndWait(
-    "dedicatedListMinted",
+  log("dedicated: list standard token");
+  const dedicatedListStandard = await invokeAndWait(
+    "dedicatedListStandardMinted",
     dedicatedSeller,
     rpcClient,
     dedicatedContractHash,
     "listTokenForSale",
-    [byteArrayParamFromTextOrHex(dedicatedMintedTokenId), sc.ContractParam.integer(salePrice)],
+    [byteArrayParamFromTextOrHex(dedicatedStandardTokenId), sc.ContractParam.integer(salePrice)],
   );
-  summary.txids.dedicatedListMinted = dedicatedListMinted.txid;
+  summary.txids.dedicatedListStandardMinted = dedicatedListStandard.txid;
+
+  log("dedicated: list membership token");
+  const dedicatedListMembership = await invokeAndWait(
+    "dedicatedListMembershipMinted",
+    dedicatedSeller,
+    rpcClient,
+    dedicatedContractHash,
+    "listTokenForSale",
+    [byteArrayParamFromTextOrHex(dedicatedMembershipTokenId), sc.ContractParam.integer(salePrice)],
+  );
+  summary.txids.dedicatedListMembershipMinted = dedicatedListMembership.txid;
 
   log("dedicated: list drop token");
   const dedicatedListDrop = await invokeAndWait(
@@ -839,10 +962,15 @@ async function main() {
   );
   summary.txids.dedicatedListCheckInProof = dedicatedListProof.txid;
 
-  summary.dedicated.listed.minted = await assertTokenListed(
+  summary.dedicated.listed.standardMinted = await assertTokenListed(
     dedicatedSeller,
-    dedicatedMintedTokenId,
-    "dedicated:minted",
+    dedicatedStandardTokenId,
+    "dedicated:standardMinted",
+  );
+  summary.dedicated.listed.membershipMinted = await assertTokenListed(
+    dedicatedSeller,
+    dedicatedMembershipTokenId,
+    "dedicated:membershipMinted",
   );
   summary.dedicated.listed.dropClaimed = await assertTokenListed(
     dedicatedSeller,
@@ -855,10 +983,15 @@ async function main() {
     "dedicated:checkInProof",
   );
 
-  summary.dedicated.tokenClasses.minted = await readTokenClass(
+  summary.dedicated.tokenClasses.standardMinted = await readTokenClass(
     dedicatedSeller,
-    dedicatedMintedTokenId,
-    "dedicated:minted",
+    dedicatedStandardTokenId,
+    "dedicated:standardMinted",
+  );
+  summary.dedicated.tokenClasses.membershipMinted = await readTokenClass(
+    dedicatedSeller,
+    dedicatedMembershipTokenId,
+    "dedicated:membershipMinted",
   );
   summary.dedicated.tokenClasses.dropClaimed = await readTokenClass(
     dedicatedSeller,
@@ -871,8 +1004,15 @@ async function main() {
     "dedicated:checkInProof",
   );
 
-  if (summary.dedicated.tokenClasses.minted !== 1) {
-    throw new Error(`dedicated minted token class expected 1, got ${summary.dedicated.tokenClasses.minted}`);
+  if (summary.dedicated.tokenClasses.standardMinted !== 0) {
+    throw new Error(
+      `dedicated standard token class expected 0, got ${summary.dedicated.tokenClasses.standardMinted}`,
+    );
+  }
+  if (summary.dedicated.tokenClasses.membershipMinted !== 1) {
+    throw new Error(
+      `dedicated membership token class expected 1, got ${summary.dedicated.tokenClasses.membershipMinted}`,
+    );
   }
   if (summary.dedicated.tokenClasses.dropClaimed !== 1) {
     throw new Error(`dedicated drop token class expected 1, got ${summary.dedicated.tokenClasses.dropClaimed}`);

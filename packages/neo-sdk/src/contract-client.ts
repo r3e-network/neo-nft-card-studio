@@ -566,7 +566,17 @@ export class NeoNftPlatformClient {
   }
 
   buildMintInvoke(payload: MintRequest): WalletInvokeRequest {
+    const hasExplicitTokenClass = payload.tokenClass !== undefined && payload.tokenClass !== null;
+    const tokenClassValue = hasExplicitTokenClass ? Number.parseInt(payload.tokenClass!.toString(), 10) : null;
+    if (hasExplicitTokenClass && !Number.isFinite(tokenClassValue)) {
+      throw new Error("tokenClass must be an integer");
+    }
+
     if (this.dialect === "rust") {
+      if (hasExplicitTokenClass) {
+        throw new Error("tokenClass override is only available for csharp dialect");
+      }
+
       return {
         scriptHash: this.config.contractHash,
         operation: "mint",
@@ -581,6 +591,10 @@ export class NeoNftPlatformClient {
     }
 
     if (this.dialect === "solidity") {
+      if (hasExplicitTokenClass) {
+        throw new Error("tokenClass override is only available for csharp dialect");
+      }
+
       return {
         scriptHash: this.config.contractHash,
         operation: "mint",
@@ -595,13 +609,22 @@ export class NeoNftPlatformClient {
 
     return {
       scriptHash: this.config.contractHash,
-      operation: "mint",
-      args: [
-        toByteArrayArg(payload.collectionId),
-        hash160Arg(payload.to),
-        stringArg(payload.tokenUri),
-        stringArg(payload.propertiesJson),
-      ],
+      operation: tokenClassValue === null ? "mint" : tokenClassValue === 0 ? "mintStandard" : "mintWithClass",
+      args:
+        tokenClassValue === null || tokenClassValue === 0
+          ? [
+            toByteArrayArg(payload.collectionId),
+            hash160Arg(payload.to),
+            stringArg(payload.tokenUri),
+            stringArg(payload.propertiesJson),
+          ]
+          : [
+            toByteArrayArg(payload.collectionId),
+            hash160Arg(payload.to),
+            stringArg(payload.tokenUri),
+            stringArg(payload.propertiesJson),
+            integerArg(tokenClassValue),
+          ],
     };
   }
 
