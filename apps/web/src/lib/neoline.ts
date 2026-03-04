@@ -231,6 +231,7 @@ async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Prom
 
   pendingReadyWait = new Promise<void>((resolve) => {
     let settled = false;
+    let pollTimer: number | null = null;
 
     const cleanup = () => {
       if (settled) {
@@ -239,6 +240,9 @@ async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Prom
       settled = true;
       window.removeEventListener(N3_READY_EVENT, onReady as EventListener);
       window.removeEventListener(NEO_READY_EVENT, onReady as EventListener);
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+      }
       window.clearTimeout(timer);
       pendingReadyWait = null;
       resolve();
@@ -251,6 +255,12 @@ async function waitForNeoProviderReady(timeoutMs = PROVIDER_READY_WAIT_MS): Prom
     const timer = window.setTimeout(() => {
       cleanup();
     }, timeoutMs);
+
+    pollTimer = window.setInterval(() => {
+      if (collectResolvedProviders().length > 0) {
+        cleanup();
+      }
+    }, 150);
 
     window.addEventListener(N3_READY_EVENT, onReady as EventListener, { once: true });
     window.addEventListener(NEO_READY_EVENT, onReady as EventListener, { once: true });
