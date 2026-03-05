@@ -268,12 +268,14 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     return null;
   }
 
-  if (hasReadyEventOnlyShape(value)) {
-    return null;
-  }
-
+  // Some NeoLine providers expose methods on prototype while own enumerable keys
+  // may only contain EVENT/EVENTLIST.
   if (hasProviderMethod(value)) {
     return value;
+  }
+
+  if (hasReadyEventOnlyShape(value)) {
+    return null;
   }
 
   return null;
