@@ -43,7 +43,6 @@ export interface NeoLineN3Provider {
   getAddress?: () => Promise<unknown>;
   getWalletAddress?: () => Promise<unknown>;
   requestAccounts?: () => Promise<unknown>;
-  connect?: () => Promise<unknown>;
   getNetwork?: () => Promise<unknown>;
   getNetworks?: () => Promise<unknown>;
   enable?: () => Promise<unknown>;
@@ -105,7 +104,6 @@ function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
     "getAddress",
     "getWalletAddress",
     "requestAccounts",
-    "connect",
     "getNetwork",
     "getNetworks",
     "request",
@@ -130,7 +128,6 @@ function hasNeoN3AccountHints(value: unknown): boolean {
     || typeof record.getAddress === "function"
     || typeof record.getWalletAddress === "function"
     || typeof record.requestAccounts === "function"
-    || typeof record.connect === "function"
     || typeof record.getNetwork === "function"
     || typeof record.getNetworks === "function"
     || typeof record.invoke === "function"
@@ -549,7 +546,6 @@ function hasRequestAccountCapability(provider: NeoLineN3Provider): boolean {
 
   return (
     typeof record.enable === "function"
-    || typeof record.connect === "function"
     || typeof record.requestAccounts === "function"
     || typeof record.getAddress === "function"
     || typeof record.getWalletAddress === "function"
@@ -1165,7 +1161,6 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
     "getAddress",
     "getWalletAddress",
     "requestAccounts",
-    "connect",
   ];
   for (const methodName of addressMethods) {
     const value = await tryCallProviderMethod(provider, methodName);
@@ -1190,7 +1185,6 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
       { method: "getAddress" },
       { method: "getWalletAddress" },
       { method: "requestAccounts" },
-      { method: "connect" },
     ];
 
     for (const payload of attempts) {
