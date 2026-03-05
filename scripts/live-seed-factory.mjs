@@ -250,11 +250,15 @@ async function main() {
   const factoryHash = normalizeHash(process.env.TESTNET_FACTORY_HASH?.trim() || DEFAULT_FACTORY_HASH);
   const salePrice = Number.parseInt(process.env.TESTNET_SALE_PRICE?.trim() || "10000000", 10);
   const buyerFundGas = Number.parseInt(process.env.TESTNET_BUYER_FUND_GAS?.trim() || "5", 10);
+  const collectionMaxSupply = Number.parseInt(process.env.TESTNET_COLLECTION_MAX_SUPPLY?.trim() || "1000000", 10);
   if (!Number.isFinite(salePrice) || salePrice <= 0) {
     throw new Error("TESTNET_SALE_PRICE must be a positive integer in GAS fractions (1 GAS = 100000000)");
   }
   if (!Number.isFinite(buyerFundGas) || buyerFundGas <= 0) {
     throw new Error("TESTNET_BUYER_FUND_GAS must be a positive integer (whole GAS)");
+  }
+  if (!Number.isFinite(collectionMaxSupply) || collectionMaxSupply <= 0) {
+    throw new Error("TESTNET_COLLECTION_MAX_SUPPLY must be a positive integer");
   }
 
   const seller = new wallet.Account(sellerWif);
@@ -352,6 +356,7 @@ async function main() {
       },
     },
     salePrice: salePrice.toString(),
+    collectionMaxSupply,
   };
 
   log(`rpc: ${rpcUrl}`);
@@ -368,10 +373,16 @@ async function main() {
   const factoryReadTemplateSegments = await rpcClient.invokeFunction(factoryHash, "hasCollectionContractTemplateNameSegments", []);
   const hasTemplate = decodeStackItem(factoryReadTemplate?.stack?.[0]);
   const hasTemplateSegments = decodeStackItem(factoryReadTemplateSegments?.stack?.[0]);
-  if (hasTemplate !== true || hasTemplateSegments !== true) {
-    throw new Error(
-      `Factory template is not fully configured. hasCollectionContractTemplate=${hasTemplate}, hasCollectionContractTemplateNameSegments=${hasTemplateSegments}`,
-    );
+  const dedicatedDisabledByEnv = process.env.TESTNET_DISABLE_DEDICATED?.trim() === "1";
+  const dedicatedTemplateReady = hasTemplate === true && hasTemplateSegments === true;
+  const runDedicatedFlow = !dedicatedDisabledByEnv && dedicatedTemplateReady;
+  if (!runDedicatedFlow) {
+    const dedicatedSkipReason = dedicatedDisabledByEnv
+      ? "Dedicated flow disabled by TESTNET_DISABLE_DEDICATED=1."
+      : `Factory template is not fully configured. hasCollectionContractTemplate=${hasTemplate}, hasCollectionContractTemplateNameSegments=${hasTemplateSegments}`;
+    summary.dedicated.skipped = true;
+    summary.dedicated.skipReason = dedicatedSkipReason;
+    log(`dedicated flow skipped: ${dedicatedSkipReason}`);
   }
 
   const gasContractSeller = new experimental.SmartContract(u.HexString.fromHex(GAS_HASH), sellerConfig);
@@ -412,7 +423,7 @@ async function main() {
       sc.ContractParam.string(sharedSymbol),
       sc.ContractParam.string("Live shared-mode collection for frontend indexing"),
       sc.ContractParam.string(sharedBaseUri),
-      sc.ContractParam.integer(0),
+      sc.ContractParam.integer(collectionMaxSupply),
       sc.ContractParam.integer(350),
       sc.ContractParam.boolean(true),
     ],
@@ -691,336 +702,338 @@ async function main() {
     throw new Error(`shared check-in proof token class expected 2, got ${summary.shared.tokenClasses.checkInProof}`);
   }
 
-  const dedicatedName = `Live Dedicated ${suffix}`;
-  const dedicatedSymbol = `LD${suffix.slice(-3)}`;
-  const dedicatedBaseUri = `https://example.com/live/dedicated/${suffix}/`;
+  if (runDedicatedFlow) {
+    const dedicatedName = `Live Dedicated ${suffix}`;
+    const dedicatedSymbol = `LD${suffix.slice(-3)}`;
+    const dedicatedBaseUri = `https://example.com/live/dedicated/${suffix}/`;
 
-  log("create dedicated collection and deploy contract from template");
-  const dedicatedCreateDeploy = await invokeAndWait(
-    "dedicatedCreateCollectionAndDeployFromTemplate",
-    platformSeller,
-    rpcClient,
-    factoryHash,
-    "createCollectionAndDeployFromTemplate",
-    [
-      sc.ContractParam.string(dedicatedName),
-      sc.ContractParam.string(dedicatedSymbol),
-      sc.ContractParam.string("Live dedicated-mode collection for frontend indexing"),
-      sc.ContractParam.string(dedicatedBaseUri),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.integer(450),
-      sc.ContractParam.boolean(true),
-      sc.ContractParam.string(JSON.stringify({ source: "live-seed-factory", suffix, mode: "dedicated" })),
-    ],
-  );
-  summary.txids.dedicatedCreateCollectionAndDeploy = dedicatedCreateDeploy.txid;
+    log("create dedicated collection and deploy contract from template");
+    const dedicatedCreateDeploy = await invokeAndWait(
+      "dedicatedCreateCollectionAndDeployFromTemplate",
+      platformSeller,
+      rpcClient,
+      factoryHash,
+      "createCollectionAndDeployFromTemplate",
+      [
+        sc.ContractParam.string(dedicatedName),
+        sc.ContractParam.string(dedicatedSymbol),
+        sc.ContractParam.string("Live dedicated-mode collection for frontend indexing"),
+        sc.ContractParam.string(dedicatedBaseUri),
+        sc.ContractParam.integer(collectionMaxSupply),
+        sc.ContractParam.integer(450),
+        sc.ContractParam.boolean(true),
+        sc.ContractParam.string(JSON.stringify({ source: "live-seed-factory", suffix, mode: "dedicated" })),
+      ],
+    );
+    summary.txids.dedicatedCreateCollectionAndDeploy = dedicatedCreateDeploy.txid;
 
-  const dedicatedCollectionId = extractEventStringValue(
-    dedicatedCreateDeploy.appLog,
-    factoryHash,
-    "CollectionUpserted",
-    0,
-    "dedicated:createCollectionAndDeploy",
-  );
-  summary.dedicated.collectionId = dedicatedCollectionId;
-  log(`dedicated collectionId: ${dedicatedCollectionId}`);
+    const dedicatedCollectionId = extractEventStringValue(
+      dedicatedCreateDeploy.appLog,
+      factoryHash,
+      "CollectionUpserted",
+      0,
+      "dedicated:createCollectionAndDeploy",
+    );
+    summary.dedicated.collectionId = dedicatedCollectionId;
+    log(`dedicated collectionId: ${dedicatedCollectionId}`);
 
-  const dedicatedRawHash = extractEventStringValue(
-    dedicatedCreateDeploy.appLog,
-    factoryHash,
-    "CollectionContractDeployed",
-    2,
-    "dedicated:createCollectionAndDeploy",
-  );
-  const dedicatedContractHash = await resolveContractHashFromStackValue(rpcClient, dedicatedRawHash);
-  summary.dedicated.contractHash = dedicatedContractHash;
-  log(`dedicated contract: ${dedicatedContractHash}`);
+    const dedicatedRawHash = extractEventStringValue(
+      dedicatedCreateDeploy.appLog,
+      factoryHash,
+      "CollectionContractDeployed",
+      2,
+      "dedicated:createCollectionAndDeploy",
+    );
+    const dedicatedContractHash = await resolveContractHashFromStackValue(rpcClient, dedicatedRawHash);
+    summary.dedicated.contractHash = dedicatedContractHash;
+    log(`dedicated contract: ${dedicatedContractHash}`);
 
-  log("wait 15s for dedicated contract propagation");
-  await sleep(15000);
-  await waitForContractState(rpcClient, dedicatedContractHash);
+    log("wait 15s for dedicated contract propagation");
+    await sleep(15000);
+    await waitForContractState(rpcClient, dedicatedContractHash);
 
-  const dedicatedSeller = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), sellerConfig);
-  const dedicatedBuyer = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), buyerConfig);
+    const dedicatedSeller = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), sellerConfig);
+    const dedicatedBuyer = new experimental.SmartContract(u.HexString.fromHex(dedicatedContractHash), buyerConfig);
 
-  log("dedicated: mint standard token via mintStandard()");
-  const dedicatedMintStandard = await invokeAndWait(
-    "dedicatedMintStandard",
-    dedicatedSeller,
-    rpcClient,
-    dedicatedContractHash,
-    "mintStandard",
-    [
-      byteArrayParamFromTextOrHex(dedicatedCollectionId),
-      sc.ContractParam.hash160(seller.address),
-      sc.ContractParam.string(`${dedicatedBaseUri}standard-1.json`),
-      sc.ContractParam.string(JSON.stringify({
-        name: `Live Dedicated Standard Token ${suffix}`,
-        image: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=1200",
-        attributes: [
-          { trait_type: "mode", value: "dedicated" },
-          { trait_type: "seed", value: suffix },
-          { trait_type: "flow", value: "mint-standard" },
-          { trait_type: "tokenClass", value: "standard" },
-        ],
-      })),
-    ],
-  );
-  summary.txids.dedicatedMintStandard = dedicatedMintStandard.txid;
-  const dedicatedStandardTokenId = extractEventStringValue(
-    dedicatedMintStandard.appLog,
-    dedicatedContractHash,
-    "TokenUpserted",
-    0,
-    "dedicated:mintStandard",
-  );
-  summary.dedicated.tokens.standardMinted = dedicatedStandardTokenId;
-  log(`dedicated standard tokenId: ${dedicatedStandardTokenId}`);
-
-  log("dedicated: mint membership token via mint()");
-  const dedicatedMintMembership = await invokeAndWait(
-    "dedicatedMintMembership",
-    dedicatedSeller,
-    rpcClient,
-    dedicatedContractHash,
-    "mint",
-    [
-      byteArrayParamFromTextOrHex(dedicatedCollectionId),
-      sc.ContractParam.hash160(seller.address),
-      sc.ContractParam.string(`${dedicatedBaseUri}membership-1.json`),
-      sc.ContractParam.string(JSON.stringify({
-        name: `Live Dedicated Membership Token ${suffix}`,
-        image: "https://images.unsplash.com/photo-1639322537228-f710d846310a?w=1200",
-        attributes: [
-          { trait_type: "mode", value: "dedicated" },
-          { trait_type: "seed", value: suffix },
-          { trait_type: "flow", value: "mint-membership" },
-          { trait_type: "tokenClass", value: "membership" },
-        ],
-      })),
-    ],
-  );
-  summary.txids.dedicatedMintMembership = dedicatedMintMembership.txid;
-  const dedicatedMembershipTokenId = extractEventStringValue(
-    dedicatedMintMembership.appLog,
-    dedicatedContractHash,
-    "TokenUpserted",
-    0,
-    "dedicated:mintMembership",
-  );
-  summary.dedicated.tokens.membershipMinted = dedicatedMembershipTokenId;
-  log(`dedicated membership tokenId: ${dedicatedMembershipTokenId}`);
-
-  log("dedicated: configure drop");
-  const dedicatedConfigureDrop = await invokeAndWait(
-    "dedicatedConfigureDrop",
-    dedicatedSeller,
-    rpcClient,
-    dedicatedContractHash,
-    "configureDrop",
-    [
-      byteArrayParamFromTextOrHex(dedicatedCollectionId),
-      sc.ContractParam.boolean(true),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.integer(5),
-      sc.ContractParam.boolean(false),
-    ],
-  );
-  summary.txids.dedicatedConfigureDrop = dedicatedConfigureDrop.txid;
-
-  log("dedicated: buyer claimDrop (membership)");
-  const dedicatedClaimDrop = await invokeAndWait(
-    "dedicatedClaimDrop",
-    dedicatedBuyer,
-    rpcClient,
-    dedicatedContractHash,
-    "claimDrop",
-    [
-      byteArrayParamFromTextOrHex(dedicatedCollectionId),
-      sc.ContractParam.string(`${dedicatedBaseUri}drop-1.json`),
-      sc.ContractParam.string(
-        JSON.stringify({
-          name: `Live Dedicated Drop Token ${suffix}`,
-          image: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200",
+    log("dedicated: mint standard token via mintStandard()");
+    const dedicatedMintStandard = await invokeAndWait(
+      "dedicatedMintStandard",
+      dedicatedSeller,
+      rpcClient,
+      dedicatedContractHash,
+      "mintStandard",
+      [
+        byteArrayParamFromTextOrHex(dedicatedCollectionId),
+        sc.ContractParam.hash160(seller.address),
+        sc.ContractParam.string(`${dedicatedBaseUri}standard-1.json`),
+        sc.ContractParam.string(JSON.stringify({
+          name: `Live Dedicated Standard Token ${suffix}`,
+          image: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=1200",
           attributes: [
             { trait_type: "mode", value: "dedicated" },
             { trait_type: "seed", value: suffix },
-            { trait_type: "flow", value: "drop" },
+            { trait_type: "flow", value: "mint-standard" },
+            { trait_type: "tokenClass", value: "standard" },
           ],
-        }),
-      ),
-    ],
-  );
-  summary.txids.dedicatedClaimDrop = dedicatedClaimDrop.txid;
-  const dedicatedDropTokenId = extractEventStringValue(
-    dedicatedClaimDrop.appLog,
-    dedicatedContractHash,
-    "TokenUpserted",
-    0,
-    "dedicated:claimDrop",
-  );
-  summary.dedicated.tokens.dropClaimed = dedicatedDropTokenId;
-  log(`dedicated drop tokenId: ${dedicatedDropTokenId}`);
+        })),
+      ],
+    );
+    summary.txids.dedicatedMintStandard = dedicatedMintStandard.txid;
+    const dedicatedStandardTokenId = extractEventStringValue(
+      dedicatedMintStandard.appLog,
+      dedicatedContractHash,
+      "TokenUpserted",
+      0,
+      "dedicated:mintStandard",
+    );
+    summary.dedicated.tokens.standardMinted = dedicatedStandardTokenId;
+    log(`dedicated standard tokenId: ${dedicatedStandardTokenId}`);
 
-  log("dedicated: configure check-in program");
-  const dedicatedConfigureCheckIn = await invokeAndWait(
-    "dedicatedConfigureCheckInProgram",
-    dedicatedSeller,
-    rpcClient,
-    dedicatedContractHash,
-    "configureCheckInProgram",
-    [
-      byteArrayParamFromTextOrHex(dedicatedCollectionId),
-      sc.ContractParam.boolean(true),
-      sc.ContractParam.boolean(true),
-      sc.ContractParam.boolean(false),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.integer(0),
-      sc.ContractParam.boolean(true),
-    ],
-  );
-  summary.txids.dedicatedConfigureCheckInProgram = dedicatedConfigureCheckIn.txid;
-
-  log("dedicated: buyer checkIn (proof)");
-  const dedicatedCheckIn = await invokeAndWait(
-    "dedicatedCheckIn",
-    dedicatedBuyer,
-    rpcClient,
-    dedicatedContractHash,
-    "checkIn",
-    [
-      byteArrayParamFromTextOrHex(dedicatedCollectionId),
-      sc.ContractParam.string(`${dedicatedBaseUri}checkin-1.json`),
-      sc.ContractParam.string(
-        JSON.stringify({
-          name: `Live Dedicated Check-In Proof ${suffix}`,
-          image: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=1200",
+    log("dedicated: mint membership token via mint()");
+    const dedicatedMintMembership = await invokeAndWait(
+      "dedicatedMintMembership",
+      dedicatedSeller,
+      rpcClient,
+      dedicatedContractHash,
+      "mint",
+      [
+        byteArrayParamFromTextOrHex(dedicatedCollectionId),
+        sc.ContractParam.hash160(seller.address),
+        sc.ContractParam.string(`${dedicatedBaseUri}membership-1.json`),
+        sc.ContractParam.string(JSON.stringify({
+          name: `Live Dedicated Membership Token ${suffix}`,
+          image: "https://images.unsplash.com/photo-1639322537228-f710d846310a?w=1200",
           attributes: [
             { trait_type: "mode", value: "dedicated" },
             { trait_type: "seed", value: suffix },
-            { trait_type: "flow", value: "check-in" },
+            { trait_type: "flow", value: "mint-membership" },
+            { trait_type: "tokenClass", value: "membership" },
           ],
-        }),
-      ),
-    ],
-  );
-  summary.txids.dedicatedCheckIn = dedicatedCheckIn.txid;
-  const dedicatedProofTokenId = extractEventStringValue(
-    dedicatedCheckIn.appLog,
-    dedicatedContractHash,
-    "TokenUpserted",
-    0,
-    "dedicated:checkIn",
-  );
-  summary.dedicated.tokens.checkInProof = dedicatedProofTokenId;
-  log(`dedicated check-in proof tokenId: ${dedicatedProofTokenId}`);
-
-  log("dedicated: list standard token");
-  const dedicatedListStandard = await invokeAndWait(
-    "dedicatedListStandardMinted",
-    dedicatedSeller,
-    rpcClient,
-    dedicatedContractHash,
-    "listTokenForSale",
-    [byteArrayParamFromTextOrHex(dedicatedStandardTokenId), sc.ContractParam.integer(salePrice)],
-  );
-  summary.txids.dedicatedListStandardMinted = dedicatedListStandard.txid;
-
-  log("dedicated: list membership token");
-  const dedicatedListMembership = await invokeAndWait(
-    "dedicatedListMembershipMinted",
-    dedicatedSeller,
-    rpcClient,
-    dedicatedContractHash,
-    "listTokenForSale",
-    [byteArrayParamFromTextOrHex(dedicatedMembershipTokenId), sc.ContractParam.integer(salePrice)],
-  );
-  summary.txids.dedicatedListMembershipMinted = dedicatedListMembership.txid;
-
-  log("dedicated: list drop token");
-  const dedicatedListDrop = await invokeAndWait(
-    "dedicatedListDropClaimed",
-    dedicatedBuyer,
-    rpcClient,
-    dedicatedContractHash,
-    "listTokenForSale",
-    [byteArrayParamFromTextOrHex(dedicatedDropTokenId), sc.ContractParam.integer(salePrice)],
-  );
-  summary.txids.dedicatedListDropClaimed = dedicatedListDrop.txid;
-
-  log("dedicated: list check-in proof token");
-  const dedicatedListProof = await invokeAndWait(
-    "dedicatedListCheckInProof",
-    dedicatedBuyer,
-    rpcClient,
-    dedicatedContractHash,
-    "listTokenForSale",
-    [byteArrayParamFromTextOrHex(dedicatedProofTokenId), sc.ContractParam.integer(salePrice)],
-  );
-  summary.txids.dedicatedListCheckInProof = dedicatedListProof.txid;
-
-  summary.dedicated.listed.standardMinted = await assertTokenListed(
-    dedicatedSeller,
-    dedicatedStandardTokenId,
-    "dedicated:standardMinted",
-  );
-  summary.dedicated.listed.membershipMinted = await assertTokenListed(
-    dedicatedSeller,
-    dedicatedMembershipTokenId,
-    "dedicated:membershipMinted",
-  );
-  summary.dedicated.listed.dropClaimed = await assertTokenListed(
-    dedicatedSeller,
-    dedicatedDropTokenId,
-    "dedicated:dropClaimed",
-  );
-  summary.dedicated.listed.checkInProof = await assertTokenListed(
-    dedicatedSeller,
-    dedicatedProofTokenId,
-    "dedicated:checkInProof",
-  );
-
-  summary.dedicated.tokenClasses.standardMinted = await readTokenClass(
-    dedicatedSeller,
-    dedicatedStandardTokenId,
-    "dedicated:standardMinted",
-  );
-  summary.dedicated.tokenClasses.membershipMinted = await readTokenClass(
-    dedicatedSeller,
-    dedicatedMembershipTokenId,
-    "dedicated:membershipMinted",
-  );
-  summary.dedicated.tokenClasses.dropClaimed = await readTokenClass(
-    dedicatedSeller,
-    dedicatedDropTokenId,
-    "dedicated:dropClaimed",
-  );
-  summary.dedicated.tokenClasses.checkInProof = await readTokenClass(
-    dedicatedSeller,
-    dedicatedProofTokenId,
-    "dedicated:checkInProof",
-  );
-
-  if (summary.dedicated.tokenClasses.standardMinted !== 0) {
-    throw new Error(
-      `dedicated standard token class expected 0, got ${summary.dedicated.tokenClasses.standardMinted}`,
+        })),
+      ],
     );
-  }
-  if (summary.dedicated.tokenClasses.membershipMinted !== 1) {
-    throw new Error(
-      `dedicated membership token class expected 1, got ${summary.dedicated.tokenClasses.membershipMinted}`,
+    summary.txids.dedicatedMintMembership = dedicatedMintMembership.txid;
+    const dedicatedMembershipTokenId = extractEventStringValue(
+      dedicatedMintMembership.appLog,
+      dedicatedContractHash,
+      "TokenUpserted",
+      0,
+      "dedicated:mintMembership",
     );
-  }
-  if (summary.dedicated.tokenClasses.dropClaimed !== 1) {
-    throw new Error(`dedicated drop token class expected 1, got ${summary.dedicated.tokenClasses.dropClaimed}`);
-  }
-  if (summary.dedicated.tokenClasses.checkInProof !== 2) {
-    throw new Error(
-      `dedicated check-in proof token class expected 2, got ${summary.dedicated.tokenClasses.checkInProof}`,
+    summary.dedicated.tokens.membershipMinted = dedicatedMembershipTokenId;
+    log(`dedicated membership tokenId: ${dedicatedMembershipTokenId}`);
+
+    log("dedicated: configure drop");
+    const dedicatedConfigureDrop = await invokeAndWait(
+      "dedicatedConfigureDrop",
+      dedicatedSeller,
+      rpcClient,
+      dedicatedContractHash,
+      "configureDrop",
+      [
+        byteArrayParamFromTextOrHex(dedicatedCollectionId),
+        sc.ContractParam.boolean(true),
+        sc.ContractParam.integer(0),
+        sc.ContractParam.integer(0),
+        sc.ContractParam.integer(5),
+        sc.ContractParam.boolean(false),
+      ],
     );
+    summary.txids.dedicatedConfigureDrop = dedicatedConfigureDrop.txid;
+
+    log("dedicated: buyer claimDrop (membership)");
+    const dedicatedClaimDrop = await invokeAndWait(
+      "dedicatedClaimDrop",
+      dedicatedBuyer,
+      rpcClient,
+      dedicatedContractHash,
+      "claimDrop",
+      [
+        byteArrayParamFromTextOrHex(dedicatedCollectionId),
+        sc.ContractParam.string(`${dedicatedBaseUri}drop-1.json`),
+        sc.ContractParam.string(
+          JSON.stringify({
+            name: `Live Dedicated Drop Token ${suffix}`,
+            image: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200",
+            attributes: [
+              { trait_type: "mode", value: "dedicated" },
+              { trait_type: "seed", value: suffix },
+              { trait_type: "flow", value: "drop" },
+            ],
+          }),
+        ),
+      ],
+    );
+    summary.txids.dedicatedClaimDrop = dedicatedClaimDrop.txid;
+    const dedicatedDropTokenId = extractEventStringValue(
+      dedicatedClaimDrop.appLog,
+      dedicatedContractHash,
+      "TokenUpserted",
+      0,
+      "dedicated:claimDrop",
+    );
+    summary.dedicated.tokens.dropClaimed = dedicatedDropTokenId;
+    log(`dedicated drop tokenId: ${dedicatedDropTokenId}`);
+
+    log("dedicated: configure check-in program");
+    const dedicatedConfigureCheckIn = await invokeAndWait(
+      "dedicatedConfigureCheckInProgram",
+      dedicatedSeller,
+      rpcClient,
+      dedicatedContractHash,
+      "configureCheckInProgram",
+      [
+        byteArrayParamFromTextOrHex(dedicatedCollectionId),
+        sc.ContractParam.boolean(true),
+        sc.ContractParam.boolean(true),
+        sc.ContractParam.boolean(false),
+        sc.ContractParam.integer(0),
+        sc.ContractParam.integer(0),
+        sc.ContractParam.integer(0),
+        sc.ContractParam.integer(0),
+        sc.ContractParam.boolean(true),
+      ],
+    );
+    summary.txids.dedicatedConfigureCheckInProgram = dedicatedConfigureCheckIn.txid;
+
+    log("dedicated: buyer checkIn (proof)");
+    const dedicatedCheckIn = await invokeAndWait(
+      "dedicatedCheckIn",
+      dedicatedBuyer,
+      rpcClient,
+      dedicatedContractHash,
+      "checkIn",
+      [
+        byteArrayParamFromTextOrHex(dedicatedCollectionId),
+        sc.ContractParam.string(`${dedicatedBaseUri}checkin-1.json`),
+        sc.ContractParam.string(
+          JSON.stringify({
+            name: `Live Dedicated Check-In Proof ${suffix}`,
+            image: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=1200",
+            attributes: [
+              { trait_type: "mode", value: "dedicated" },
+              { trait_type: "seed", value: suffix },
+              { trait_type: "flow", value: "check-in" },
+            ],
+          }),
+        ),
+      ],
+    );
+    summary.txids.dedicatedCheckIn = dedicatedCheckIn.txid;
+    const dedicatedProofTokenId = extractEventStringValue(
+      dedicatedCheckIn.appLog,
+      dedicatedContractHash,
+      "TokenUpserted",
+      0,
+      "dedicated:checkIn",
+    );
+    summary.dedicated.tokens.checkInProof = dedicatedProofTokenId;
+    log(`dedicated check-in proof tokenId: ${dedicatedProofTokenId}`);
+
+    log("dedicated: list standard token");
+    const dedicatedListStandard = await invokeAndWait(
+      "dedicatedListStandardMinted",
+      dedicatedSeller,
+      rpcClient,
+      dedicatedContractHash,
+      "listTokenForSale",
+      [byteArrayParamFromTextOrHex(dedicatedStandardTokenId), sc.ContractParam.integer(salePrice)],
+    );
+    summary.txids.dedicatedListStandardMinted = dedicatedListStandard.txid;
+
+    log("dedicated: list membership token");
+    const dedicatedListMembership = await invokeAndWait(
+      "dedicatedListMembershipMinted",
+      dedicatedSeller,
+      rpcClient,
+      dedicatedContractHash,
+      "listTokenForSale",
+      [byteArrayParamFromTextOrHex(dedicatedMembershipTokenId), sc.ContractParam.integer(salePrice)],
+    );
+    summary.txids.dedicatedListMembershipMinted = dedicatedListMembership.txid;
+
+    log("dedicated: list drop token");
+    const dedicatedListDrop = await invokeAndWait(
+      "dedicatedListDropClaimed",
+      dedicatedBuyer,
+      rpcClient,
+      dedicatedContractHash,
+      "listTokenForSale",
+      [byteArrayParamFromTextOrHex(dedicatedDropTokenId), sc.ContractParam.integer(salePrice)],
+    );
+    summary.txids.dedicatedListDropClaimed = dedicatedListDrop.txid;
+
+    log("dedicated: list check-in proof token");
+    const dedicatedListProof = await invokeAndWait(
+      "dedicatedListCheckInProof",
+      dedicatedBuyer,
+      rpcClient,
+      dedicatedContractHash,
+      "listTokenForSale",
+      [byteArrayParamFromTextOrHex(dedicatedProofTokenId), sc.ContractParam.integer(salePrice)],
+    );
+    summary.txids.dedicatedListCheckInProof = dedicatedListProof.txid;
+
+    summary.dedicated.listed.standardMinted = await assertTokenListed(
+      dedicatedSeller,
+      dedicatedStandardTokenId,
+      "dedicated:standardMinted",
+    );
+    summary.dedicated.listed.membershipMinted = await assertTokenListed(
+      dedicatedSeller,
+      dedicatedMembershipTokenId,
+      "dedicated:membershipMinted",
+    );
+    summary.dedicated.listed.dropClaimed = await assertTokenListed(
+      dedicatedSeller,
+      dedicatedDropTokenId,
+      "dedicated:dropClaimed",
+    );
+    summary.dedicated.listed.checkInProof = await assertTokenListed(
+      dedicatedSeller,
+      dedicatedProofTokenId,
+      "dedicated:checkInProof",
+    );
+
+    summary.dedicated.tokenClasses.standardMinted = await readTokenClass(
+      dedicatedSeller,
+      dedicatedStandardTokenId,
+      "dedicated:standardMinted",
+    );
+    summary.dedicated.tokenClasses.membershipMinted = await readTokenClass(
+      dedicatedSeller,
+      dedicatedMembershipTokenId,
+      "dedicated:membershipMinted",
+    );
+    summary.dedicated.tokenClasses.dropClaimed = await readTokenClass(
+      dedicatedSeller,
+      dedicatedDropTokenId,
+      "dedicated:dropClaimed",
+    );
+    summary.dedicated.tokenClasses.checkInProof = await readTokenClass(
+      dedicatedSeller,
+      dedicatedProofTokenId,
+      "dedicated:checkInProof",
+    );
+
+    if (summary.dedicated.tokenClasses.standardMinted !== 0) {
+      throw new Error(
+        `dedicated standard token class expected 0, got ${summary.dedicated.tokenClasses.standardMinted}`,
+      );
+    }
+    if (summary.dedicated.tokenClasses.membershipMinted !== 1) {
+      throw new Error(
+        `dedicated membership token class expected 1, got ${summary.dedicated.tokenClasses.membershipMinted}`,
+      );
+    }
+    if (summary.dedicated.tokenClasses.dropClaimed !== 1) {
+      throw new Error(`dedicated drop token class expected 1, got ${summary.dedicated.tokenClasses.dropClaimed}`);
+    }
+    if (summary.dedicated.tokenClasses.checkInProof !== 2) {
+      throw new Error(
+        `dedicated check-in proof token class expected 2, got ${summary.dedicated.tokenClasses.checkInProof}`,
+      );
+    }
   }
 
   log("completed on-chain live seeding");
