@@ -4,13 +4,12 @@ import { ArrowUpRight, ImageOff, Loader2, ShoppingCart, Tag, ExternalLink, Globe
 import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
-import { fetchCollection, fetchCollectionTokens, fetchGhostMarketMeta, getNeoFsResourceProxyUrl, uploadToNeoFs } from "../lib/api";
+import { fetchCollection, fetchCollectionTokens, fetchGhostMarketMeta, fetchMarketListings, getNeoFsResourceProxyUrl, uploadToNeoFs } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import {
   formatGasAmount,
   isZeroUInt160Hash,
   parseGasAmountToInteger,
-  parseTokenSale,
   shortHash,
   tokenSerial,
   toIsoTime,
@@ -130,15 +129,37 @@ export function CollectionDetailPage() {
 
     setLoadingSales(true);
     try {
-      const client = getCollectionClient(nextCollection);
-      const entries = await Promise.all(
-        nextTokens.map(async (token) => {
-          const raw = await client.getTokenSale(token.tokenId);
-          return [token.tokenId, parseTokenSale(raw)] as const;
-        }),
+      const listings = await fetchMarketListings({
+        collectionId: nextCollection.collectionId,
+        limit: 5000,
+      });
+
+      const byTokenId: Record<string, TokenSaleState> = Object.fromEntries(
+        nextTokens.map((token) => [
+          token.tokenId,
+          {
+            listed: false,
+            seller: "",
+            price: "0",
+            listedAt: "",
+          },
+        ]),
       );
 
-      setSalesByTokenId(Object.fromEntries(entries));
+      for (const listing of listings) {
+        if (!byTokenId[listing.token.tokenId]) {
+          continue;
+        }
+
+        byTokenId[listing.token.tokenId] = {
+          listed: Boolean(listing.sale.listed),
+          seller: listing.sale.seller ?? "",
+          price: listing.sale.price ?? "0",
+          listedAt: listing.sale.listedAt ?? "",
+        };
+      }
+
+      setSalesByTokenId(byTokenId);
     } catch {
       setSalesByTokenId({});
     } finally {
