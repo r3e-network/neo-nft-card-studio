@@ -6,7 +6,7 @@ import path from "node:path";
 import { experimental, rpc, sc, tx, u, wallet } from "@cityofzion/neon-js";
 
 const DEFAULT_RPC_URL = "http://seed2t5.neo.org:20332";
-const DEFAULT_FACTORY_HASH = "0x81f129ab82e0f41bba5048872405db66cbddb968";
+const DEFAULT_FACTORY_HASH = "0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22";
 const DEFAULT_PLATFORM_NEF_PATH = "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.nef";
 const DEFAULT_PLATFORM_MANIFEST_PATH = "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.manifest.json";
 const DEFAULT_TEMPLATE_NEF_PATH = "contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.nef";
