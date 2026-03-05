@@ -85,9 +85,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const runtimeNetwork = getRuntimeNetworkConfig();
   const missingContractHashWarning = wallet.address
-    && (runtimeNetwork.network === "mainnet" || runtimeNetwork.network === "private")
+    && wallet.network?.network === "mainnet"
     && !runtimeNetwork.contractHash
-    ? `Contract hash is missing for ${runtimeNetwork.network.toUpperCase()} network.`
+    ? "Contract hash is missing for MAINNET network."
     : "";
 
   return (
