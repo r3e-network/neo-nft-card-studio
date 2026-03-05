@@ -440,6 +440,8 @@ async function warmUpFactoryProviders(): Promise<void> {
     const roots: unknown[] = [
       window.NEOLineN3,
       window.neoLineN3,
+      window.NEOLine,
+      window.neoLine,
       getNestedField(window.NEOLine, "N3"),
       getNestedField(window.NEOLine, "n3"),
       getNestedField(window.neoLine, "N3"),
