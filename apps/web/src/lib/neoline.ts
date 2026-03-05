@@ -64,7 +64,7 @@ const NEO_READY_EVENT = "NEOLine.NEO.EVENT.READY";
 const N3_REQUEST_EVENT = "NEOLine.N3.EVENT.REQUEST";
 const NEO_REQUEST_EVENT = "NEOLine.NEO.EVENT.REQUEST";
 const PROVIDER_READY_WAIT_MS = 5000;
-const FACTORY_INIT_TIMEOUT_MS = 3000;
+const FACTORY_INIT_TIMEOUT_MS = 8000;
 const WALLET_GLOBAL_HINT_REGEX = /(neolinen3|o3|onegate|n3wallet)/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -478,6 +478,38 @@ async function warmUpFactoryProviders(): Promise<void> {
   });
 
   return pendingFactoryWarmup;
+}
+
+async function forceInitNeoLineProviders(): Promise<void> {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const roots: unknown[] = [
+    window.NEOLineN3,
+    window.neoLineN3,
+    window.NEOLine,
+    window.neoLine,
+  ];
+
+  for (const root of roots) {
+    const record = asRecord(root);
+    if (!record) {
+      continue;
+    }
+
+    const initFactory = record.Init ?? record.init;
+    if (typeof initFactory !== "function") {
+      continue;
+    }
+
+    const created = await resolveFactoryProviderAsync(initFactory);
+    if (!created) {
+      continue;
+    }
+
+    pushDeferredProviderCandidate(created);
+  }
 }
 
 function collectResolvedProviders(): NeoLineN3Provider[] {
@@ -1252,6 +1284,12 @@ async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
     return providers;
   }
 
+  await forceInitNeoLineProviders();
+  providers = getCandidateProvidersInPriorityOrder();
+  if (providers.length > 0) {
+    return providers;
+  }
+
   await warmUpFactoryProviders();
   providers = getCandidateProvidersInPriorityOrder();
   if (providers.length > 0) {
@@ -1259,6 +1297,7 @@ async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
   }
 
   await waitForNeoProviderReady();
+  await forceInitNeoLineProviders();
   await warmUpFactoryProviders();
   cachedProvider = null;
   providers = getCandidateProvidersInPriorityOrder();
