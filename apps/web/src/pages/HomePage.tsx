@@ -2,16 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Layers, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 
-import { fetchCollections, fetchStats } from "../lib/api";
+import { fetchCollectionTokens, fetchCollections, fetchStats } from "../lib/api";
 import { shortHash } from "../lib/marketplace";
+import { buildNftFallbackImage, parseTokenProperties, pickTokenMediaUri } from "../lib/nft-media";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
-import type { CollectionDto, StatsDto } from "../lib/types";
+import type { CollectionDto, StatsDto, TokenDto } from "../lib/types";
+import { useWallet } from "../hooks/useWallet";
+
+interface CollectionPreview {
+  imageUri: string;
+  tokenId: string;
+  tokenName: string;
+}
 
 export function HomePage() {
   const contractDialect = useRuntimeContractDialect();
+  const wallet = useWallet();
 
   const [stats, setStats] = useState<StatsDto | null>(null);
   const [collections, setCollections] = useState<CollectionDto[]>([]);
+  const [previewsByCollection, setPreviewsByCollection] = useState<Record<string, CollectionPreview>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,9 +46,84 @@ export function HomePage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [wallet.network?.network, wallet.network?.magic]);
 
   const featuredCollections = useMemo(() => collections.slice(0, 8), [collections]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const pickCollectionPreview = (collection: CollectionDto, tokens: TokenDto[]): CollectionPreview => {
+      const byNewest = [...tokens].sort((a, b) => {
+        const aTs = Date.parse(a.mintedAt || a.updatedAt || "");
+        const bTs = Date.parse(b.mintedAt || b.updatedAt || "");
+        const safeA = Number.isFinite(aTs) ? aTs : 0;
+        const safeB = Number.isFinite(bTs) ? bTs : 0;
+        return safeB - safeA;
+      });
+
+      for (const token of byNewest) {
+        const properties = parseTokenProperties(token.propertiesJson);
+        const media = pickTokenMediaUri(token, properties);
+        if (!media) {
+          continue;
+        }
+
+        const tokenName = typeof properties.name === "string" && properties.name.trim().length > 0
+          ? properties.name.trim()
+          : `${collection.name} #${token.tokenId}`;
+
+        return {
+          imageUri: media,
+          tokenId: token.tokenId,
+          tokenName,
+        };
+      }
+
+      const fallbackToken = byNewest[0];
+      const fallbackTokenId = fallbackToken?.tokenId ?? collection.collectionId;
+      return {
+        imageUri: buildNftFallbackImage(collection.name, fallbackTokenId, collection.name),
+        tokenId: fallbackTokenId,
+        tokenName: `${collection.name} #${fallbackTokenId}`,
+      };
+    };
+
+    (async () => {
+      if (featuredCollections.length === 0) {
+        if (alive) {
+          setPreviewsByCollection({});
+        }
+        return;
+      }
+
+      const entries = await Promise.all(
+        featuredCollections.map(async (collection) => {
+          try {
+            const tokens = await fetchCollectionTokens(collection.collectionId);
+            const preview = pickCollectionPreview(collection, tokens);
+            return [collection.collectionId, preview] as const;
+          } catch {
+            return [collection.collectionId, {
+              imageUri: buildNftFallbackImage(collection.name, collection.collectionId, collection.name),
+              tokenId: collection.collectionId,
+              tokenName: `${collection.name} #${collection.collectionId}`,
+            } as CollectionPreview] as const;
+          }
+        }),
+      );
+
+      if (!alive) {
+        return;
+      }
+
+      setPreviewsByCollection(Object.fromEntries(entries));
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [featuredCollections, wallet.network?.network, wallet.network?.magic]);
 
   return (
     <div className="stack-lg fade-in" style={{ gap: "4rem" }}>
@@ -163,14 +248,27 @@ export function HomePage() {
                 to={`/collections/${collection.collectionId}`}
                 style={{ textDecoration: "none", color: "inherit" }}
               >
+                {(() => {
+                  const preview = previewsByCollection[collection.collectionId];
+                  const fallbackImage = buildNftFallbackImage(collection.name, collection.collectionId, collection.name);
+                  const imageSrc = preview?.imageUri || fallbackImage;
+                  const tokenLabel = preview?.tokenName || `${collection.name} #${collection.collectionId}`;
+
+                  return (
                 <div className="panel" style={{ padding: 0, overflow: "hidden", transition: "transform 0.2s" }} onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-8px)"} onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}>
-                  <div style={{ height: "200px", background: `linear-gradient(45deg, #121822, #1c2638)`, position: "relative" }}>
-                    {/* Placeholder for collection banner */}
-                    <div style={{ position: "absolute", bottom: "-30px", left: "20px", width: "80px", height: "80px", borderRadius: "12px", border: "4px solid #04060A", background: "#1c2638", overflow: "hidden" }}>
-                       <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg, #2081E2, #00E599)" }}></div>
+                  <div style={{ height: "200px", background: "#121822", position: "relative" }}>
+                    <img
+                      src={imageSrc}
+                      alt={collection.name}
+                      loading="lazy"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(4,6,10,0.82), rgba(4,6,10,0.12))" }} />
+                    <div style={{ position: "absolute", bottom: "10px", left: "12px", right: "12px", color: "#fff", fontSize: "0.85rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {tokenLabel}
                     </div>
                   </div>
-                  <div style={{ padding: "40px 1.5rem 1.5rem" }}>
+                  <div style={{ padding: "1rem 1.5rem 1.5rem" }}>
                     <h3 style={{ margin: 0, fontSize: "1.25rem" }}>{collection.name}</h3>
                     <div style={{ color: "#8A939B", fontSize: "0.9rem", margin: "0.25rem 0 1rem" }}>by {shortHash(collection.owner)}</div>
                     <div className="chip-row">
@@ -179,6 +277,8 @@ export function HomePage() {
                     </div>
                   </div>
                 </div>
+                  );
+                })()}
               </Link>
             ))}
           </div>
