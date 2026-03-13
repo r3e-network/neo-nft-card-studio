@@ -17,12 +17,14 @@ export function HomePage() {
   const [collections, setCollections] = useState<CollectionDto[]>([]);
   const [previewsByCollection, setPreviewsByCollection] = useState<Record<string, CollectionPreview>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let alive = true;
 
     (async () => {
       setLoading(true);
+      setError("");
       try {
         const [nextStats, nextCollections] = await Promise.all([fetchStats(), fetchCollections()]);
         if (!alive) {
@@ -30,6 +32,15 @@ export function HomePage() {
         }
         setStats(nextStats);
         setCollections(nextCollections);
+      } catch {
+        if (!alive) {
+          return;
+        }
+
+        setStats(null);
+        setCollections([]);
+        setPreviewsByCollection({});
+        setError("Failed to load featured collections and platform stats.");
       } finally {
         if (alive) {
           setLoading(false);
@@ -84,6 +95,12 @@ export function HomePage() {
       <HeroSection />
 
       <StatsSection stats={stats} />
+
+      {error ? (
+        <section className="panel" style={{ padding: "1rem 1.25rem", color: "var(--text-muted)" }}>
+          {error}
+        </section>
+      ) : null}
 
       {/* Mode Selection Section */}
       <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>

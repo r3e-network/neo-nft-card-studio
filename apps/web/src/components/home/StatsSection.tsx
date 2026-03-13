@@ -16,8 +16,8 @@ export function StatsSection({ stats }: StatsSectionProps) {
         <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{stats?.tokenCount ?? "-"}</div>
       </article>
       <article style={{ textAlign: "center" }}>
-        <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase" }}>Volume</div>
-        <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{stats?.transferCount ?? "-"} <span style={{ fontSize: "1rem" }}>GAS</span></div>
+        <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase" }}>Transfers</div>
+        <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{stats?.transferCount ?? "-"}</div>
       </article>
     </section>
   );

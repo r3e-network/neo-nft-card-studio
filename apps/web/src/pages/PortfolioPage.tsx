@@ -134,9 +134,14 @@ export function PortfolioPage() {
 
   const copyAddress = () => {
     if (wallet.address) {
-      navigator.clipboard.writeText(wallet.address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      void navigator.clipboard.writeText(wallet.address)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        })
+        .catch(() => {
+          setError("Failed to copy wallet address.");
+        });
     }
   };
 
@@ -195,7 +200,7 @@ export function PortfolioPage() {
       <div style={{ padding: "85px 40px 40px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div className="stack-sm">
-            <h1 style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>Unnamed User</h1>
+            <h1 style={{ fontSize: "2rem", fontWeight: 800, margin: 0 }}>Connected Wallet</h1>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
               <div 
                 onClick={copyAddress}
@@ -215,7 +220,7 @@ export function PortfolioPage() {
                 <span style={{ color: "#fff" }}>{shortHash(wallet.address)}</span>
                 {copied ? <Check size={14} color="var(--neo-green)" /> : <Copy size={14} />}
               </div>
-              <span style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Joined March 2026</span>
+              <span style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Neo N3 wallet profile</span>
             </div>
           </div>
 
