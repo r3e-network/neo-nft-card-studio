@@ -50,16 +50,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
-  const syncInProgress = useRef(false);
 
   const syncWalletSession = useCallback(async (silent = true): Promise<{
     address: string | null;
     network: NeoWalletNetwork | null;
   }> => {
-    if (syncInProgress.current) {
-      return { address, network };
-    }
-
     const isConnected = localStorage.getItem(WALLET_CONNECTED_KEY) === "true";
     const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
 
@@ -67,7 +62,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return { address: null, network: null };
     }
 
-    syncInProgress.current = true;
     try {
       if (devWif) {
         const account = getWifAccount(devWif);
@@ -75,17 +69,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const nextAddress = account.address;
           const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-          setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
-          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+          setAddress(nextAddress);
+          setNetwork(nextNetwork);
           setRuntimeWalletNetwork(nextNetwork);
           return { address: nextAddress, network: nextNetwork };
         }
       }
 
-      const [currentNetwork, currentAccount] = await Promise.all([
-        getNeoWalletNetwork(silent),
-        getNeoWalletAccount(silent)
-      ]);
+      // Single call to get network/account, prioritized by provider
+      const currentNetwork = await getNeoWalletNetwork(silent);
+      const currentAccount = await getNeoWalletAccount(silent);
       
       const nextAddress = currentAccount?.address?.trim() || null;
       const nextNetwork = nextAddress ? currentNetwork : null;
@@ -94,72 +87,81 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
       }
 
-      setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
-      setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+      setAddress(nextAddress);
+      setNetwork(nextNetwork);
       setRuntimeWalletNetwork(nextNetwork);
 
       return {
         address: nextAddress,
         network: nextNetwork,
       };
-    } finally {
-      syncInProgress.current = false;
+    } catch (err) {
+      if (!silent) console.error("Sync failed:", err);
+      return { address: null, network: null };
     }
-  }, [address, network]);
+  }, []);
 
+  // 1. Initial Readiness & Events Setup
   useEffect(() => {
-    if (isReady) return;
+    const setupEvents = (provider: any) => {
+      if (!provider) return;
+
+      const onAccountChanged = (data: any) => {
+        const addr = data?.address || data?.[0]?.address || null;
+        setAddress(addr);
+        if (!addr) {
+          localStorage.removeItem(WALLET_CONNECTED_KEY);
+          setNetwork(null);
+        }
+      };
+
+      const onNetworkChanged = (data: any) => {
+        void syncWalletSession(true);
+      };
+
+      if (provider.addEventListener && provider.EVENT) {
+        provider.addEventListener(provider.EVENT.ACCOUNT_CHANGED, onAccountChanged);
+        provider.addEventListener(provider.EVENT.NETWORK_CHANGED, onNetworkChanged);
+        return () => {
+          provider.removeEventListener?.(provider.EVENT.ACCOUNT_CHANGED, onAccountChanged);
+          provider.removeEventListener?.(provider.EVENT.NETWORK_CHANGED, onNetworkChanged);
+        };
+      }
+    };
+
+    if (isReady) {
+      return setupEvents(getNeoProvider());
+    }
 
     let attempts = 0;
     const interval = setInterval(() => {
       attempts++;
-      if (getNeoProvider()) {
+      const provider = getNeoProvider();
+      if (provider) {
         setIsReady(true);
         clearInterval(interval);
-      } else if (attempts > 20) { // Give up after 10s
+      } else if (attempts > 20) {
         clearInterval(interval);
       }
     }, 500);
 
     return () => clearInterval(interval);
-  }, [isReady]);
+  }, [isReady, syncWalletSession]);
 
+  // 2. Initial Session Restore
   useEffect(() => {
-    if (!isReady) {
-      return;
-    }
+    if (!isReady) return;
+    void syncWalletSession(true);
+  }, [isReady, syncWalletSession]);
 
-    let closed = false;
-
-    const syncNetwork = async () => {
-      try {
-        if (closed) {
-          return;
-        }
-        await syncWalletSession(true);
-      } catch {
-        // ignore transient provider/network read failures
-      }
-    };
-
-    const interval = setInterval(() => {
-      void syncNetwork();
-    }, 10000);
-
+  // 3. Focus Recovery (less frequent)
+  useEffect(() => {
+    if (!isReady) return;
     const onFocus = () => {
-      void syncNetwork();
+      void syncWalletSession(true);
     };
-
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-    void syncNetwork();
-
-    return () => {
-      closed = true;
-      clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-    };
+    return () => window.removeEventListener("focus", onFocus);
   }, [isReady, syncWalletSession]);
 
   const value = useMemo<WalletState>(
@@ -171,9 +173,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connect: async () => {
         setIsConnecting(true);
         try {
-          // If a wallet was injected late, ensure state catches up immediately when clicking too
-          if (!isReady && getNeoProvider()) {
-            setIsReady(true);
+          if (!getNeoProvider()) {
+            throw new Error("Wallet provider not found. Please install NeoLine.");
           }
           await connectNeoWallet();
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
