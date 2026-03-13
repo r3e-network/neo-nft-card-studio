@@ -29,6 +29,9 @@ jobs:
       - name: Audit Production Config
         run: npm run audit:production-config
 
+      - name: Audit Security Surface
+        run: npm run audit:security
+
       - name: Typecheck
         run: npm run check
 

@@ -59,6 +59,12 @@ NEO_TEST_WIF=... npm run test:wif-ui
 npm run audit:production-config
 ```
 
+### Repository Security Surface Audit
+
+```bash
+npm run audit:security
+```
+
 ### Contract Validation
 
 ```bash

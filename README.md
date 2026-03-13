@@ -268,6 +268,12 @@ NEO_TEST_WIF=<your_wif> npm run test:wif-ui
 npm run audit:production-config
 ```
 
+仓库安全面扫描（被跟踪环境文件 / 明文凭据模式 / 风险配置面）：
+
+```bash
+npm run audit:security
+```
+
 附加测试网真实交易流（会发交易，覆盖 `create + deploy + mint + configureCheckInProgram + checkIn + transfer + burn`）：
 
 ```bash
