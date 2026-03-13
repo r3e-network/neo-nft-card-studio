@@ -250,6 +250,24 @@ npm run verify:contracts
 npm run smoke:e2e
 ```
 
+本地交易/持仓状态流 smoke：
+
+```bash
+npm run smoke:trade
+```
+
+真实钱包前端回归（会启动本地前后端并使用 `NEO_TEST_WIF` 跑浏览器流程）：
+
+```bash
+NEO_TEST_WIF=<your_wif> npm run test:wif-ui
+```
+
+生产配置静态审计（Vercel / Supabase / 钱包调试开关）：
+
+```bash
+npm run audit:production-config
+```
+
 附加测试网真实交易流（会发交易，覆盖 `create + deploy + mint + configureCheckInProgram + checkIn + transfer + burn`）：
 
 ```bash
@@ -271,6 +289,7 @@ set -a; source .env.testnet; set +a; npm run test:testnet
 说明：
 - `testnet-flow` 现在会自动校验 dedicated 合约隔离规则（平台级方法禁止、跨 collectionId 禁止）。
 - 若 `TESTNET_DEPLOY_NAME` 重名，脚本会自动追加后缀重试部署，避免因“contract already exists”中断。
+- `test:wif-ui` 会验证钱包连接后的跨页状态复用，包括 `Create -> Mint -> Explore -> Portfolio -> Reload`。
 
 ## 11. 前端功能
 
@@ -287,3 +306,6 @@ set -a; source .env.testnet; set +a; npm run test:testnet
 - `docs/contracts-interface.md`
 - `docs/ghostmarket-integration.md`
 - `docs/neofs-integration.md`
+- `docs/neoline-frontend-integration.md`
+- `docs/wallet-release-checklist.md`
+- `docs/production-config-audit.md`
