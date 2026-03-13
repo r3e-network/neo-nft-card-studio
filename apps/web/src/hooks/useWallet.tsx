@@ -198,13 +198,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         try {
           const account = await connectNeoWallet();
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-          const currentNetwork = await getNeoWalletNetwork(true);
           const nextAddress = account.address?.trim() || null;
-          const nextNetwork = nextAddress ? currentNetwork : null;
+          if (!nextAddress) {
+            throw new Error("Wallet connected but no address was returned.");
+          }
 
           setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
-          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
-          setRuntimeWalletNetwork(nextNetwork);
+
+          void getNeoWalletNetwork(true)
+            .then((currentNetwork) => {
+              const nextNetwork = currentNetwork.network === "unknown" && currentNetwork.magic === null
+                ? null
+                : currentNetwork;
+
+              setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+              setRuntimeWalletNetwork(nextNetwork);
+            })
+            .catch(() => {
+              setNetwork((prev) => (prev === null ? prev : null));
+              setRuntimeWalletNetwork(null);
+            });
         } catch (err) {
           console.error("Connect failed:", err);
           throw err;

@@ -1037,7 +1037,6 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
     "getAccount",
     "requestAccounts",
-    "switchWalletAccount",
     "getAddress",
     "getWalletAddress",
     "getAccounts",
@@ -1056,7 +1055,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     }
   }
 
-  for (const method of ["getAccount", "requestAccounts", "switchWalletAccount", "getAddress", "getWalletAddress", "getAccounts"]) {
+  for (const method of ["getAccount", "requestAccounts", "getAddress", "getWalletAddress", "getAccounts"]) {
     try {
       const account = normalizeAccount(await requestProvider(provider, { method }));
       if (account) {
