@@ -81,7 +81,7 @@ function withNetworkSuffix(filePath: string, network: ApiNetworkName): string {
 const configSchema = z.object({
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().default(8080),
-  API_CORS_ORIGIN: z.string().default("*"),
+  API_CORS_ORIGIN: z.string().default(""),
   NEO_DEFAULT_NETWORK: z.enum(["mainnet", "testnet", "private"]).default("testnet"),
   DB_FILE: z.string().default(DEFAULT_DB_FILE),
   DB_FILE_MAINNET: optionalStringFromEnv,

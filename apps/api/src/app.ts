@@ -6,6 +6,34 @@ import { AppDb } from "./db.js";
 import { type ApiRouteNetworkContext, createHttpRouter } from "./routes/http.js";
 import { IndexerService } from "./services/indexer.js";
 
+function buildCorsOriginResolver(configuredOrigins: string) {
+  const normalized = configuredOrigins
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (normalized.includes("*")) {
+    return true;
+  }
+
+  const loopbackOriginRegex = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
+  const allowSet = new Set(normalized);
+
+  return (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowSet.has(origin) || loopbackOriginRegex.test(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS origin not allowed: ${origin}`), false);
+  };
+}
+
 export function createApp() {
   const config = loadConfig();
   const networkContexts: Partial<Record<ApiNetworkName, ApiRouteNetworkContext>> = {};
@@ -41,7 +69,7 @@ export function createApp() {
   app.use(express.json({ limit: "50mb" }));
   app.use(
     cors({
-      origin: config.API_CORS_ORIGIN,
+      origin: buildCorsOriginResolver(config.API_CORS_ORIGIN),
     }),
   );
   app.use("/api", createHttpRouter(networkContexts, config));

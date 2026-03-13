@@ -34,6 +34,9 @@ const pkg = readJson("package.json");
 const vercel = readJson("vercel.json");
 const envExample = readText(".env.example");
 const envKeys = new Set(extractEnvKeys(envExample));
+const apiCorsOriginLine = envExample
+  .split(/\r?\n/)
+  .find((line) => line.trim().startsWith("API_CORS_ORIGIN=")) ?? "";
 
 const findings = [];
 const warnings = [];
@@ -135,6 +138,12 @@ if (!envKeys.has("VITE_WALLET_DEBUG")) {
   findings.push(".env.example includes VITE_WALLET_DEBUG and leaves it unset by default");
 }
 
+if (/^API_CORS_ORIGIN=\*/m.test(apiCorsOriginLine)) {
+  warnings.push(".env.example still defaults API_CORS_ORIGIN to wildcard.");
+} else {
+  findings.push(".env.example does not default API_CORS_ORIGIN to wildcard");
+}
+
 const publicSupabaseVars = [...envKeys].filter((key) => key.startsWith("VITE_") && key.includes("SUPABASE"));
 if (publicSupabaseVars.length > 0) {
   warnings.push(`Public Supabase client env vars are present in .env.example: ${publicSupabaseVars.join(", ")}`);
@@ -155,6 +164,10 @@ if (hasPatternInFiles(["apps/web/src/lib/config.ts"], /VITE_.*SUPABASE/)) {
 
 if (hasPatternInFiles(["apps/web/src/lib/neoline.ts"], /VITE_WALLET_DEBUG/)) {
   findings.push("Wallet debug logging is behind DEV or VITE_WALLET_DEBUG=true");
+}
+
+if (hasPatternInFiles(["apps/web/src/pages/CreateCollectionPage.tsx"], /SUBMITTED_TXID_FOR_PLAYWRIGHT_E2E/)) {
+  findings.push("CreateCollectionPage txid debug log is present for DEV-only E2E diagnostics");
 }
 
 if (hasPatternInFiles(["apps/api/src/config.ts", "api/index.ts"], /NEXT_PUBLIC_SUPABASE/)) {

@@ -107,7 +107,9 @@ export function CreateCollectionPage() {
           });
 
       const txid = await wallet.invoke(payload);
-      console.log(`SUBMITTED_TXID_FOR_PLAYWRIGHT_E2E=${txid}`);
+      if (import.meta.env.DEV) {
+        console.log(`SUBMITTED_TXID_FOR_PLAYWRIGHT_E2E=${txid}`);
+      }
       setResult(`Collection Launched! Transaction Hash: ${txid}`);
       setStep(3);
     } catch (err) {

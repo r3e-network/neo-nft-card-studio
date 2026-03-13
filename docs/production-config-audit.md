@@ -94,8 +94,24 @@ Wallet diagnostics in [apps/web/src/lib/neoline.ts](/Users/jinghuiliao/git/NFT/a
 - Keep `VITE_WALLET_DEBUG` unset in production by default.
 - Only enable it temporarily when debugging wallet/provider issues.
 - If you enable it in production for incident response, remove it immediately after the investigation.
+- Transaction debug logs used by local E2E are gated to `DEV` and should not appear in production bundles.
 
-## 4. Recommended Vercel Environment Split
+## 4. API CORS Audit
+
+### Current State
+
+- `API_CORS_ORIGIN` no longer defaults to `*`
+- the API now allows:
+  - no-origin requests
+  - explicitly configured browser origins
+  - loopback origins such as `http://localhost:*` and `http://127.0.0.1:*`
+
+### Recommendation
+
+- In production, set `API_CORS_ORIGIN` to a comma-separated allowlist of your real frontend origins.
+- Do not use `*` unless you explicitly want a fully public browser API surface.
+
+## 5. Recommended Vercel Environment Split
 
 ### Server / API Runtime
 
@@ -150,7 +166,7 @@ Set only the client-safe variables:
 - `POSTGRES_*`
 - `SUPABASE_JWT_SECRET`
 
-## 5. Operational Recommendations
+## 6. Operational Recommendations
 
 Before shipping production config changes:
 
@@ -179,7 +195,7 @@ NEO_TEST_WIF=... npm run test:wif-ui
 5. Confirm `VITE_WALLET_DEBUG` is blank in production unless actively debugging.
 6. Confirm only server-side Vercel env holds Supabase service credentials.
 
-## 6. GitHub Actions Recommendation
+## 7. GitHub Actions Recommendation
 
 Use the manual workflow in `.github/workflows/production-audit.yml` to run:
 
