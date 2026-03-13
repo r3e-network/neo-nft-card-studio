@@ -16,6 +16,8 @@ function readRequiredWif() {
 
 async function run() {
   const testWif = readRequiredWif();
+  const configuredBaseUrl = process.env.WIF_UI_BASE_URL?.trim();
+  const baseUrl = configuredBaseUrl || "http://127.0.0.1:5173/";
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -32,11 +34,14 @@ async function run() {
     }
   });
 
-  const url = "http://127.0.0.1:5173/";
+  const url = baseUrl;
   console.log(`Navigating to ${url}`);
   try {
      await page.goto(url, { waitUntil: "domcontentloaded" });
   } catch (err) {
+      if (configuredBaseUrl) {
+        throw err;
+      }
       console.log("Failed reaching 5173, trying 5174");
       await page.goto("http://127.0.0.1:5174/", { waitUntil: "domcontentloaded" });
   }
@@ -172,6 +177,80 @@ async function run() {
   await page.goto(`${new URL(baseUrl).origin}/portfolio`, { waitUntil: "domcontentloaded" });
   await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
   console.log("Portfolio loaded with preserved wallet state.");
+
+  const mintedTokenName = "Playwright E2E NFT";
+
+  async function waitForTokenCard(tokenName) {
+    const tokenCard = page.locator(".panel", { hasText: tokenName }).first();
+    for (let i = 0; i < 6; i++) {
+      if (await tokenCard.count()) {
+        try {
+          await tokenCard.waitFor({ state: "visible", timeout: 5000 });
+          return tokenCard;
+        } catch {
+          // fall through to reload
+        }
+      }
+
+      console.log(`Token card '${tokenName}' not ready yet, reloading portfolio...`);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+      await page.waitForTimeout(5000);
+    }
+
+    throw new Error(`Token card not found in portfolio: ${tokenName}`);
+  }
+
+  const tokenCard = await waitForTokenCard(mintedTokenName);
+
+  console.log("Listing minted NFT from portfolio...");
+  await tokenCard.locator('input[placeholder=\"Price in GAS\"]').fill("1.25");
+  await tokenCard.getByRole("button", { name: /list for sale/i }).click();
+
+  let listingConfirmed = false;
+  for (let i = 0; i < 8; i++) {
+    const refreshedCard = await waitForTokenCard(mintedTokenName);
+    if (await refreshedCard.getByRole("button", { name: /cancel listing/i }).count()) {
+      listingConfirmed = true;
+      break;
+    }
+    console.log("Listing state not indexed yet, waiting 5s...");
+    await page.waitForTimeout(5000);
+  }
+
+  if (!listingConfirmed) {
+    throw new Error("Listed NFT did not transition to Cancel Listing state in portfolio.");
+  }
+  console.log("Portfolio shows listed state.");
+
+  console.log("Checking Explore page reflects listed state...");
+  await page.goto(`${new URL(baseUrl).origin}/explore?search=${encodeURIComponent(mintedTokenName)}`, { waitUntil: "domcontentloaded" });
+  await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+  await page.getByText(mintedTokenName).first().waitFor({ state: "visible", timeout: 30000 });
+  await page.getByText("1.25 GAS").first().waitFor({ state: "visible", timeout: 30000 });
+  console.log("Explore page reflects listed state.");
+
+  console.log("Canceling listing from portfolio...");
+  await page.goto(`${new URL(baseUrl).origin}/portfolio`, { waitUntil: "domcontentloaded" });
+  await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+  const listedCard = await waitForTokenCard(mintedTokenName);
+  await listedCard.getByRole("button", { name: /cancel listing/i }).click();
+
+  let cancelConfirmed = false;
+  for (let i = 0; i < 8; i++) {
+    const refreshedCard = await waitForTokenCard(mintedTokenName);
+    if (await refreshedCard.getByRole("button", { name: /list for sale/i }).count()) {
+      cancelConfirmed = true;
+      break;
+    }
+    console.log("Cancel state not indexed yet, waiting 5s...");
+    await page.waitForTimeout(5000);
+  }
+
+  if (!cancelConfirmed) {
+    throw new Error("Canceled NFT did not return to List for Sale state in portfolio.");
+  }
+  console.log("Portfolio shows canceled state.");
 
   console.log("Checking Created -> Mint Item handoff...");
   await page.getByRole("button", { name: /Created/i }).click();
