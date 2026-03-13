@@ -909,8 +909,13 @@ async function ensureProviderEnabled(provider: NeoLineN3Provider): Promise<unkno
   }
 }
 
+function readDirectAccountFromProvider(provider: NeoLineN3Provider): NeoLineAccount | null {
+  const providerRecord = asRecord(provider);
+  return normalizeAccount(providerRecord?.account ?? providerRecord?.selectedAddress ?? providerRecord?.address);
+}
+
 async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<NeoLineAccount | null> {
-  for (const methodName of ["getAccount", "getAccounts", "getAddress", "getWalletAddress", "requestAccounts"] as const) {
+  for (const methodName of ["getAccount", "getAccounts", "getAddress", "getWalletAddress"] as const) {
     const value = await tryCallProviderMethod(provider, methodName);
     if (value !== undefined) {
       const account = normalizeAccount(value);
@@ -921,13 +926,13 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
   }
 
   const providerRecord = asRecord(provider);
-  const directAccount = normalizeAccount(providerRecord?.account ?? providerRecord?.selectedAddress ?? providerRecord?.address);
+  const directAccount = readDirectAccountFromProvider(provider);
   if (directAccount) {
     return directAccount;
   }
 
   if (providerRecord?.request || providerRecord?.send || providerRecord?.sendAsync) {
-    for (const method of ["getAccount", "getAccounts", "getAddress", "getWalletAddress", "requestAccounts"]) {
+    for (const method of ["getAccount", "getAccounts", "getAddress", "getWalletAddress"]) {
       try {
         const account = normalizeAccount(await requestProvider(provider, { method }));
         if (account) {
@@ -1198,6 +1203,18 @@ export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount
   }
 
   if (providers.length === 0) {
+    return null;
+  }
+
+  if (silent) {
+    for (const provider of providers) {
+      const account = readDirectAccountFromProvider(provider);
+      if (account) {
+        cachedProvider = provider;
+        return account;
+      }
+    }
+
     return null;
   }
 

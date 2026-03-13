@@ -129,11 +129,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
 
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-        void syncWalletSession(true);
+        void getNeoWalletNetwork(true).then((nextNetwork) => {
+          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+          setRuntimeWalletNetwork(nextNetwork);
+        });
       };
 
-      const onNetworkChanged = (data: any) => {
-        void syncWalletSession(true);
+      const onNetworkChanged = () => {
+        void getNeoWalletNetwork(true).then((nextNetwork) => {
+          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+          setRuntimeWalletNetwork(nextNetwork);
+        });
       };
 
       if (provider.addEventListener && provider.EVENT) {
