@@ -21,17 +21,30 @@ function shortAddress(address: string): string {
 
 function formatWalletNetworkLabel(
   network: { network: "mainnet" | "testnet" | "private" | "unknown"; magic: number | null } | null,
-): string {
+): React.ReactNode {
   if (!network) {
-    return "UNKNOWN";
+    return <span style={{ color: "var(--text-muted)" }}>UNKNOWN</span>;
   }
 
+  const isMainnet = network.network === "mainnet";
   const label = network.network.toUpperCase();
-  if (network.magic === null) {
-    return label;
-  }
-
-  return `${label} · ${network.magic}`;
+  const color = isMainnet ? "#3A5EFF" : "var(--neo-green)";
+  
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      <span className="chip" style={{ 
+        background: isMainnet ? "rgba(58, 94, 255, 0.15)" : "rgba(0, 229, 153, 0.15)", 
+        borderColor: isMainnet ? "rgba(58, 94, 255, 0.3)" : "rgba(0, 229, 153, 0.3)",
+        color: color,
+        fontSize: "0.7rem",
+        padding: "0.1rem 0.5rem",
+        fontWeight: 800
+      }}>
+        {label}
+      </span>
+      {network.magic !== null && <span style={{ opacity: 0.6 }}>{network.magic}</span>}
+    </div>
+  );
 }
 
 export function LayoutShell({ children }: { children: React.ReactNode }) {
@@ -189,9 +202,17 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div style={{ background: "rgba(32, 129, 226, 0.1)", padding: "0.5rem 1.4rem", display: "flex", justifyContent: "center", gap: "1.5rem", fontSize: "0.8rem", borderBottom: "1px solid rgba(255, 255, 255, 0.05)" }}>
+      <div style={{ 
+        background: wallet.network?.network === "mainnet" ? "rgba(58, 94, 255, 0.1)" : "rgba(0, 229, 153, 0.1)", 
+        padding: "0.5rem 1.4rem", 
+        display: "flex", 
+        justifyContent: "center", 
+        gap: "1.5rem", 
+        fontSize: "0.8rem", 
+        borderBottom: "1px solid rgba(255, 255, 255, 0.05)" 
+      }}>
         <span className="flex-align-center gap-xs"><Zap size={12} color="#00E599" /> {runtimeDialect.toUpperCase()} Dialect</span>
-        <span className="flex-align-center gap-xs"><Compass size={12} color="#00D4FF" /> {formatWalletNetworkLabel(wallet.network)}</span>
+        <span className="flex-align-center gap-xs"><Compass size={12} color={wallet.network?.network === "mainnet" ? "#3A5EFF" : "#00D4FF"} /> {formatWalletNetworkLabel(wallet.network)}</span>
         <span className="flex-align-center gap-xs"><Sparkles size={12} color="#FFD700" /> GhostMarket Compatible</span>
       </div>
 
