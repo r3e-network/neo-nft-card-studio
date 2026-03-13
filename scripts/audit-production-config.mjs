@@ -152,6 +152,8 @@ if (hasPatternInFiles(["apps/web/src/lib/neoline.ts"], /VITE_WALLET_DEBUG/)) {
 
 if (hasPatternInFiles(["apps/api/src/config.ts", "api/index.ts"], /NEXT_PUBLIC_SUPABASE/)) {
   warnings.push("API config still accepts NEXT_PUBLIC_SUPABASE* fallbacks. Prefer server-only SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in production.");
+} else {
+  findings.push("API config no longer accepts NEXT_PUBLIC_SUPABASE* fallbacks");
 }
 
 printSection("Findings");

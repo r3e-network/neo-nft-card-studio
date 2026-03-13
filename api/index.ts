@@ -26,7 +26,6 @@ function createFallbackApp(message: string): express.Express {
       ),
       hasSupabaseUrl: envPresent(
         process.env.SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.SUPABASE_PROJECT_URL,
         process.env.POSTGRES_HOST,
         process.env.POSTGRES_USER,
@@ -36,10 +35,6 @@ function createFallbackApp(message: string): express.Express {
         process.env.SUPABASE_SERVICE_ROLE_KEY,
         process.env.SUPABASE_SECRET_KEY,
         process.env.SUPABASE_KEY,
-        process.env.SUPABASE_ANON_KEY,
-        process.env.SUPABASE_PUBLISHABLE_KEY,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
       ),
       nodeVersion: process.version,
     };

@@ -125,15 +125,10 @@ const configSchema = z.object({
   NEOTUBE_API_BASE_URL: z.string().url().default("https://api.neotube.io"),
   NEOTUBE_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
   SUPABASE_URL: optionalUrlFromEnv,
-  NEXT_PUBLIC_SUPABASE_URL: optionalUrlFromEnv,
   SUPABASE_PROJECT_URL: optionalUrlFromEnv,
-  SUPABASE_ANON_KEY: optionalStringFromEnv,
   SUPABASE_SERVICE_ROLE_KEY: optionalStringFromEnv,
   SUPABASE_SECRET_KEY: optionalStringFromEnv,
   SUPABASE_KEY: optionalStringFromEnv,
-  SUPABASE_PUBLISHABLE_KEY: optionalStringFromEnv,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalStringFromEnv,
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: optionalStringFromEnv,
   POSTGRES_HOST: optionalStringFromEnv,
   POSTGRES_USER: optionalStringFromEnv,
   POSTGRES_URL: optionalStringFromEnv,
@@ -165,10 +160,6 @@ function resolveSupabaseKey(config: RawAppConfig): string | undefined {
     normalizeOptional(config.SUPABASE_SERVICE_ROLE_KEY),
     normalizeOptional(config.SUPABASE_SECRET_KEY),
     normalizeOptional(config.SUPABASE_KEY),
-    normalizeOptional(config.SUPABASE_ANON_KEY),
-    normalizeOptional(config.SUPABASE_PUBLISHABLE_KEY),
-    normalizeOptional(config.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    normalizeOptional(config.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
   ];
 
   for (const candidate of candidates) {
@@ -236,7 +227,6 @@ function inferSupabaseUrlFromPostgresUrl(postgresUrl: string | undefined): strin
 function resolveSupabaseUrl(config: RawAppConfig): string | undefined {
   return (
     normalizeOptional(config.SUPABASE_URL) ??
-    normalizeOptional(config.NEXT_PUBLIC_SUPABASE_URL) ??
     normalizeOptional(config.SUPABASE_PROJECT_URL) ??
     inferSupabaseUrlFromPostgresHost(config.POSTGRES_HOST) ??
     inferSupabaseUrlFromPostgresUser(config.POSTGRES_USER) ??
@@ -355,7 +345,7 @@ export function loadConfig(): AppConfig {
 
   if (supabaseUrl && !supabaseKey) {
     throw new Error(
-      "Supabase URL is configured but no key is available. Set SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SECRET_KEY, or SUPABASE_ANON_KEY.",
+      "Supabase URL is configured but no server-side key is available. Set SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SECRET_KEY, or SUPABASE_KEY.",
     );
   }
 

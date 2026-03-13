@@ -63,9 +63,9 @@ Additional server variables as needed:
 - `POSTGRES_PASSWORD`
 - `SUPABASE_JWT_SECRET`
 
-### Current Risk
+### Current State
 
-The API config still accepts `NEXT_PUBLIC_SUPABASE_*` fallbacks in server code. This is helpful for recovery and diagnostics, but it is not the preferred production pattern.
+The API now resolves Supabase config from server-side variables only. It no longer uses `NEXT_PUBLIC_SUPABASE_*` fallbacks inside the server runtime.
 
 ### Recommendation
 
@@ -76,13 +76,7 @@ Use only:
 
 for production API configuration on Vercel.
 
-Avoid relying on:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-
-inside the serverless runtime.
+Do not rely on `NEXT_PUBLIC_SUPABASE_*` inside the serverless runtime.
 
 ## 3. Frontend Wallet Debug Audit
 
@@ -182,3 +176,13 @@ NEO_TEST_WIF=... npm run test:wif-ui
 4. Confirm Vercel is building the intended commit, not an older one.
 5. Confirm `VITE_WALLET_DEBUG` is blank in production unless actively debugging.
 6. Confirm only server-side Vercel env holds Supabase service credentials.
+
+## 6. GitHub Actions Recommendation
+
+Use the manual workflow in `.github/workflows/production-audit.yml` to run:
+
+- `npm run audit:production-config`
+- `npm run check`
+- `npm run build`
+- `npm run smoke:trade`
+- optionally `npm run test:wif-ui` when `NEO_TEST_WIF` is configured as a repository secret
