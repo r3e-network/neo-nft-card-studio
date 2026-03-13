@@ -173,7 +173,20 @@ async function run() {
   await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
   console.log("Portfolio loaded with preserved wallet state.");
 
+  console.log("Checking Created -> Mint Item handoff...");
+  await page.getByRole("button", { name: /Created/i }).click();
+  const createdMintLink = page.getByRole("link", { name: /^Mint Item$/ }).first();
+  await createdMintLink.waitFor({ state: "visible", timeout: 30000 });
+  await createdMintLink.click();
+  await page.waitForURL(/\/mint\?collectionId=/, { timeout: 30000 });
+  const selectedOptionLabel = await page.locator("select").first().locator("option:checked").innerText();
+  if (!selectedOptionLabel.includes("Playwright E2E Collection")) {
+    throw new Error(`Mint page did not preserve selected collection context. Selected option: ${selectedOptionLabel}`);
+  }
+  console.log("Mint Item handoff preserved selected collection.");
+
   console.log("Reloading Portfolio page...");
+  await page.goto(`${new URL(baseUrl).origin}/portfolio`, { waitUntil: "domcontentloaded" });
   await page.reload({ waitUntil: "domcontentloaded" });
   await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
   console.log("Reload preserved wallet state.");
