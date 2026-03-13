@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WalletInvokeRequest } from "@platform/neo-sdk";
 
@@ -50,11 +50,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
+  const syncInProgress = useRef(false);
 
   const syncWalletSession = useCallback(async (silent = true): Promise<{
     address: string | null;
     network: NeoWalletNetwork | null;
   }> => {
+    if (syncInProgress.current) {
+      return { address, network };
+    }
+
     const isConnected = localStorage.getItem(WALLET_CONNECTED_KEY) === "true";
     const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
 
@@ -62,40 +67,45 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return { address: null, network: null };
     }
 
-    if (devWif) {
-      const account = getWifAccount(devWif);
-      if (account) {
-        const nextAddress = account.address;
-        const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
-        localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-        setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
-        setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
-        setRuntimeWalletNetwork(nextNetwork);
-        return { address: nextAddress, network: nextNetwork };
+    syncInProgress.current = true;
+    try {
+      if (devWif) {
+        const account = getWifAccount(devWif);
+        if (account) {
+          const nextAddress = account.address;
+          const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
+          localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+          setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+          setRuntimeWalletNetwork(nextNetwork);
+          return { address: nextAddress, network: nextNetwork };
+        }
       }
+
+      const [currentNetwork, currentAccount] = await Promise.all([
+        getNeoWalletNetwork(silent),
+        getNeoWalletAccount(silent)
+      ]);
+      
+      const nextAddress = currentAccount?.address?.trim() || null;
+      const nextNetwork = nextAddress ? currentNetwork : null;
+
+      if (nextAddress) {
+        localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+      }
+
+      setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+      setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+      setRuntimeWalletNetwork(nextNetwork);
+
+      return {
+        address: nextAddress,
+        network: nextNetwork,
+      };
+    } finally {
+      syncInProgress.current = false;
     }
-
-    const [currentNetwork, currentAccount] = await Promise.all([
-      getNeoWalletNetwork(silent),
-      getNeoWalletAccount(silent)
-    ]);
-    
-    const nextAddress = currentAccount?.address?.trim() || null;
-    const nextNetwork = nextAddress ? currentNetwork : null;
-
-    if (nextAddress) {
-      localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-    }
-
-    setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
-    setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
-    setRuntimeWalletNetwork(nextNetwork);
-
-    return {
-      address: nextAddress,
-      network: nextNetwork,
-    };
-  }, []);
+  }, [address, network]);
 
   useEffect(() => {
     if (isReady) return;
@@ -134,7 +144,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const interval = setInterval(() => {
       void syncNetwork();
-    }, 3000);
+    }, 10000);
 
     const onFocus = () => {
       void syncNetwork();

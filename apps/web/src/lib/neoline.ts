@@ -1040,7 +1040,12 @@ async function tryCallProviderMethod(
 
   try {
     return await (method as (...innerArgs: unknown[]) => unknown).apply(provider, args);
-  } catch {
+  } catch (err) {
+    const errorRecord = asRecord(err);
+    if (errorRecord && errorRecord.type === "CONNECTION_DENIED") {
+      // User likely rejected the request or too many pending requests
+      return undefined;
+    }
     return undefined;
   }
 }
@@ -1092,6 +1097,11 @@ async function requestProvider(
             settled = true;
             globalThis.clearTimeout(timer);
             if (error) {
+              const errorRecord = asRecord(error);
+              if (errorRecord && errorRecord.type === "CONNECTION_DENIED") {
+                resolve(undefined); // Treat denial as "not found" during silent reads
+                return;
+              }
               reject(error);
               return;
             }
