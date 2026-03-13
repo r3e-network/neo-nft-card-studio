@@ -34,7 +34,6 @@
     "node": "20.x"
   },
   "devDependencies": {
-    "playwright": "^1.58.2",
-    "vercel": "^50.25.6"
+    "playwright": "^1.58.2"
   }
 }

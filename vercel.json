@@ -16,6 +16,10 @@
     {
       "path": "/api/sync?network=testnet",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/sync?network=mainnet",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

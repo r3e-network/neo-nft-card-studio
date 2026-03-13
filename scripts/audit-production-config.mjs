@@ -44,6 +44,8 @@ if (pkg.engines?.node) {
 
 if (pkg.devDependencies?.vercel || pkg.dependencies?.vercel) {
   warnings.push("The Vercel CLI is installed in project dependencies, so Vercel build logs will warn that it is ignored.");
+} else {
+  findings.push("Project dependencies do not include the Vercel CLI");
 }
 
 if (vercel.buildCommand !== "npm run vercel-build") {
@@ -63,8 +65,13 @@ if (cronPaths.length === 0) {
   warnings.push("No Vercel crons are configured; API indexing will only run on request-driven paths.");
 } else {
   findings.push(`Configured Vercel cron paths: ${cronPaths.join(", ")}`);
-  if (cronPaths.every((pathValue) => typeof pathValue === "string" && pathValue.includes("network=testnet"))) {
-    warnings.push("Cron indexing is currently testnet-only. Add additional cron entries if mainnet/private indexing is required.");
+  const hasTestnetCron = cronPaths.some((pathValue) => typeof pathValue === "string" && pathValue.includes("network=testnet"));
+  const hasMainnetCron = cronPaths.some((pathValue) => typeof pathValue === "string" && pathValue.includes("network=mainnet"));
+  if (!hasTestnetCron) {
+    warnings.push("No Vercel cron targets testnet indexing.");
+  }
+  if (!hasMainnetCron) {
+    warnings.push("No Vercel cron targets mainnet indexing.");
   }
 }
 
@@ -183,4 +190,4 @@ for (const key of recommendedClientVars) {
 printSection("Decision");
 console.log("- Keep VITE_WALLET_DEBUG unset in production unless actively debugging wallet issues.");
 console.log("- Do not place SUPABASE_SERVICE_ROLE_KEY, SUPABASE_SECRET_KEY, POSTGRES_* secrets in client-visible env namespaces.");
-console.log("- If production indexing should include mainnet, add a dedicated Vercel cron for the mainnet sync path.");
+console.log("- Add a private-network cron only when a private deployment needs scheduled indexing.");

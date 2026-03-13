@@ -19,7 +19,9 @@ Audit scope:
 - Build command is `npm run vercel-build`
 - Output directory is `apps/web/dist`
 - API requests are rewritten to `/api/index.ts`
-- A Vercel cron is configured for `/api/sync?network=testnet`
+- Vercel crons are configured for:
+  - `/api/sync?network=testnet`
+  - `/api/sync?network=mainnet`
 - `package.json` pins Node with `"engines": { "node": "20.x" }`
 
 ### Conclusions
@@ -27,14 +29,14 @@ Audit scope:
 - Vercel project-level Node version settings will be ignored because `package.json` pins Node 20.x.
 - The current web output path is consistent with the Vite build output.
 - The root `dist/` copy performed in `vercel-build` is still useful for the API workspace Vercel build path, but Vercel static output remains `apps/web/dist`.
-- Indexing is currently testnet-focused because the cron only targets testnet.
+- Production indexing now includes both testnet and mainnet cron coverage.
 
 ### Recommendations
 
 1. Leave Node pinned to `20.x` unless you intentionally test and migrate the entire repo.
 2. Keep `outputDirectory` as `apps/web/dist`.
-3. Add additional cron entries if production mainnet indexing is required.
-4. Remove the `vercel` package from dependencies only if your team no longer uses the CLI locally. It is not a runtime bug, but it causes noisy build warnings.
+3. Add a private-network cron only if you actually run a private deployment that needs scheduled indexing.
+4. Keep the Vercel CLI out of project dependencies unless you intentionally want it installed with the app dependencies.
 
 ## 2. Supabase Audit
 
