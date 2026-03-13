@@ -1,13 +1,68 @@
 #!/bin/bash
-lsof -ti:5173 | xargs kill -9 2>/dev/null
-lsof -ti:8080 | xargs kill -9 2>/dev/null
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
+
+if [[ -z "${NEO_TEST_WIF:-}" ]]; then
+  echo "Missing NEO_TEST_WIF. Set it to a Neo N3 testnet WIF before running tests/run-all.sh." >&2
+  exit 1
+fi
+
+if lsof -ti:5173 >/dev/null 2>&1; then
+  echo "Port 5173 is already in use. Stop the existing process before running tests/run-all.sh." >&2
+  exit 1
+fi
+
+if lsof -ti:8080 >/dev/null 2>&1; then
+  echo "Port 8080 is already in use. Stop the existing process before running tests/run-all.sh." >&2
+  exit 1
+fi
+
+API_PID=""
+WEB_PID=""
+
+cleanup() {
+  if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then
+    kill "$API_PID" 2>/dev/null || true
+    wait "$API_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "$WEB_PID" ]] && kill -0 "$WEB_PID" 2>/dev/null; then
+    kill "$WEB_PID" 2>/dev/null || true
+    wait "$WEB_PID" 2>/dev/null || true
+  fi
+}
+
+wait_for_url() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local started_at
+  started_at="$(date +%s)"
+
+  while true; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if (( "$(date +%s)" - started_at >= timeout_seconds )); then
+      echo "Timed out waiting for $url" >&2
+      return 1
+    fi
+
+    sleep 1
+  done
+}
+
+trap cleanup EXIT INT TERM
+
 npm run dev:api > api.log 2>&1 &
 API_PID=$!
 npm run dev:web > web.log 2>&1 &
 WEB_PID=$!
-sleep 10
+
+wait_for_url "http://127.0.0.1:8080/api/health" 60
+wait_for_url "http://127.0.0.1:5173/" 60
+
 node tests/wif-ui.mjs
-RES=$?
-kill $API_PID
-kill $WEB_PID
-exit $RES

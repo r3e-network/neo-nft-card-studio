@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import type { WalletInvokeRequest } from "@platform/neo-sdk";
 
@@ -10,7 +10,7 @@ import {
   invokeNeoWallet,
   type NeoWalletNetwork,
 } from "../lib/neoline";
-import { setRuntimeWalletNetwork, getRuntimeNetworkConfig } from "../lib/runtime-network";
+import { setRuntimeWalletNetwork } from "../lib/runtime-network";
 import { getWifAccount, invokeNeoWalletWithWif } from "../lib/wifWallet";
 
 interface WalletState {
@@ -51,6 +51,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
 
+  const clearWalletSession = useCallback((preserveDevWif = true) => {
+    localStorage.removeItem(WALLET_CONNECTED_KEY);
+    if (!preserveDevWif) {
+      localStorage.removeItem(DEV_WIF_KEY);
+    }
+    setAddress(null);
+    setNetwork(null);
+    setRuntimeWalletNetwork(null);
+  }, []);
+
   const syncWalletSession = useCallback(async (silent = true): Promise<{
     address: string | null;
     network: NeoWalletNetwork | null;
@@ -59,6 +69,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
 
     if (!isConnected && silent) {
+      clearWalletSession(Boolean(devWif));
       return { address: null, network: null };
     }
 
@@ -69,8 +80,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const nextAddress = account.address;
           const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-          setAddress(nextAddress);
-          setNetwork(nextNetwork);
+          setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
           setRuntimeWalletNetwork(nextNetwork);
           return { address: nextAddress, network: nextNetwork };
         }
@@ -85,10 +96,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       if (nextAddress) {
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+      } else {
+        localStorage.removeItem(WALLET_CONNECTED_KEY);
       }
 
-      setAddress(nextAddress);
-      setNetwork(nextNetwork);
+      setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+      setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
       setRuntimeWalletNetwork(nextNetwork);
 
       return {
@@ -97,9 +110,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       };
     } catch (err) {
       if (!silent) console.error("Sync failed:", err);
+      clearWalletSession(Boolean(devWif));
       return { address: null, network: null };
     }
-  }, []);
+  }, [clearWalletSession]);
 
   // 1. Initial Readiness & Events Setup
   useEffect(() => {
@@ -110,9 +124,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const addr = data?.address || data?.[0]?.address || null;
         setAddress(addr);
         if (!addr) {
-          localStorage.removeItem(WALLET_CONNECTED_KEY);
-          setNetwork(null);
+          clearWalletSession();
+          return;
         }
+
+        localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+        void syncWalletSession(true);
       };
 
       const onNetworkChanged = (data: any) => {
@@ -146,7 +163,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }, 500);
 
     return () => clearInterval(interval);
-  }, [isReady, syncWalletSession]);
+  }, [clearWalletSession, isReady, syncWalletSession]);
 
   // 2. Initial Session Restore
   useEffect(() => {
@@ -173,9 +190,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connect: async () => {
         setIsConnecting(true);
         try {
-          if (!getNeoProvider()) {
-            throw new Error("Wallet provider not found. Please install NeoLine.");
-          }
           await connectNeoWallet();
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
           await syncWalletSession(false);
@@ -198,11 +212,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       },
       disconnect: () => {
-        localStorage.removeItem(WALLET_CONNECTED_KEY);
-        localStorage.removeItem(DEV_WIF_KEY);
-        setAddress(null);
-        setNetwork(null);
-        setRuntimeWalletNetwork(null);
+        clearWalletSession(false);
       },
       sync: async () => {
         const session = await syncWalletSession(false);
@@ -235,7 +245,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           : `0x${rawTxId}`;
       },
     }),
-    [address, network, isConnecting, isReady, syncWalletSession],
+    [address, clearWalletSession, network, isConnecting, isReady, syncWalletSession],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

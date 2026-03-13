@@ -2,13 +2,17 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import Database from "better-sqlite3";
 
-const ROOT = process.cwd();
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_RPC = "https://testnet1.neo.coz.io:443";
+const NEOFS_METADATA_MAX_BYTES = 1024 * 1024;
+const NEOFS_RESOURCE_MAX_BYTES = 20 * 1024 * 1024;
 
 function assert(condition, message) {
   if (!condition) {
@@ -73,6 +77,88 @@ async function waitForHealth(baseUrl, timeoutMs = 30000) {
   }
 
   throw new Error("API did not become healthy within timeout");
+}
+
+function startMockNeoFsGateway() {
+  const largeMetadata = JSON.stringify({
+    smoke: true,
+    payload: "x".repeat(NEOFS_METADATA_MAX_BYTES + 128),
+  });
+
+  const largeResourceChunk = Buffer.alloc(256 * 1024, 7);
+  const totalLargeResourceBytes = NEOFS_RESOURCE_MAX_BYTES + 256 * 1024;
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const pathname = url.pathname;
+
+    if (pathname === "/container-1/meta/1.json") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ smoke: true, object: "small-metadata" }));
+      return;
+    }
+
+    if (pathname === "/container-1/meta/large.json") {
+      res.writeHead(200, { "content-type": "application/json" });
+      const chunkSize = 128 * 1024;
+      for (let offset = 0; offset < largeMetadata.length; offset += chunkSize) {
+        if (res.destroyed || req.destroyed) {
+          return;
+        }
+        res.write(largeMetadata.slice(offset, offset + chunkSize));
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      res.end();
+      return;
+    }
+
+    if (pathname === "/container-1/blob/small.bin") {
+      const body = Buffer.from("mock-neofs-resource");
+      res.writeHead(200, { "content-type": "application/octet-stream" });
+      res.end(body);
+      return;
+    }
+
+    if (pathname === "/container-1/blob/large.bin") {
+      res.writeHead(200, { "content-type": "application/octet-stream" });
+      let sent = 0;
+      while (sent < totalLargeResourceBytes) {
+        if (res.destroyed || req.destroyed) {
+          return;
+        }
+
+        const remaining = totalLargeResourceBytes - sent;
+        const chunk = remaining >= largeResourceChunk.length
+          ? largeResourceChunk
+          : largeResourceChunk.subarray(0, remaining);
+
+        res.write(chunk);
+        sent += chunk.length;
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      res.end();
+      return;
+    }
+
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end("not found");
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        reject(new Error("Failed to start mock NeoFS gateway"));
+        return;
+      }
+
+      resolve({
+        server,
+        baseUrl: `http://127.0.0.1:${address.port}`,
+      });
+    });
+  });
 }
 
 function seedApiDb(dbFile, profile) {
@@ -167,6 +253,7 @@ async function runApiSmoke() {
   const dbFileMainnet = path.join(tempDir, "api.mainnet.db");
   const apiPort = 18080 + Math.floor(Math.random() * 1000);
   const baseUrl = `http://127.0.0.1:${apiPort}`;
+  const gateway = await startMockNeoFsGateway();
 
   const env = {
     ...process.env,
@@ -182,6 +269,9 @@ async function runApiSmoke() {
     NEO_CONTRACT_DIALECT: "csharp",
     INDEXER_ENABLE_EVENTS: "false",
     GHOSTMARKET_ENABLED: "false",
+    NEOFS_GATEWAY_BASE_URL: gateway.baseUrl,
+    NEOFS_OBJECT_URL_TEMPLATE: `${gateway.baseUrl}/{containerId}/{objectPath}`,
+    NEOFS_CONTAINER_URL_TEMPLATE: `${gateway.baseUrl}/{containerId}`,
   };
 
   const apiProcess = spawn("npm", ["run", "start", "--workspace", "@platform/api"], {
@@ -271,11 +361,18 @@ async function runApiSmoke() {
     const neoFsResource = await fetchText(
       `${baseUrl}/api/meta/neofs/resource?uri=${encodeURIComponent("neofs://container-1/meta/1.json")}`,
     );
-    assert([200, 502].includes(neoFsResource.status), "NeoFS resource endpoint should return 200 or 502");
-    if (neoFsResource.status !== 200) {
-      const payload = JSON.parse(neoFsResource.text);
-      assert(typeof payload?.message === "string", "NeoFS resource error should include message");
-    }
+    assert(neoFsResource.status === 200, "NeoFS resource endpoint should return 200 for mock gateway payload");
+    assert(neoFsResource.text.includes("small-metadata"), "NeoFS resource should proxy mock gateway body");
+
+    await fetchJson(
+      `${baseUrl}/api/meta/neofs/metadata?uri=${encodeURIComponent("neofs://container-1/meta/large.json")}`,
+      413,
+    );
+
+    await fetchJson(
+      `${baseUrl}/api/meta/neofs/resource?uri=${encodeURIComponent("neofs://container-1/blob/large.bin")}`,
+      413,
+    );
 
     const ghost = await fetchJson(`${baseUrl}/api/meta/ghostmarket`);
     assert(typeof ghost?.contractHash === "string", "ghostmarket meta should include contractHash");
@@ -342,6 +439,10 @@ async function runApiSmoke() {
     await new Promise((resolve) => {
       apiProcess.once("exit", () => resolve());
       setTimeout(() => resolve(), 5000);
+    });
+
+    await new Promise((resolve) => {
+      gateway.server.close(() => resolve());
     });
 
     if (fs.existsSync(tempDir)) {

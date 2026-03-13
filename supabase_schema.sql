@@ -61,10 +61,36 @@ CREATE INDEX IF NOT EXISTS idx_tokens_owner ON tokens(owner);
 CREATE INDEX IF NOT EXISTS idx_tokens_collection ON tokens(collection_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_token ON transfers(token_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_block ON transfers(block_index);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transfers_unique ON transfers(txid, token_id, block_index);
 CREATE INDEX IF NOT EXISTS idx_token_listings_listed ON token_listings(listed);
 CREATE INDEX IF NOT EXISTS idx_token_listings_updated ON token_listings(updated_at);
 
--- 7. Enable Realtime (Optional but recommended)
+-- 7. Helper RPC for atomic transfer application
+CREATE OR REPLACE FUNCTION apply_nft_transfer(
+  p_txid TEXT,
+  p_token_id TEXT,
+  p_from_address TEXT,
+  p_to_address TEXT,
+  p_block_index INTEGER,
+  p_timestamp TIMESTAMPTZ
+) RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
+  VALUES(p_txid, p_token_id, p_from_address, p_to_address, p_block_index, p_timestamp)
+  ON CONFLICT (txid, token_id, block_index) DO NOTHING;
+
+  IF p_to_address IS NOT NULL THEN
+    UPDATE tokens
+    SET owner = p_to_address,
+        updated_at = p_timestamp
+    WHERE token_id = p_token_id;
+  END IF;
+END;
+$$;
+
+-- 8. Enable Realtime (Optional but recommended)
 -- alter publication supabase_realtime add table tokens;
 -- alter publication supabase_realtime add table token_listings;
 -- alter publication supabase_realtime add table transfers;

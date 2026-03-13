@@ -11,6 +11,8 @@ import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import type { CollectionDto } from "../lib/types";
 
+const ZERO_UINT160_HASH = "0x0000000000000000000000000000000000000000";
+
 export function MintNftPage() {
   const { t } = useTranslation();
   const wallet = useWallet();
@@ -36,18 +38,43 @@ export function MintNftPage() {
   }, [wallet.address]);
 
   useEffect(() => {
+    if (!wallet.address) {
+      setCollections([]);
+      setSelectedCollectionId("");
+      return;
+    }
+
     let alive = true;
+    setError("");
+
     fetchCollections()
       .then((res) => {
         if (alive) {
-          const userCols = res.filter(c => c.owner === wallet.address);
+          const userCols = res.filter((collection) => collection.owner === wallet.address);
           setCollections(userCols);
-          if (userCols.length > 0) setSelectedCollectionId(userCols[0].collectionId);
+          setSelectedCollectionId((current) => {
+            if (current && userCols.some((collection) => collection.collectionId === current)) {
+              return current;
+            }
+
+            return userCols[0]?.collectionId ?? "";
+          });
         }
       })
-      .catch(console.error);
-    return () => { alive = false; };
-  }, [wallet.address]);
+      .catch((err) => {
+        if (!alive) {
+          return;
+        }
+
+        setCollections([]);
+        setSelectedCollectionId("");
+        setError(toUserErrorMessage(t, err));
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [t, wallet.address, wallet.network?.network, wallet.network?.magic]);
 
   const addAttribute = () => setAttributes([...attributes, { trait_type: "", value: "" }]);
   const updateAttribute = (index: number, key: 'trait_type' | 'value', value: string) => {
@@ -88,38 +115,22 @@ export function MintNftPage() {
       };
       const propertiesJson = JSON.stringify(propertiesObj);
 
-      // 3. Determine target contract (Platform vs Dedicated)
+      // 3. Determine target contract (platform vs dedicated collection contract)
       let client = getPlatformClient();
-      let isDedicated = false;
       const tokenClassValue = tokenClass === "standard" ? 0 : tokenClass === "membership" ? 1 : 2;
-      
+
       const platformHash = getRuntimeNetworkConfig().contractHash;
-      console.log(`Checking hashes: collectionHash=${collection.contractHash}, platformHash=${platformHash}`);
       if (
-        contractDialect === "csharp" && 
-        collection.contractHash && 
-        collection.contractHash !== "0x0000000000000000000000000000000000000000" &&
+        contractDialect === "csharp" &&
+        collection.contractHash &&
+        collection.contractHash !== ZERO_UINT160_HASH &&
         collection.contractHash.toLowerCase() !== platformHash?.toLowerCase()
       ) {
         client = getNftClientForHash(collection.contractHash);
-        isDedicated = true;
       }
 
-      // 3. Determine target contract (Platform vs Dedicated)
-      const payload = isDedicated && contractDialect === "csharp"
-        ? client.buildMintInvoke({
-            collectionId: selectedCollectionId,
-            to,
-            tokenUri: neofsUri,
-            propertiesJson,
-            tokenClass: tokenClassValue,
-            operatorRef: "1",
-            toRef: to,
-            tokenUriRef: "2001",
-            propertiesRef: "2002"
-          })
-        : client.buildMintInvoke(
-          contractDialect === "rust" 
+      const payload = client.buildMintInvoke(
+        contractDialect === "rust"
           ? {
             collectionId: selectedCollectionId,
             to: "",
@@ -128,19 +139,16 @@ export function MintNftPage() {
             toRef: "1",
             tokenUriRef: "2001",
             propertiesRef: "2002",
-            operatorRef: "1"
-          } : {
+            operatorRef: "1",
+          }
+          : {
             collectionId: selectedCollectionId,
             to,
             tokenUri: neofsUri,
             propertiesJson,
-            ...(contractDialect === "csharp" ? { tokenClass: tokenClassValue } : {})
-          }
-        );
-
-      // FIX: Override SDK's broken ByteArray encoding with plain String 
-      // matching the C# contract's exact expectation of counter.ToString() bytes
-      payload.args[0] = { type: "String", value: selectedCollectionId };
+            ...(contractDialect === "csharp" ? { tokenClass: tokenClassValue } : {}),
+          },
+      );
 
       const txid = await wallet.invoke(payload);
       setResult(`Success! Transaction Hash: ${txid}`);

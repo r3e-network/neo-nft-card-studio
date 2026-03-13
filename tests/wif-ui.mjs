@@ -1,8 +1,21 @@
 import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = path.resolve(TESTS_DIR, "..");
+
+function readRequiredWif() {
+  const wif = process.env.NEO_TEST_WIF?.trim();
+  if (!wif) {
+    throw new Error("Missing NEO_TEST_WIF. Set it to a Neo N3 testnet WIF before running this test.");
+  }
+  return wif;
+}
 
 async function run() {
+  const testWif = readRequiredWif();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -35,7 +48,7 @@ async function run() {
   
   // 2. Input WIF
   console.log("Typing WIF...");
-  await devWifInput.fill("KzjaqMvqzF1uup6KrTKRxTgjcXE7PbKLRH84e6ckyXDt3fu7afUb");
+  await devWifInput.fill(testWif);
   
   // 3. Click connect button
   console.log("Locating the Dev Connect button...");
@@ -49,7 +62,7 @@ async function run() {
   console.log("Wallet connected successfully!");
 
   // Create dummy image for upload
-  const dummyImagePath = path.join(process.cwd(), "tests", "dummy.png");
+  const dummyImagePath = path.join(ROOT_DIR, "tests", "dummy.png");
   if (!fs.existsSync(dummyImagePath)) {
     // 1x1 png base64
     const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";

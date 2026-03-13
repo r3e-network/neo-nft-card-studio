@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const repoRoot = process.cwd();
+const repoRoot = path.resolve(__dirname, "..");
 const inputPath = path.join(
   repoRoot,
   "contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.manifest.json",

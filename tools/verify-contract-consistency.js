@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const repoRoot = process.cwd();
+const repoRoot = path.resolve(__dirname, "..");
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));

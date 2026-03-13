@@ -50,6 +50,18 @@ interface GhostMarketCompatibilityIssue {
   params?: Record<string, string>;
 }
 
+class NeoFsPayloadTooLargeError extends Error {
+  readonly maxBytes: number;
+  readonly actualBytes: number;
+
+  constructor(maxBytes: number, actualBytes: number) {
+    super(`NeoFS payload exceeded ${maxBytes} bytes`);
+    this.name = "NeoFsPayloadTooLargeError";
+    this.maxBytes = maxBytes;
+    this.actualBytes = actualBytes;
+  }
+}
+
 const UINT160_HASH_REGEX = /^(?:0[xX])?[0-9a-fA-F]{40}$/;
 
 function normalizeMethodName(name: string): string {
@@ -505,6 +517,53 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     };
   }
 
+  async function readResponseBodyWithLimit(response: globalThis.Response, maxBytes: number): Promise<Buffer> {
+    const contentLengthHeader = response.headers.get("content-length");
+    if (contentLengthHeader) {
+      const declaredLength = Number.parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        throw new NeoFsPayloadTooLargeError(maxBytes, declaredLength);
+      }
+    }
+
+    if (!response.body) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > maxBytes) {
+        throw new NeoFsPayloadTooLargeError(maxBytes, buffer.length);
+      }
+      return buffer;
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        if (!value || value.byteLength === 0) {
+          continue;
+        }
+
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          throw new NeoFsPayloadTooLargeError(maxBytes, totalBytes);
+        }
+
+        chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return Buffer.concat(chunks, totalBytes);
+  }
+
   async function fetchNeoFsMetadata(uri: string): Promise<{
     status: number;
     contentType: string;
@@ -523,11 +582,11 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
       });
 
       const contentType = response.headers.get("content-type") ?? "";
-      const bodyText = await response.text();
+      const body = await readResponseBodyWithLimit(response, NEOFS_METADATA_MAX_BYTES);
       return {
         status: response.status,
         contentType,
-        bodyText,
+        bodyText: body.toString("utf8"),
       };
     } finally {
       clearTimeout(timeout);
@@ -554,7 +613,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
 
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
       const cacheControl = response.headers.get("cache-control") ?? "public, max-age=120";
-      const body = Buffer.from(await response.arrayBuffer());
+      const body = await readResponseBodyWithLimit(response, NEOFS_RESOURCE_MAX_BYTES);
 
       return {
         status: response.status,
@@ -864,16 +923,6 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         return;
       }
 
-      if (Buffer.byteLength(result.bodyText, "utf8") > NEOFS_METADATA_MAX_BYTES) {
-        res.status(413).json({
-          message: "Metadata payload is too large",
-          maxBytes: NEOFS_METADATA_MAX_BYTES,
-          uri: resolution.originalUri,
-          resolvedUri: resolution.resolvedUri,
-        });
-        return;
-      }
-
       let metadata: unknown;
       try {
         metadata = JSON.parse(result.bodyText);
@@ -898,6 +947,18 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         fetchedAt: new Date().toISOString(),
       });
     } catch (error) {
+      if (error instanceof NeoFsPayloadTooLargeError) {
+        res.status(413).json({
+          message: "Metadata payload is too large",
+          maxBytes: error.maxBytes,
+          actualBytes: error.actualBytes,
+          network: context.network,
+          uri: resolution.originalUri,
+          resolvedUri: resolution.resolvedUri,
+        });
+        return;
+      }
+
       const message =
         error instanceof Error && error.name === "AbortError"
           ? `NeoFS metadata request timed out after ${config.NEOFS_METADATA_TIMEOUT_MS}ms`
@@ -955,23 +1016,23 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         return;
       }
 
-      if (result.body.length > NEOFS_RESOURCE_MAX_BYTES) {
-        res.status(413).json({
-          message: "NeoFS resource payload is too large",
-          maxBytes: NEOFS_RESOURCE_MAX_BYTES,
-          actualBytes: result.body.length,
-          uri: resolution.originalUri,
-          resolvedUri: resolution.resolvedUri,
-        });
-        return;
-      }
-
       res.setHeader("Content-Type", result.contentType);
       res.setHeader("Cache-Control", result.cacheControl);
       res.setHeader("X-NeoFS-Original-Uri", resolution.originalUri);
       res.setHeader("X-NeoFS-Resolved-Uri", resolution.resolvedUri);
       res.status(200).send(result.body);
     } catch (error) {
+      if (error instanceof NeoFsPayloadTooLargeError) {
+        res.status(413).json({
+          message: "NeoFS resource payload is too large",
+          maxBytes: error.maxBytes,
+          actualBytes: error.actualBytes,
+          uri: resolution.originalUri,
+          resolvedUri: resolution.resolvedUri,
+        });
+        return;
+      }
+
       const message =
         error instanceof Error && error.name === "AbortError"
           ? `NeoFS resource request timed out after ${config.NEOFS_METADATA_TIMEOUT_MS}ms`

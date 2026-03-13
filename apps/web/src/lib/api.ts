@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { getRuntimeNetworkConfig, getRuntimeWalletNetwork } from "./runtime-network";
+import { getRuntimeNetworkConfig } from "./runtime-network";
 import type {
   CollectionDto,
   ContractMetaDto,
@@ -48,14 +48,9 @@ function getNetworkQueryParams(
     }
   }
 
-  // Always use a valid network. If wallet is on mainnet/private but no contract is configured
-  // for that profile, fallback to testnet to avoid 404 API routes on single-network deployments.
-  const preferredNetwork = runtime.network === "unknown" ? "testnet" : runtime.network;
-  const network =
-    preferredNetwork !== "testnet" && (!runtime.contractHash || runtime.contractHash.trim().length === 0)
-      ? "testnet"
-      : preferredNetwork;
-  next.network = network;
+  if (runtime.network !== "unknown") {
+    next.network = runtime.network;
+  }
 
   return next;
 }

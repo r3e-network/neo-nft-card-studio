@@ -1,14 +1,32 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { experimental, rpc, sc, tx, u, wallet } from "@cityofzion/neon-js";
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const TEMPLATE_NEF_PATH = path.join(ROOT, "contracts", "multi-tenant-nft-platform", "build", "MultiTenantNftTemplate.nef");
+const TEMPLATE_MANIFEST_PATH = path.join(
+  ROOT,
+  "contracts",
+  "multi-tenant-nft-platform",
+  "build",
+  "MultiTenantNftTemplate.deploy.manifest.json",
+);
+
+function readRequiredWif() {
+  const wif = process.env.NEO_TEST_WIF?.trim();
+  if (!wif) {
+    throw new Error("Missing NEO_TEST_WIF. Set it to a Neo N3 testnet WIF before running this script.");
+  }
+  return wif;
+}
+
 // --- Configuration ---
-const WIF = "KzjaqMvqzF1uup6KrTKRxTgjcXE7PbKLRH84e6ckyXDt3fu7afUb";
 const RPC_URL = "https://testnet1.neo.coz.io:443";
 const FACTORY_HASH = "0xc1868eba3ce06ad93962378537f8a59f3cae1548";
 const NETWORK_MAGIC = 894710606;
 
-const ADMIN = new wallet.Account(WIF);
+const ADMIN = new wallet.Account(readRequiredWif());
 const rpcClient = new rpc.RPCClient(RPC_URL);
 
 console.log("Admin Address:", ADMIN.address);
@@ -78,8 +96,8 @@ async function runResetAndLifecycleTests() {
 
   try {
     console.log("2. Restoring Template...");
-    const nef = await fs.readFile("contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.nef");
-    const manifest = await fs.readFile("contracts/multi-tenant-nft-platform/build/MultiTenantNftTemplate.deploy.manifest.json", "utf8");
+    const nef = await fs.readFile(TEMPLATE_NEF_PATH);
+    const manifest = await fs.readFile(TEMPLATE_MANIFEST_PATH, "utf8");
     
     const txid = await retry(() => platform.invoke("setCollectionContractTemplate", [
         sc.ContractParam.byteArray(nef.toString('hex')),

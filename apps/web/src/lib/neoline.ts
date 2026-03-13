@@ -7,9 +7,9 @@ declare global {
     NEOLine?: unknown;
     neoLine?: unknown;
     o3dapi?: {
-      n3: {
-        dapp: unknown;
-      }
+      n3?: {
+        dapp?: unknown;
+      };
     };
     OneGateProvider?: unknown;
   }
@@ -46,22 +46,26 @@ export interface NeoLineN3Provider {
   getNetwork?: () => Promise<unknown>;
   getNetworks?: () => Promise<unknown>;
   enable?: () => Promise<unknown>;
-  request?: ((payload: { method: string; params?: unknown }) => Promise<unknown>) | ((method: string, params?: unknown) => Promise<unknown>);
-  send?: ((payload: { method: string; params?: unknown }) => Promise<unknown>) | ((method: string, params?: unknown) => Promise<unknown>);
+  request?:
+    | ((payload: { method: string; params?: unknown }) => Promise<unknown>)
+    | ((method: string, params?: unknown) => Promise<unknown>);
+  send?:
+    | ((payload: { method: string; params?: unknown }) => Promise<unknown>)
+    | ((method: string, params?: unknown) => Promise<unknown>);
   sendAsync?: (
     payload: { method: string; params?: unknown; id?: number; jsonrpc?: string },
     callback: (error: unknown, response?: unknown) => void,
   ) => void;
   invoke?: (payload: WalletInvokeRequest) => Promise<unknown>;
   invokeFunction?: (payload: WalletInvokeRequest) => Promise<unknown>;
-  addEventListener?: (event: string, callback: (data: any) => void) => void;
-  removeEventListener?: (event: string, callback: (data: any) => void) => void;
+  addEventListener?: (event: string, callback: (data: unknown) => void) => void;
+  removeEventListener?: (event: string, callback: (data: unknown) => void) => void;
   EVENT?: {
     READY: string;
     ACCOUNT_CHANGED: string;
     NETWORK_CHANGED: string;
-    CONNECTED: string;
-    DISCONNECTED: string;
+    CONNECTED?: string;
+    DISCONNECTED?: string;
   };
 }
 
@@ -79,8 +83,20 @@ const NEO_READY_EVENT = "NEOLine.NEO.EVENT.READY";
 const N3_REQUEST_EVENT = "NEOLine.N3.EVENT.REQUEST";
 const NEO_REQUEST_EVENT = "NEOLine.NEO.EVENT.REQUEST";
 const PROVIDER_READY_WAIT_MS = 5000;
-const FACTORY_INIT_TIMEOUT_MS = 8000;
-const WALLET_GLOBAL_HINT_REGEX = /(neolinen3|o3|onegate|n3wallet)/i;
+const WALLET_GLOBAL_HINT_REGEX = /(neolinen3|neoline|o3|onegate|n3wallet)/i;
+
+const wrappedProviders = new WeakMap<object, NeoLineN3Provider>();
+const enableAttemptedProviders = new WeakSet<Record<string, unknown>>();
+
+let cachedProvider: NeoLineN3Provider | null = null;
+let neoLineInitInstance: unknown = null;
+let readyListenersInstalled = false;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
@@ -93,6 +109,7 @@ function pushUniqueUnknown(list: unknown[], value: unknown): void {
   if (value === null || value === undefined) {
     return;
   }
+
   if (!list.includes(value)) {
     list.push(value);
   }
@@ -103,13 +120,53 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return !!record && typeof record.then === "function";
 }
 
-function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
+function isLikelyEvmOnlyProvider(value: unknown): boolean {
   const record = asRecord(value);
   if (!record) {
     return false;
   }
 
-  if (isLikelyEvmOnlyProvider(record)) {
+  if (
+    record.isNEOLine === true
+    && (
+      typeof record.Init === "function"
+      || typeof record.init === "function"
+      || record.EVENT !== undefined
+      || record.EVENTLIST !== undefined
+    )
+  ) {
+    return false;
+  }
+
+  const hasEvmMarkers =
+    record.isMetaMask === true
+    || record.isCoinbaseWallet === true
+    || record.isBraveWallet === true
+    || record.isRabby === true
+    || record.chainId !== undefined
+    || record.networkVersion !== undefined
+    || record.selectedAddress !== undefined;
+
+  if (!hasEvmMarkers) {
+    return false;
+  }
+
+  return !(
+    typeof record.getAccount === "function"
+    || typeof record.getAccounts === "function"
+    || typeof record.getAddress === "function"
+    || typeof record.getWalletAddress === "function"
+    || typeof record.requestAccounts === "function"
+    || typeof record.getNetwork === "function"
+    || typeof record.getNetworks === "function"
+    || typeof record.invoke === "function"
+    || typeof record.invokeFunction === "function"
+  );
+}
+
+function hasProviderMethods(value: unknown): value is NeoLineN3Provider {
+  const record = asRecord(value);
+  if (!record || isLikelyEvmOnlyProvider(record)) {
     return false;
   }
 
@@ -128,90 +185,18 @@ function hasProviderMethod(value: unknown): value is NeoLineN3Provider {
     "invokeFunction",
     "enable",
   ];
+
   return methodKeys.some((key) => typeof record[key] === "function");
 }
 
-function hasNeoN3AccountHints(value: unknown): boolean {
-  const record = asRecord(value);
-  if (!record) {
-    return false;
-  }
-
-  if (
-    typeof record.getAccount === "function"
-    || typeof record.getAccounts === "function"
-    || typeof record.getAddress === "function"
-    || typeof record.getWalletAddress === "function"
-    || typeof record.requestAccounts === "function"
-    || typeof record.getNetwork === "function"
-    || typeof record.getNetworks === "function"
-    || typeof record.invoke === "function"
-    || typeof record.invokeFunction === "function"
-    || typeof record.enable === "function"
-    || typeof record.Init === "function"
-    || typeof record.init === "function"
-  ) {
-    return true;
-  }
-
-  const nestedKeys = ["NEOLineN3", "neoLineN3", "n3", "N3", "n3Provider", "N3Provider", "dapp", "api"];
-  return nestedKeys.some((key) => record[key] !== undefined && record[key] !== null);
-}
-
-function isLikelyEvmOnlyProvider(value: unknown): boolean {
-  const record = asRecord(value);
-  if (!record) {
-    return false;
-  }
-
-  // NeoLine N3 wrappers often expose isNEOLine + chainId/networkVersion alongside N3 factories/events.
-  if (
-    record.isNEOLine === true
-    && (
-      typeof record.Init === "function"
-      || typeof record.init === "function"
-      || record.EVENT !== undefined
-      || record.EVENTLIST !== undefined
-    )
-  ) {
-    return false;
-  }
-
-  const hasEvmMarkers =
-    record.isMetaMask === true
-    || record.isCoinbaseWallet === true
-    || record.isBraveWallet === true
-    || record.isRabby === true
-    || record.isNEOLine === true
-    || record.chainId !== undefined
-    || record.networkVersion !== undefined
-    || record.selectedAddress !== undefined;
-
-  if (!hasEvmMarkers) {
-    return false;
-  }
-
-  return !hasNeoN3AccountHints(record);
-}
-
-function getNestedField(value: unknown, key: string): unknown {
-  const record = asRecord(value);
-  if (!record) {
-    return undefined;
-  }
-  return record[key];
-}
-
-function resolveFactoryProvider(value: unknown): unknown {
+function resolveFactoryProvider(value: unknown): unknown | null {
   if (typeof value !== "function") {
     return null;
   }
 
   try {
-    // NeoLine desktop extension commonly exposes window.NEOLineN3.Init constructor
     return new (value as new () => unknown)();
   } catch {
-    // Some providers expose Init() as a plain function
     try {
       return (value as () => unknown)();
     } catch {
@@ -231,17 +216,16 @@ function hasReadyEventOnlyShape(value: unknown): boolean {
     return false;
   }
 
-  const hasOnlyEventKeys = keys.every((key) => key === "EVENT" || key === "EVENTLIST");
-  if (!hasOnlyEventKeys) {
-    return false;
-  }
-
-  return true;
+  return keys.every((key) => key === "EVENT" || key === "EVENTLIST");
 }
 
 function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | null {
-  if (depth > 3 || !value) {
+  if (!value || depth > 3) {
     return null;
+  }
+
+  if (hasProviderMethods(value)) {
+    return value;
   }
 
   const record = asRecord(value);
@@ -272,6 +256,7 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     "N3Provider",
     "sdk",
   ];
+
   for (const key of nestedKeys) {
     const resolved = resolveNestedProvider(record[key], depth + 1);
     if (resolved) {
@@ -279,71 +264,251 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     }
   }
 
-  if (isLikelyEvmOnlyProvider(value)) {
-    return null;
-  }
-
-  // Some NeoLine providers expose methods on prototype while own enumerable keys
-  // may only contain EVENT/EVENTLIST.
-  if (hasProviderMethod(value)) {
-    return value;
-  }
-
-  if (hasReadyEventOnlyShape(value)) {
+  if (hasReadyEventOnlyShape(value) || isLikelyEvmOnlyProvider(value)) {
     return null;
   }
 
   return null;
 }
 
-let cachedProvider: NeoLineN3Provider | null = null;
-let providerInstance: any = null;
+function normalizeProviderEvents(provider: NeoLineN3Provider): NonNullable<NeoLineN3Provider["EVENT"]> {
+  const directEvents = provider.EVENT;
+  const record = asRecord(provider);
+  const legacyEvents = asRecord(record?.EVENTLIST);
 
-export function getNeoProvider(): NeoLineN3Provider | null {
-  if (typeof window === "undefined") return null;
-  
-  if (cachedProvider) return cachedProvider;
+  const ready = directEvents?.READY ?? (typeof legacyEvents?.READY === "string" ? legacyEvents.READY : N3_READY_EVENT);
+  const accountChanged =
+    directEvents?.ACCOUNT_CHANGED
+    ?? (typeof legacyEvents?.ACCOUNT_CHANGED === "string" ? legacyEvents.ACCOUNT_CHANGED : NEOLINE_EVENTS.ACCOUNT_CHANGED);
+  const networkChanged =
+    directEvents?.NETWORK_CHANGED
+    ?? (typeof legacyEvents?.NETWORK_CHANGED === "string" ? legacyEvents.NETWORK_CHANGED : NEOLINE_EVENTS.NETWORK_CHANGED);
 
-  // Standard NeoLine N3 Init pattern (NNS Style)
-  const NEOLineN3 = (window as any).NEOLineN3;
-  if (NEOLineN3 && typeof NEOLineN3.Init === "function") {
-    try {
-      if (!providerInstance) {
-        providerInstance = new NEOLineN3.Init();
+  return {
+    READY: ready,
+    ACCOUNT_CHANGED: accountChanged,
+    NETWORK_CHANGED: networkChanged,
+    CONNECTED:
+      directEvents?.CONNECTED ?? (typeof legacyEvents?.CONNECTED === "string" ? legacyEvents.CONNECTED : undefined),
+    DISCONNECTED:
+      directEvents?.DISCONNECTED
+      ?? (typeof legacyEvents?.DISCONNECTED === "string" ? legacyEvents.DISCONNECTED : undefined),
+  };
+}
+
+function normalizeProvider(provider: NeoLineN3Provider): NeoLineN3Provider {
+  const key = provider as unknown as object;
+  const cached = wrappedProviders.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const normalized: NeoLineN3Provider = {
+    getAccount: provider.getAccount?.bind(provider),
+    getAccounts: provider.getAccounts?.bind(provider),
+    getAddress: provider.getAddress?.bind(provider),
+    getWalletAddress: provider.getWalletAddress?.bind(provider),
+    requestAccounts: provider.requestAccounts?.bind(provider),
+    getNetwork: provider.getNetwork?.bind(provider),
+    getNetworks: provider.getNetworks?.bind(provider),
+    enable: provider.enable?.bind(provider),
+    request: provider.request?.bind(provider) as NeoLineN3Provider["request"],
+    send: provider.send?.bind(provider) as NeoLineN3Provider["send"],
+    sendAsync: provider.sendAsync?.bind(provider),
+    invoke: provider.invoke?.bind(provider),
+    invokeFunction: provider.invokeFunction?.bind(provider),
+    addEventListener: provider.addEventListener?.bind(provider),
+    removeEventListener: provider.removeEventListener?.bind(provider),
+    EVENT: normalizeProviderEvents(provider),
+  };
+
+  wrappedProviders.set(key, normalized);
+  return normalized;
+}
+
+function collectWindowCandidates(): unknown[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const candidates: unknown[] = [];
+  const windowRecord = window as unknown as Record<string, unknown>;
+  const directKeys = ["NEOLineN3", "neoLineN3", "NEOLine", "neoLine", "OneGateProvider"];
+
+  for (const key of directKeys) {
+    pushUniqueUnknown(candidates, windowRecord[key]);
+  }
+
+  pushUniqueUnknown(candidates, window.o3dapi?.n3?.dapp);
+
+  if (!neoLineInitInstance) {
+    const initFactory = asRecord(window.NEOLineN3 ?? window.neoLineN3)?.Init;
+    neoLineInitInstance = resolveFactoryProvider(initFactory);
+  }
+  pushUniqueUnknown(candidates, neoLineInitInstance);
+
+  for (const [key, value] of Object.entries(windowRecord)) {
+    if (!WALLET_GLOBAL_HINT_REGEX.test(key)) {
+      continue;
+    }
+    pushUniqueUnknown(candidates, value);
+  }
+
+  return candidates;
+}
+
+function providerScore(provider: NeoLineN3Provider): number {
+  let score = 0;
+
+  if (
+    typeof provider.getAccount === "function"
+    || typeof provider.getAccounts === "function"
+    || typeof provider.getAddress === "function"
+    || typeof provider.getWalletAddress === "function"
+    || typeof provider.requestAccounts === "function"
+  ) {
+    score += 16;
+  }
+
+  if (typeof provider.getNetwork === "function" || typeof provider.getNetworks === "function") {
+    score += 8;
+  }
+
+  if (typeof provider.invoke === "function" || typeof provider.invokeFunction === "function") {
+    score += 8;
+  }
+
+  if (typeof provider.request === "function" || typeof provider.send === "function" || typeof provider.sendAsync === "function") {
+    score += 4;
+  }
+
+  if (typeof provider.addEventListener === "function") {
+    score += 2;
+  }
+
+  return score;
+}
+
+function collectResolvedProviders(): NeoLineN3Provider[] {
+  const resolved: NeoLineN3Provider[] = [];
+  const seen = new Set<object>();
+
+  for (const candidate of collectWindowCandidates()) {
+    const provider = resolveNestedProvider(candidate);
+    if (!provider) {
+      continue;
+    }
+
+    const key = provider as unknown as object;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    resolved.push(normalizeProvider(provider));
+  }
+
+  resolved.sort((left, right) => providerScore(right) - providerScore(left));
+  return resolved;
+}
+
+function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
+  return (
+    typeof provider.getAccount === "function"
+    || typeof provider.getAccounts === "function"
+    || typeof provider.getAddress === "function"
+    || typeof provider.getWalletAddress === "function"
+    || typeof provider.requestAccounts === "function"
+  );
+}
+
+function getCandidateProvidersInPriorityOrder(): NeoLineN3Provider[] {
+  const providers = collectResolvedProviders();
+  if (!cachedProvider) {
+    return providers;
+  }
+
+  return providers.sort((left, right) => {
+    if (left === cachedProvider) {
+      return -1;
+    }
+    if (right === cachedProvider) {
+      return 1;
+    }
+    return providerScore(right) - providerScore(left);
+  });
+}
+
+function dispatchProviderRequestEvents(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const targets: Array<Pick<Window, "dispatchEvent"> | Pick<Document, "dispatchEvent">> = [window];
+  if (typeof document !== "undefined") {
+    targets.push(document);
+  }
+
+  for (const eventName of [N3_REQUEST_EVENT, NEO_REQUEST_EVENT]) {
+    for (const target of targets) {
+      try {
+        target.dispatchEvent(new Event(eventName));
+      } catch {
+        // ignore unsupported targets
       }
-      
-      const provider = providerInstance;
-      // Standardize the interface
-      const normalized: NeoLineN3Provider = {
-        getAccount: () => provider.getAccount(),
-        getNetwork: () => provider.getNetwork(),
-        invoke: (payload) => provider.invoke(payload),
-        addEventListener: (evt, cb) => provider.addEventListener?.(evt, cb),
-        removeEventListener: (evt, cb) => provider.removeEventListener?.(evt, cb),
-        EVENT: provider.EVENTLIST || provider.EVENT,
-      };
-      
-      cachedProvider = normalized;
-      return normalized;
-    } catch (e) {
-      console.warn("Failed to init NeoLineN3:", e);
     }
   }
+}
 
-  // Fallback to legacy/generic discovery
-  const resolvedProviders = collectResolvedProviders();
-  if (resolvedProviders.length === 0) {
-    dispatchProviderRequestEvents();
-    return null;
+function ensureReadyEventListenersInstalled(): void {
+  if (readyListenersInstalled || typeof window === "undefined") {
+    return;
   }
 
-  const directAccountProvider = resolvedProviders.find(hasDirectAccountCapability);
-  if (directAccountProvider) {
-    cachedProvider = directAccountProvider;
-    return directAccountProvider;
+  readyListenersInstalled = true;
+  const onReady = () => {
+    cachedProvider = null;
+  };
+
+  for (const eventName of [N3_READY_EVENT, NEO_READY_EVENT]) {
+    window.addEventListener(eventName, onReady);
+    if (typeof document !== "undefined") {
+      document.addEventListener(eventName, onReady);
+    }
+  }
+}
+
+async function waitForNeoProviderReady(): Promise<void> {
+  if (typeof window === "undefined") {
+    return;
   }
 
-  return null;
+  ensureReadyEventListenersInstalled();
+  dispatchProviderRequestEvents();
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < PROVIDER_READY_WAIT_MS) {
+    if (collectResolvedProviders().length > 0) {
+      return;
+    }
+    await sleep(150);
+  }
+}
+
+async function forceInitNeoLineProviders(): Promise<void> {
+  cachedProvider = null;
+  collectResolvedProviders();
+  dispatchProviderRequestEvents();
+  await sleep(50);
+}
+
+async function warmUpFactoryProviders(): Promise<void> {
+  collectResolvedProviders();
+  await sleep(50);
+}
+
+function buildNoWalletFoundErrorMessage(): string {
+  return "No Neo N3 wallet found. Install NeoLine or a compatible Neo N3 wallet and refresh the page.";
 }
 
 function extractAddress(value: unknown): string {
@@ -357,9 +522,9 @@ function extractAddress(value: unknown): string {
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = extractAddress(item);
-      if (found) {
-        return found;
+      const address = extractAddress(item);
+      if (address) {
+        return address;
       }
     }
     return "";
@@ -370,13 +535,8 @@ function extractAddress(value: unknown): string {
     return "";
   }
 
-  const direct = record.address;
-  if (typeof direct === "string" && direct.trim().length > 0) {
-    return direct.trim();
-  }
-
-  const altAddressKeys = ["accAddress", "walletAddress", "from", "accountAddress"];
-  for (const key of altAddressKeys) {
+  const candidateKeys = ["address", "accAddress", "walletAddress", "from", "accountAddress"];
+  for (const key of candidateKeys) {
     const candidate = record[key];
     if (typeof candidate === "string" && candidate.trim().length > 0) {
       return candidate.trim();
@@ -385,9 +545,9 @@ function extractAddress(value: unknown): string {
 
   const nestedKeys = ["account", "result", "data", "wallet"];
   for (const key of nestedKeys) {
-    const found = extractAddress(record[key]);
-    if (found) {
-      return found;
+    const address = extractAddress(record[key]);
+    if (address) {
+      return address;
     }
   }
 
@@ -399,6 +559,7 @@ function extractLabel(value: unknown): string | undefined {
   if (!record) {
     return undefined;
   }
+
   const label = record.label;
   return typeof label === "string" && label.trim().length > 0 ? label.trim() : undefined;
 }
@@ -408,6 +569,7 @@ function normalizeAccount(value: unknown): NeoLineAccount | null {
   if (!address || !NEO_N3_ADDRESS_REGEX.test(address)) {
     return null;
   }
+
   return {
     address,
     label: extractLabel(value),
@@ -437,9 +599,9 @@ function normalizeInvokeResult(value: unknown): NeoLineInvokeResult {
 
     if (Array.isArray(input)) {
       for (const item of input) {
-        const found = extractTxId(item, depth + 1);
-        if (found) {
-          return found;
+        const txid = extractTxId(item, depth + 1);
+        if (txid) {
+          return txid;
         }
       }
       return "";
@@ -450,22 +612,20 @@ function normalizeInvokeResult(value: unknown): NeoLineInvokeResult {
       return "";
     }
 
-    const txidKeys = ["txid", "txId", "transaction", "transactionId", "hash"];
-    for (const key of txidKeys) {
+    for (const key of ["txid", "txId", "transaction", "transactionId", "hash"]) {
       const candidate = record[key];
       if (typeof candidate === "string") {
-        const normalized = normalizeTxId(candidate);
-        if (normalized) {
-          return normalized;
+        const txid = normalizeTxId(candidate);
+        if (txid) {
+          return txid;
         }
       }
     }
 
-    const nestedKeys = ["result", "data", "payload", "response"];
-    for (const key of nestedKeys) {
-      const found = extractTxId(record[key], depth + 1);
-      if (found) {
-        return found;
+    for (const key of ["result", "data", "payload", "response"]) {
+      const txid = extractTxId(record[key], depth + 1);
+      if (txid) {
+        return txid;
       }
     }
 
@@ -493,16 +653,9 @@ function parseIntegerLike(value: unknown): number | null {
     return Math.trunc(value);
   }
 
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const parsed = Number.parseInt(trimmed, 10);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   return null;
@@ -516,9 +669,9 @@ function extractNetworkMagic(value: unknown): number | null {
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = extractNetworkMagic(item);
-      if (found) {
-        return found;
+      const magic = extractNetworkMagic(item);
+      if (magic) {
+        return magic;
       }
     }
     return null;
@@ -529,31 +682,17 @@ function extractNetworkMagic(value: unknown): number | null {
     return null;
   }
 
-  const candidateKeys = [
-    "magic",
-    "networkMagic",
-    "networkmagic",
-    "protocolMagic",
-    "protocolmagic",
-    "chainId",
-    "chainid",
-    "networkId",
-    "networkid",
-    "net",
-  ];
-
-  for (const key of candidateKeys) {
-    const found = parseIntegerLike(record[key]);
-    if (found && found > 0) {
-      return found;
+  for (const key of ["magic", "networkMagic", "protocolMagic", "chainId", "networkId", "net"]) {
+    const magic = parseIntegerLike(record[key]);
+    if (magic && magic > 0) {
+      return magic;
     }
   }
 
-  const nestedKeys = ["network", "result", "data", "chain", "current", "selected"];
-  for (const key of nestedKeys) {
-    const found = extractNetworkMagic(record[key]);
-    if (found) {
-      return found;
+  for (const key of ["network", "result", "data", "chain", "current", "selected"]) {
+    const magic = extractNetworkMagic(record[key]);
+    if (magic) {
+      return magic;
     }
   }
 
@@ -563,17 +702,14 @@ function extractNetworkMagic(value: unknown): number | null {
 function extractRpcUrl(value: unknown): string | undefined {
   if (typeof value === "string") {
     const trimmed = value.trim();
-    if (/^https?:\/\//i.test(trimmed)) {
-      return trimmed;
-    }
-    return undefined;
+    return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = extractRpcUrl(item);
-      if (found) {
-        return found;
+      const rpcUrl = extractRpcUrl(item);
+      if (rpcUrl) {
+        return rpcUrl;
       }
     }
     return undefined;
@@ -584,19 +720,17 @@ function extractRpcUrl(value: unknown): string | undefined {
     return undefined;
   }
 
-  const candidateKeys = ["rpcUrl", "rpcURL", "rpc", "url", "node", "nodeUrl", "endpoint", "provider"];
-  for (const key of candidateKeys) {
-    const found = extractRpcUrl(record[key]);
-    if (found) {
-      return found;
+  for (const key of ["rpcUrl", "rpcURL", "rpc", "url", "node", "nodeUrl", "endpoint", "provider"]) {
+    const rpcUrl = extractRpcUrl(record[key]);
+    if (rpcUrl) {
+      return rpcUrl;
     }
   }
 
-  const nestedKeys = ["network", "result", "data", "current", "selected"];
-  for (const key of nestedKeys) {
-    const found = extractRpcUrl(record[key]);
-    if (found) {
-      return found;
+  for (const key of ["network", "result", "data", "current", "selected"]) {
+    const rpcUrl = extractRpcUrl(record[key]);
+    if (rpcUrl) {
+      return rpcUrl;
     }
   }
 
@@ -631,16 +765,7 @@ function normalizeNetworkName(value: unknown, magic: number | null): NeoWalletNe
     return "testnet";
   }
 
-  if (magic && magic > 0) {
-    return "private";
-  }
-
-  // If we have a magic but it's not standard, it's likely a private net
-  if (magic !== null) {
-    return "private";
-  }
-
-  return "unknown";
+  return magic !== null ? "private" : "unknown";
 }
 
 function pickNetworkPayload(value: unknown): unknown {
@@ -648,32 +773,17 @@ function pickNetworkPayload(value: unknown): unknown {
     return value;
   }
 
-  if (value.length === 0) {
-    return null;
-  }
-
   const selected = value.find((entry) => {
     const record = asRecord(entry);
-    if (!record) {
-      return false;
-    }
-    return record.selected === true || record.current === true || record.isCurrent === true;
+    return !!record && (record.selected === true || record.current === true || record.isCurrent === true);
   });
 
-  return selected ?? value[0];
-}
-
-function listProviderKeys(provider: NeoLineN3Provider): string {
-  const record = asRecord(provider);
-  return record ? Object.keys(record).join(", ") : "";
+  return selected ?? value[0] ?? null;
 }
 
 function unwrapRpcResponse(value: unknown): unknown {
   const record = asRecord(value);
-  if (!record) {
-    return value;
-  }
-  if ("result" in record) {
+  if (record && "result" in record) {
     return record.result;
   }
   return value;
@@ -696,12 +806,7 @@ async function tryCallProviderMethod(
 
   try {
     return await (method as (...innerArgs: unknown[]) => unknown).apply(provider, args);
-  } catch (err) {
-    const errorRecord = asRecord(err);
-    if (errorRecord && errorRecord.type === "CONNECTION_DENIED") {
-      // User likely rejected the request or too many pending requests
-      return undefined;
-    }
+  } catch {
     return undefined;
   }
 }
@@ -715,12 +820,13 @@ async function requestProvider(
     throw new Error("provider is not available");
   }
 
-  const callWithCallbackFallback = async (
+  const callWithFallback = async (
     fn: (...args: unknown[]) => unknown,
-    argsList: unknown[][],
+    attempts: unknown[][],
   ): Promise<unknown> => {
     let lastError: unknown;
-    for (const args of argsList) {
+
+    for (const args of attempts) {
       try {
         const result = fn.call(provider, ...args);
         if (isPromiseLike(result)) {
@@ -734,76 +840,30 @@ async function requestProvider(
       }
     }
 
-    const callbackTimeoutMs = 1500;
-    for (const args of argsList) {
-      try {
-        return await new Promise<unknown>((resolve, reject) => {
-          let settled = false;
-          const timer = globalThis.setTimeout(() => {
-            if (!settled) {
-              settled = true;
-              reject(new Error("provider callback request timeout"));
-            }
-          }, callbackTimeoutMs);
-
-          const callback = (error: unknown, response?: unknown) => {
-            if (settled) {
-              return;
-            }
-            settled = true;
-            globalThis.clearTimeout(timer);
-            if (error) {
-              const errorRecord = asRecord(error);
-              if (errorRecord && errorRecord.type === "CONNECTION_DENIED") {
-                resolve(undefined); // Treat denial as "not found" during silent reads
-                return;
-              }
-              reject(error);
-              return;
-            }
-            resolve(unwrapRpcResponse(response));
-          };
-
-          try {
-            fn.call(provider, ...args, callback);
-          } catch (error) {
-            if (!settled) {
-              settled = true;
-              globalThis.clearTimeout(timer);
-              reject(error);
-            }
-          }
-        });
-      } catch (error) {
-        lastError = error;
-      }
-    }
-
     if (lastError) {
       throw lastError;
     }
+
     throw new Error("provider request failed");
   };
 
   if (typeof record.request === "function") {
-    const requestFn = record.request as (...args: unknown[]) => unknown;
-    return await callWithCallbackFallback(requestFn, [[payload]]);
+    return callWithFallback(record.request as (...args: unknown[]) => unknown, [[payload], [payload.method, payload.params]]);
   }
 
   if (typeof record.send === "function") {
-    const sendFn = record.send as (...args: unknown[]) => unknown;
-    return await callWithCallbackFallback(sendFn, [[payload]]);
+    return callWithFallback(record.send as (...args: unknown[]) => unknown, [[payload], [payload.method, payload.params]]);
   }
 
   if (typeof record.sendAsync === "function") {
-    const sendAsyncFn = record.sendAsync as (
+    const sendAsync = record.sendAsync as (
       request: { method: string; params?: unknown; id?: number; jsonrpc?: string },
       callback: (error: unknown, response?: unknown) => void,
     ) => void;
 
-    return await new Promise<unknown>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       try {
-        sendAsyncFn.call(
+        sendAsync.call(
           provider,
           {
             id: Date.now(),
@@ -839,32 +899,15 @@ async function ensureProviderEnabled(provider: NeoLineN3Provider): Promise<unkno
   }
 
   enableAttemptedProviders.add(providerRecord);
-  return await (providerRecord.enable as () => Promise<unknown>).call(provider);
+  try {
+    return await (providerRecord.enable as () => Promise<unknown>).call(provider);
+  } catch {
+    return undefined;
+  }
 }
 
 async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<NeoLineAccount | null> {
-  const singleAccount = await tryCallProviderMethod(provider, "getAccount");
-  if (singleAccount !== undefined) {
-    const account = normalizeAccount(singleAccount);
-    if (account) {
-      return account;
-    }
-  }
-
-  const multiAccount = await tryCallProviderMethod(provider, "getAccounts");
-  if (multiAccount !== undefined) {
-    const account = normalizeAccount(multiAccount);
-    if (account) {
-      return account;
-    }
-  }
-
-  const addressMethods: Array<keyof NeoLineN3Provider> = [
-    "getAddress",
-    "getWalletAddress",
-    "requestAccounts",
-  ];
-  for (const methodName of addressMethods) {
+  for (const methodName of ["getAccount", "getAccounts", "getAddress", "getWalletAddress", "requestAccounts"] as const) {
     const value = await tryCallProviderMethod(provider, methodName);
     if (value !== undefined) {
       const account = normalizeAccount(value);
@@ -881,23 +924,14 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
   }
 
   if (providerRecord?.request || providerRecord?.send || providerRecord?.sendAsync) {
-    const attempts: Array<{ method: string; params?: unknown }> = [
-      { method: "getAccount" },
-      { method: "getAccounts" },
-      { method: "getAddress" },
-      { method: "getWalletAddress" },
-      { method: "requestAccounts" },
-    ];
-
-    for (const payload of attempts) {
+    for (const method of ["getAccount", "getAccounts", "getAddress", "getWalletAddress", "requestAccounts"]) {
       try {
-        const raw = await requestProvider(provider, payload);
-        const account = normalizeAccount(raw);
+        const account = normalizeAccount(await requestProvider(provider, { method }));
         if (account) {
           return account;
         }
       } catch {
-        // try next request shape
+        // try next shape
       }
     }
   }
@@ -908,40 +942,74 @@ async function readAccountFromProvider(provider: NeoLineN3Provider): Promise<Neo
 async function findAccountAcrossProviders(
   providers: NeoLineN3Provider[],
   enableBeforeRead: boolean,
-): Promise<{ account: NeoLineAccount | null; lastAvailable: string }> {
-  let lastAvailable = "";
-
+): Promise<NeoLineAccount | null> {
   for (const provider of providers) {
     const providerRecord = asRecord(provider);
     if (providerRecord && typeof providerRecord.enable === "function") {
       enableAttemptedProviders.delete(providerRecord);
     }
 
-    try {
-      let enabledResult: unknown = undefined;
-      if (enableBeforeRead) {
-        enabledResult = await ensureProviderEnabled(provider);
-      }
-
+    if (enableBeforeRead) {
+      const enabledResult = await ensureProviderEnabled(provider);
       const enabledAccount = normalizeAccount(enabledResult);
       if (enabledAccount) {
         cachedProvider = provider;
-        return { account: enabledAccount, lastAvailable };
+        return enabledAccount;
       }
-
-      const account = await readAccountFromProvider(provider);
-      if (account) {
-        cachedProvider = provider;
-        return { account, lastAvailable };
-      }
-    } catch {
-      // Try next provider
     }
 
-    lastAvailable = listProviderKeys(provider);
+    const account = await readAccountFromProvider(provider);
+    if (account) {
+      cachedProvider = provider;
+      return account;
+    }
   }
 
-  return { account: null, lastAvailable };
+  return null;
+}
+
+async function readNetworkFromProvider(provider: NeoLineN3Provider): Promise<NeoWalletNetwork | null> {
+  const attempts: unknown[] = [];
+
+  for (const methodName of ["getNetwork", "getNetworks"] as const) {
+    const value = await tryCallProviderMethod(provider, methodName);
+    if (value !== undefined) {
+      attempts.push(value);
+    }
+  }
+
+  const providerRecord = asRecord(provider);
+  if (providerRecord) {
+    attempts.push(providerRecord.network, providerRecord.currentNetwork, providerRecord.selectedNetwork);
+  }
+
+  if (providerRecord?.request || providerRecord?.send || providerRecord?.sendAsync) {
+    for (const method of ["getNetwork", "getNetworks"]) {
+      try {
+        attempts.push(await requestProvider(provider, { method }));
+      } catch {
+        // try next request shape
+      }
+    }
+  }
+
+  for (const attempt of attempts) {
+    const payload = pickNetworkPayload(attempt);
+    const magic = extractNetworkMagic(payload);
+    const rpcUrl = extractRpcUrl(payload);
+    const network = normalizeNetworkName(payload, magic);
+
+    if (network !== "unknown" || magic !== null || rpcUrl) {
+      return {
+        network,
+        magic,
+        rpcUrl,
+        raw: payload,
+      };
+    }
+  }
+
+  return null;
 }
 
 async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
@@ -968,75 +1036,106 @@ async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
   await forceInitNeoLineProviders();
   await warmUpFactoryProviders();
   cachedProvider = null;
-  providers = getCandidateProvidersInPriorityOrder();
-  return providers;
+  return getCandidateProvidersInPriorityOrder();
+}
+
+export function getNeoProvider(): NeoLineN3Provider | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (cachedProvider) {
+    return cachedProvider;
+  }
+
+  const providers = getCandidateProvidersInPriorityOrder();
+  const directAccountProvider = providers.find(hasDirectAccountCapability) ?? providers[0] ?? null;
+  if (!directAccountProvider) {
+    dispatchProviderRequestEvents();
+    return null;
+  }
+
+  cachedProvider = directAccountProvider;
+  return directAccountProvider;
 }
 
 export async function connectNeoWallet(): Promise<NeoLineAccount> {
-  const provider = getNeoProvider();
-  if (!provider) {
+  const providers = await loadProvidersWithReadySync();
+  if (providers.length === 0) {
     throw new Error(buildNoWalletFoundErrorMessage());
   }
 
-  try {
-    const rawAccount = await provider.getAccount?.();
-    const account = normalizeAccount(rawAccount);
-    if (account) return account;
-  } catch (err) {
-    console.error("connectNeoWallet failed:", err);
+  const account = await findAccountAcrossProviders(providers, true);
+  if (account) {
+    return account;
   }
 
   throw new Error("Failed to connect to wallet.");
 }
 
 export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount | null> {
-  const provider = getNeoProvider();
-  if (!provider) return null;
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (!silent && providers.length === 0) {
+    providers = await loadProvidersWithReadySync();
+  }
 
-  try {
-    const rawAccount = await provider.getAccount?.();
-    return normalizeAccount(rawAccount);
-  } catch (err) {
-    // Silently ignore if not authorized/locked in silent mode
+  if (providers.length === 0) {
     return null;
   }
+
+  return findAccountAcrossProviders(providers, !silent);
 }
 
 export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwork> {
-  const provider = getNeoProvider();
-  if (!provider) {
-    return { network: "unknown", magic: null };
+  let providers = getCandidateProvidersInPriorityOrder();
+  if (!silent && providers.length === 0) {
+    providers = await loadProvidersWithReadySync();
   }
 
-  try {
-    const raw = await provider.getNetwork?.();
-    const payload = pickNetworkPayload(raw);
-    const magic = extractNetworkMagic(payload);
-    const network = normalizeNetworkName(payload, magic);
-    const rpcUrl = extractRpcUrl(payload);
-
-    return {
-      network,
-      magic,
-      rpcUrl,
-      raw: payload,
-    };
-  } catch (err) {
-    return { network: "unknown", magic: null };
+  for (const provider of providers) {
+    const network = await readNetworkFromProvider(provider);
+    if (network) {
+      cachedProvider = provider;
+      return network;
+    }
   }
+
+  return { network: "unknown", magic: null };
 }
 
 export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<NeoLineInvokeResult> {
-  const provider = getNeoProvider();
-  if (!provider) {
+  const providers = await loadProvidersWithReadySync();
+  if (providers.length === 0) {
     throw new Error(buildNoWalletFoundErrorMessage());
   }
 
-  try {
-    const raw = await provider.invoke?.(payload);
-    return normalizeInvokeResult(raw);
-  } catch (err) {
-    console.error("invokeNeoWallet failed:", err);
-    throw err;
+  let lastError: unknown = null;
+
+  for (const provider of providers) {
+    try {
+      await ensureProviderEnabled(provider);
+
+      if (typeof provider.invoke === "function") {
+        cachedProvider = provider;
+        return normalizeInvokeResult(await provider.invoke(payload));
+      }
+
+      if (typeof provider.invokeFunction === "function") {
+        cachedProvider = provider;
+        return normalizeInvokeResult(await provider.invokeFunction(payload));
+      }
+
+      cachedProvider = provider;
+      return normalizeInvokeResult(
+        await requestProvider(provider, {
+          method: "invoke",
+          params: [payload],
+        }),
+      );
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  throw lastError instanceof Error ? lastError : new Error("Failed to invoke wallet.");
 }

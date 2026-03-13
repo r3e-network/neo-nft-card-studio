@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ExternalLink, Globe, Loader2, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -77,6 +77,7 @@ export function CollectionDetailPage() {
     description: "",
     file: null,
   });
+  const requestSequenceRef = useRef(0);
 
   const isCsharp = contractDialect === "csharp";
   const isDedicatedCollection = collection ? resolveCollectionContractHash(collection) !== null : false;
@@ -85,44 +86,15 @@ export function CollectionDetailPage() {
     setMintForm((prev) => ({ ...prev, to: wallet.address ?? "" }));
   }, [wallet.address]);
 
-  const reloadCollection = async () => {
-    if (!collectionId) {
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const fetchedCollection = await fetchCollection(collectionId);
-      const [fetchedTokens, fetchedGhostMeta] = await Promise.all([
-        fetchCollectionTokens(collectionId),
-        fetchGhostMarketMeta(resolveCollectionContractHash(fetchedCollection) ?? undefined).catch(() => null),
-      ]);
-
-      setCollection(fetchedCollection);
-      setTokens(fetchedTokens);
-      setGhostMarket(fetchedGhostMeta);
-
-      if (isCsharp) {
-        await reloadSales(fetchedCollection, fetchedTokens);
-      } else {
+  const reloadSales = useCallback(async (
+    nextCollection: CollectionDto | null,
+    nextTokens: TokenDto[],
+    requestId = requestSequenceRef.current,
+  ) => {
+    if (!isCsharp || !nextCollection || nextTokens.length === 0) {
+      if (requestId === requestSequenceRef.current) {
         setSalesByTokenId({});
       }
-    } catch (err) {
-      setError(toUserErrorMessage(t, err));
-      setCollection(null);
-      setTokens([]);
-      setGhostMarket(null);
-      setSalesByTokenId({});
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const reloadSales = async (nextCollection: CollectionDto | null, nextTokens: TokenDto[]) => {
-    if (!isCsharp || !nextCollection || nextTokens.length === 0) {
-      setSalesByTokenId({});
       return;
     }
 
@@ -158,65 +130,80 @@ export function CollectionDetailPage() {
         };
       }
 
-      setSalesByTokenId(byTokenId);
+      if (requestId === requestSequenceRef.current) {
+        setSalesByTokenId(byTokenId);
+      }
     } catch {
-      setSalesByTokenId({});
+      if (requestId === requestSequenceRef.current) {
+        setSalesByTokenId({});
+      }
     } finally {
-      setLoadingSales(false);
+      if (requestId === requestSequenceRef.current) {
+        setLoadingSales(false);
+      }
     }
-  };
+  }, [isCsharp]);
 
-  useEffect(() => {
-    let alive = true;
+  const reloadCollection = useCallback(async () => {
+    const requestId = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestId;
 
-    (async () => {
-      if (!collectionId) {
-        setLoading(false);
+    if (!collectionId) {
+      setLoading(false);
+      setCollection(null);
+      setTokens([]);
+      setGhostMarket(null);
+      setSalesByTokenId({});
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const fetchedCollection = await fetchCollection(collectionId);
+      const [fetchedTokens, fetchedGhostMeta] = await Promise.all([
+        fetchCollectionTokens(collectionId),
+        fetchGhostMarketMeta(resolveCollectionContractHash(fetchedCollection) ?? undefined).catch(() => null),
+      ]);
+
+      if (requestId !== requestSequenceRef.current) {
         return;
       }
 
-      setLoading(true);
-      setError("");
+      setCollection(fetchedCollection);
+      setTokens(fetchedTokens);
+      setGhostMarket(fetchedGhostMeta);
 
-      try {
-        const fetchedCollection = await fetchCollection(collectionId);
-        const [fetchedTokens, fetchedGhostMeta] = await Promise.all([
-          fetchCollectionTokens(collectionId),
-          fetchGhostMarketMeta(resolveCollectionContractHash(fetchedCollection) ?? undefined).catch(() => null),
-        ]);
-
-        if (!alive) {
-          return;
-        }
-
-        setCollection(fetchedCollection);
-        setTokens(fetchedTokens);
-        setGhostMarket(fetchedGhostMeta);
-
-        if (isCsharp) {
-          await reloadSales(fetchedCollection, fetchedTokens);
-        }
-      } catch (err) {
-        if (!alive) {
-          return;
-        }
-
-        setError(toUserErrorMessage(t, err));
-        setCollection(null);
-        setTokens([]);
-        setGhostMarket(null);
+      if (isCsharp) {
+        await reloadSales(fetchedCollection, fetchedTokens, requestId);
+      } else {
         setSalesByTokenId({});
-      } finally {
-        if (alive) {
-          setLoading(false);
-        }
       }
-    })();
+    } catch (err) {
+      if (requestId !== requestSequenceRef.current) {
+        return;
+      }
+
+      setError(toUserErrorMessage(t, err));
+      setCollection(null);
+      setTokens([]);
+      setGhostMarket(null);
+      setSalesByTokenId({});
+    } finally {
+      if (requestId === requestSequenceRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [collectionId, isCsharp, reloadSales, t]);
+
+  useEffect(() => {
+    void reloadCollection();
 
     return () => {
-      alive = false;
+      requestSequenceRef.current += 1;
     };
-  }, [collectionId, isCsharp, wallet.network?.network, wallet.network?.magic]);
+  }, [reloadCollection, wallet.network?.network, wallet.network?.magic]);
 
   const onMintToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

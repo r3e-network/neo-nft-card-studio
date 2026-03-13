@@ -72,6 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_tokens_owner ON tokens(owner);
 CREATE INDEX IF NOT EXISTS idx_tokens_collection ON tokens(collection_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_token ON transfers(token_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_block ON transfers(block_index);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transfers_unique ON transfers(txid, token_id, block_index);
 CREATE INDEX IF NOT EXISTS idx_token_listings_listed ON token_listings(listed);
 CREATE INDEX IF NOT EXISTS idx_token_listings_updated ON token_listings(updated_at);
 `;
@@ -152,6 +153,32 @@ function assertSupabaseSuccess(error: unknown, operation: string): void {
   throw new Error(`Supabase ${operation} failed: ${formatSupabaseError(error)}`);
 }
 
+function assertSupabaseReadSuccess(error: unknown, operation: string): void {
+  if (!error || isSupabaseNoRowsError(error)) {
+    return;
+  }
+
+  assertSupabaseSuccess(error, operation);
+}
+
+function isSupabaseMissingRpcError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as { code?: unknown; message?: unknown; details?: unknown };
+  if (candidate.code === "PGRST202" || candidate.code === "42883") {
+    return true;
+  }
+
+  const combined = [candidate.message, candidate.details]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+
+  return combined.includes("could not find the function") || combined.includes("function") && combined.includes("does not exist");
+}
+
 function normalizeListedFlag(value: unknown): number {
   if (value === true || value === 1) {
     return 1;
@@ -183,11 +210,16 @@ function parseTimestamp(input: string | null | undefined): number {
 export class AppDb {
   private readonly sqlite: SqliteDatabase | null = null;
   private readonly supabase: SupabaseClient | null = null;
+  private readonly supabaseNamespacePrefix: string | null;
+  private supabaseApplyTransferRpcAvailable: boolean | null = null;
 
-  constructor(dbPath: string, supabaseUrl?: string, supabaseKey?: string) {
+  constructor(dbPath: string, supabaseUrl?: string, supabaseKey?: string, supabaseNamespace?: string) {
     if (supabaseUrl && supabaseKey) {
       this.supabase = createClient(supabaseUrl, supabaseKey);
+      const normalizedNamespace = (supabaseNamespace ?? "default").trim().toLowerCase() || "default";
+      this.supabaseNamespacePrefix = `net:${normalizedNamespace}:`;
     } else {
+      this.supabaseNamespacePrefix = null;
       const dir = path.dirname(dbPath);
       if (dir && dir !== ".") {
         fs.mkdirSync(dir, { recursive: true });
@@ -198,6 +230,7 @@ export class AppDb {
       this.sqlite.pragma("journal_mode = WAL");
       this.sqlite.exec(SCHEMA_SQL);
       this.ensureCollectionContractHashColumn();
+      this.ensureUniqueTransfers();
     }
   }
 
@@ -205,18 +238,71 @@ export class AppDb {
     this.sqlite?.close();
   }
 
+  private getSupabaseScopePattern(): string {
+    return `${this.supabaseNamespacePrefix ?? ""}%`;
+  }
+
+  private encodeSupabaseScopedValue(value: string): string {
+    return this.supabaseNamespacePrefix ? `${this.supabaseNamespacePrefix}${value}` : value;
+  }
+
+  private decodeSupabaseScopedValue(value: unknown): string {
+    const text = value?.toString?.() ?? "";
+    if (!this.supabaseNamespacePrefix || !text.startsWith(this.supabaseNamespacePrefix)) {
+      return text;
+    }
+
+    return text.slice(this.supabaseNamespacePrefix.length);
+  }
+
+  private encodeSupabaseCollectionId(collectionId: string): string {
+    return this.encodeSupabaseScopedValue(collectionId);
+  }
+
+  private encodeSupabaseTokenId(tokenId: string): string {
+    return this.encodeSupabaseScopedValue(tokenId);
+  }
+
+  private encodeSupabaseSyncStateKey(key: string): string {
+    return this.encodeSupabaseScopedValue(key);
+  }
+
+  private decodeCollectionRecord(row: CollectionRecord): CollectionRecord {
+    return {
+      ...row,
+      collectionId: this.decodeSupabaseScopedValue(row.collectionId),
+      contractHash: row.contractHash ?? null,
+    };
+  }
+
+  private decodeTokenRecord(row: TokenRecord): TokenRecord {
+    return {
+      ...row,
+      tokenId: this.decodeSupabaseScopedValue(row.tokenId),
+      collectionId: this.decodeSupabaseScopedValue(row.collectionId),
+    };
+  }
+
+  private decodeTransferRecord(row: TransferRecord): TransferRecord {
+    return {
+      ...row,
+      tokenId: this.decodeSupabaseScopedValue(row.tokenId),
+    };
+  }
+
   async getSyncState(key: string): Promise<string | null> {
     if (this.supabase) {
+      const storageKey = this.encodeSupabaseSyncStateKey(key);
       const { data, error } = await this.supabase
         .from("sync_state")
         .select("value")
-        .eq("key", key)
+        .eq("key", storageKey)
         .maybeSingle();
       if (error) {
         if (isSupabaseNoRowsError(error)) {
           return null;
         }
-        assertSupabaseSuccess(error, `read sync_state key='${key}'`);
+        assertSupabaseSuccess(error, `read sync_state key='${storageKey}'`);
       }
       return data?.value ?? null;
     }
@@ -227,10 +313,11 @@ export class AppDb {
 
   async setSyncState(key: string, value: string): Promise<void> {
     if (this.supabase) {
+      const storageKey = this.encodeSupabaseSyncStateKey(key);
       const { error } = await this.supabase
         .from("sync_state")
-        .upsert({ key, value }, { onConflict: "key" });
-      assertSupabaseSuccess(error, `upsert sync_state key='${key}'`);
+        .upsert({ key: storageKey, value }, { onConflict: "key" });
+      assertSupabaseSuccess(error, `upsert sync_state key='${storageKey}'`);
       return;
     }
 
@@ -252,12 +339,29 @@ export class AppDb {
     }
   }
 
+  private ensureUniqueTransfers(): void {
+    if (!this.sqlite) {
+      return;
+    }
+
+    this.sqlite.exec(`
+      DELETE FROM transfers
+      WHERE id NOT IN (
+        SELECT MIN(id)
+        FROM transfers
+        GROUP BY txid, token_id, block_index
+      )
+    `);
+    this.sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_transfers_unique ON transfers(txid, token_id, block_index)");
+  }
+
   async upsertCollection(input: CollectionRecord): Promise<void> {
     if (this.supabase) {
+      const encodedCollectionId = this.encodeSupabaseCollectionId(input.collectionId);
       const { error } = await this.supabase
         .from("collections")
         .upsert({
-          collection_id: input.collectionId,
+          collection_id: encodedCollectionId,
           owner: input.owner,
           name: input.name,
           symbol: input.symbol,
@@ -272,7 +376,7 @@ export class AppDb {
           created_at: input.createdAt,
           updated_at: input.updatedAt,
         }, { onConflict: "collection_id" });
-      assertSupabaseSuccess(error, `upsert collections collection_id='${input.collectionId}'`);
+      assertSupabaseSuccess(error, `upsert collections collection_id='${encodedCollectionId}'`);
       return;
     }
 
@@ -307,11 +411,12 @@ export class AppDb {
 
   async setCollectionContractHash(collectionId: string, contractHash: string, updatedAt: string): Promise<void> {
     if (this.supabase) {
+      const encodedCollectionId = this.encodeSupabaseCollectionId(collectionId);
       const { error } = await this.supabase
         .from("collections")
         .update({ contract_hash: contractHash, updated_at: updatedAt })
-        .eq("collection_id", collectionId);
-      assertSupabaseSuccess(error, `update collections.contract_hash for collection_id='${collectionId}'`);
+        .eq("collection_id", encodedCollectionId);
+      assertSupabaseSuccess(error, `update collections.contract_hash for collection_id='${encodedCollectionId}'`);
       return;
     }
 
@@ -329,6 +434,7 @@ export class AppDb {
       const { data, error } = await this.supabase
         .from("collections")
         .select("contract_hash")
+        .like("collection_id", this.getSupabaseScopePattern())
         .not("contract_hash", "is", null);
       assertSupabaseSuccess(error, "list collection contract hashes");
       return (data ?? []).map((row) => row.contract_hash).filter(Boolean) as string[];
@@ -348,11 +454,13 @@ export class AppDb {
 
   async upsertToken(input: TokenRecord): Promise<void> {
     if (this.supabase) {
+      const encodedTokenId = this.encodeSupabaseTokenId(input.tokenId);
+      const encodedCollectionId = this.encodeSupabaseCollectionId(input.collectionId);
       const { error } = await this.supabase
         .from("tokens")
         .upsert({
-          token_id: input.tokenId,
-          collection_id: input.collectionId,
+          token_id: encodedTokenId,
+          collection_id: encodedCollectionId,
           owner: input.owner,
           uri: input.uri,
           properties_json: input.propertiesJson,
@@ -360,7 +468,7 @@ export class AppDb {
           minted_at: input.mintedAt,
           updated_at: input.updatedAt,
         }, { onConflict: "token_id" });
-      assertSupabaseSuccess(error, `upsert tokens token_id='${input.tokenId}'`);
+      assertSupabaseSuccess(error, `upsert tokens token_id='${encodedTokenId}'`);
       return;
     }
 
@@ -384,11 +492,12 @@ export class AppDb {
 
   async markTokenOwner(tokenId: string, owner: string, updatedAt: string): Promise<void> {
     if (this.supabase) {
+      const encodedTokenId = this.encodeSupabaseTokenId(tokenId);
       const { error } = await this.supabase
         .from("tokens")
         .update({ owner, updated_at: updatedAt })
-        .eq("token_id", tokenId);
-      assertSupabaseSuccess(error, `update token owner for token_id='${tokenId}'`);
+        .eq("token_id", encodedTokenId);
+      assertSupabaseSuccess(error, `update token owner for token_id='${encodedTokenId}'`);
       return;
     }
 
@@ -403,15 +512,16 @@ export class AppDb {
 
   async insertTransfer(input: TransferRecord): Promise<void> {
     if (this.supabase) {
+      const encodedTokenId = this.encodeSupabaseTokenId(input.tokenId);
       const existing = await this.supabase
         .from("transfers")
         .select("id")
         .eq("txid", input.txid)
-        .eq("token_id", input.tokenId)
+        .eq("token_id", encodedTokenId)
         .eq("block_index", input.blockIndex)
         .maybeSingle();
       if (existing.error && !isSupabaseNoRowsError(existing.error)) {
-        assertSupabaseSuccess(existing.error, `read transfer txid='${input.txid}' token_id='${input.tokenId}'`);
+        assertSupabaseSuccess(existing.error, `read transfer txid='${input.txid}' token_id='${encodedTokenId}'`);
       }
       if (existing.data) {
         return;
@@ -421,33 +531,19 @@ export class AppDb {
         .from("transfers")
         .insert({
           txid: input.txid,
-          token_id: input.tokenId,
+          token_id: encodedTokenId,
           from_address: input.fromAddress,
           to_address: input.toAddress,
           block_index: input.blockIndex,
           timestamp: input.timestamp,
         });
-      assertSupabaseSuccess(error, `insert transfer txid='${input.txid}' token_id='${input.tokenId}'`);
-      return;
-    }
-
-    const existing = this.sqlite!
-      .prepare(
-        `SELECT 1 AS found
-         FROM transfers
-         WHERE txid = ?
-           AND token_id = ?
-           AND block_index = ?
-         LIMIT 1`,
-      )
-      .get(input.txid, input.tokenId, input.blockIndex) as { found: number } | undefined;
-    if (existing?.found === 1) {
+      assertSupabaseSuccess(error, `insert transfer txid='${input.txid}' token_id='${encodedTokenId}'`);
       return;
     }
 
     this.sqlite!
       .prepare(
-        `INSERT INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
+        `INSERT OR IGNORE INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
          VALUES(@txid, @tokenId, @fromAddress, @toAddress, @blockIndex, @timestamp)`,
       )
       .run(input);
@@ -455,17 +551,45 @@ export class AppDb {
 
   async applyTransfer(input: TransferRecord): Promise<void> {
     if (this.supabase) {
-      // In Supabase we don't have built-in easy synchronous transactions across tables like this
-      // but we can perform them sequentially or use a RPC function.
-      // For simplicity here, we do it sequentially.
+      const encodedTokenId = this.encodeSupabaseTokenId(input.tokenId);
+
+      if (this.supabaseApplyTransferRpcAvailable !== false) {
+        const { error } = await this.supabase.rpc("apply_nft_transfer", {
+          p_txid: input.txid,
+          p_token_id: encodedTokenId,
+          p_from_address: input.fromAddress,
+          p_to_address: input.toAddress,
+          p_block_index: input.blockIndex,
+          p_timestamp: input.timestamp,
+        });
+
+        if (!error) {
+          this.supabaseApplyTransferRpcAvailable = true;
+          return;
+        }
+
+        if (isSupabaseMissingRpcError(error)) {
+          this.supabaseApplyTransferRpcAvailable = false;
+        } else {
+          assertSupabaseSuccess(error, `rpc apply_nft_transfer token_id='${encodedTokenId}'`);
+        }
+      }
+
+      await this.insertTransfer(input);
       if (input.toAddress) {
         await this.markTokenOwner(input.tokenId, input.toAddress, input.timestamp);
       }
-      await this.insertTransfer(input);
       return;
     }
 
     const txn = this.sqlite!.transaction((record: TransferRecord) => {
+      this.sqlite!
+        .prepare(
+          `INSERT OR IGNORE INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
+           VALUES(@txid, @tokenId, @fromAddress, @toAddress, @blockIndex, @timestamp)`,
+        )
+        .run(record);
+
       if (record.toAddress) {
         this.sqlite!
           .prepare(
@@ -475,27 +599,6 @@ export class AppDb {
           )
           .run(record.toAddress, record.timestamp, record.tokenId);
       }
-
-      const existing = this.sqlite!
-        .prepare(
-          `SELECT 1 AS found
-           FROM transfers
-           WHERE txid = ?
-             AND token_id = ?
-             AND block_index = ?
-           LIMIT 1`,
-        )
-        .get(record.txid, record.tokenId, record.blockIndex) as { found: number } | undefined;
-      if (existing?.found === 1) {
-        return;
-      }
-
-      this.sqlite!
-        .prepare(
-          `INSERT INTO transfers(txid, token_id, from_address, to_address, block_index, timestamp)
-           VALUES(@txid, @tokenId, @fromAddress, @toAddress, @blockIndex, @timestamp)`,
-        )
-        .run(record);
     });
 
     txn(input);
@@ -503,17 +606,18 @@ export class AppDb {
 
   async upsertTokenListing(input: TokenListingRecord): Promise<void> {
     if (this.supabase) {
+      const encodedTokenId = this.encodeSupabaseTokenId(input.tokenId);
       const { error } = await this.supabase
         .from("token_listings")
         .upsert({
-          token_id: input.tokenId,
+          token_id: encodedTokenId,
           seller: input.seller,
           price: input.price,
           listed: input.listed,
           listed_at: input.listedAt,
           updated_at: input.updatedAt,
         }, { onConflict: "token_id" });
-      assertSupabaseSuccess(error, `upsert token_listings token_id='${input.tokenId}'`);
+      assertSupabaseSuccess(error, `upsert token_listings token_id='${encodedTokenId}'`);
       return;
     }
 
@@ -570,16 +674,17 @@ export class AppDb {
             collectionUpdatedAt:updated_at
           )
         `)
-        .eq("burned", 0);
+        .eq("burned", 0)
+        .like("collection_id", this.getSupabaseScopePattern());
 
-      if (input?.collectionId) query = query.eq("collection_id", input.collectionId);
+      if (input?.collectionId) query = query.eq("collection_id", this.encodeSupabaseCollectionId(input.collectionId));
       if (input?.owner) query = query.eq("owner", input.owner);
 
       const { data, error } = await query
         .order("token_id", { ascending: false })
         .limit(limit);
 
-      if (error) return [];
+      assertSupabaseReadSuccess(error, "list market listings tokens");
 
       const tokenRows = (data as any[] | null) ?? [];
       if (tokenRows.length === 0) {
@@ -608,20 +713,20 @@ export class AppDb {
           `)
           .in("token_id", tokenIds);
 
-        if (!listingError) {
-          for (const row of (listingRows as any[] | null) ?? []) {
-            const tokenId = row?.tokenId?.toString?.() ?? "";
-            if (!tokenId) {
-              continue;
-            }
-            listingsByTokenId.set(tokenId, {
-              listed: normalizeListedFlag(row?.listed),
-              seller: row?.seller ?? null,
-              price: row?.price?.toString?.() ?? null,
-              listedAt: row?.listedAt ?? null,
-              listingUpdatedAt: row?.listingUpdatedAt ?? null,
-            });
+        assertSupabaseReadSuccess(listingError, "list market listing sale states");
+
+        for (const row of (listingRows as any[] | null) ?? []) {
+          const tokenId = row?.tokenId?.toString?.() ?? "";
+          if (!tokenId) {
+            continue;
           }
+          listingsByTokenId.set(tokenId, {
+            listed: normalizeListedFlag(row?.listed),
+            seller: row?.seller ?? null,
+            price: row?.price?.toString?.() ?? null,
+            listedAt: row?.listedAt ?? null,
+            listingUpdatedAt: row?.listingUpdatedAt ?? null,
+          });
         }
       }
 
@@ -637,6 +742,8 @@ export class AppDb {
         return {
           ...item,
           ...item.collections,
+          tokenId: this.decodeSupabaseScopedValue(item?.tokenId),
+          collectionId: this.decodeSupabaseScopedValue(item?.collectionId),
           listed: listing.listed,
           seller: listing.seller,
           price: listing.price,
@@ -741,13 +848,14 @@ export class AppDb {
           paused,
           createdAt:created_at,
           updatedAt:updated_at
-        `);
+        `)
+        .like("collection_id", this.getSupabaseScopePattern());
       
       if (owner) query = query.eq("owner", owner);
       
       const { data, error } = await query.order("created_at", { ascending: false });
-      if (error) return [];
-      return data as CollectionRecord[];
+      assertSupabaseReadSuccess(error, `list collections${owner ? ` for owner='${owner}'` : ""}`);
+      return ((data as CollectionRecord[] | null) ?? []).map((row) => this.decodeCollectionRecord(row));
     }
 
     if (owner) {
@@ -800,6 +908,7 @@ export class AppDb {
 
   async getCollection(collectionId: string): Promise<CollectionRecord | null> {
     if (this.supabase) {
+      const encodedCollectionId = this.encodeSupabaseCollectionId(collectionId);
       const { data, error } = await this.supabase
         .from("collections")
         .select(`
@@ -818,11 +927,11 @@ export class AppDb {
           createdAt:created_at,
           updatedAt:updated_at
         `)
-        .eq("collection_id", collectionId)
-        .single();
-      
-      if (error) return null;
-      return data as CollectionRecord;
+        .eq("collection_id", encodedCollectionId)
+        .maybeSingle();
+
+      assertSupabaseReadSuccess(error, `get collection collection_id='${encodedCollectionId}'`);
+      return data ? this.decodeCollectionRecord(data as CollectionRecord) : null;
     }
 
     const row = this.sqlite!
@@ -852,6 +961,7 @@ export class AppDb {
 
   async listCollectionTokens(collectionId: string): Promise<TokenRecord[]> {
     if (this.supabase) {
+      const encodedCollectionId = this.encodeSupabaseCollectionId(collectionId);
       const { data, error } = await this.supabase
         .from("tokens")
         .select(`
@@ -864,12 +974,12 @@ export class AppDb {
           mintedAt:minted_at,
           updatedAt:updated_at
         `)
-        .eq("collection_id", collectionId)
+        .eq("collection_id", encodedCollectionId)
         .eq("burned", 0)
         .order("minted_at", { ascending: false });
-      
-      if (error) return [];
-      return data as TokenRecord[];
+
+      assertSupabaseReadSuccess(error, `list collection tokens collection_id='${encodedCollectionId}'`);
+      return ((data as TokenRecord[] | null) ?? []).map((row) => this.decodeTokenRecord(row));
     }
 
     return this.sqlite!
@@ -906,11 +1016,12 @@ export class AppDb {
           updatedAt:updated_at
         `)
         .eq("owner", owner)
+        .like("collection_id", this.getSupabaseScopePattern())
         .eq("burned", 0)
         .order("updated_at", { ascending: false });
-      
-      if (error) return [];
-      return data as TokenRecord[];
+
+      assertSupabaseReadSuccess(error, `list wallet tokens owner='${owner}'`);
+      return ((data as TokenRecord[] | null) ?? []).map((row) => this.decodeTokenRecord(row));
     }
 
     return this.sqlite!
@@ -934,6 +1045,7 @@ export class AppDb {
 
   async getToken(tokenId: string): Promise<TokenRecord | null> {
     if (this.supabase) {
+      const encodedTokenId = this.encodeSupabaseTokenId(tokenId);
       const { data, error } = await this.supabase
         .from("tokens")
         .select(`
@@ -946,11 +1058,11 @@ export class AppDb {
           mintedAt:minted_at,
           updatedAt:updated_at
         `)
-        .eq("token_id", tokenId)
-        .single();
-      
-      if (error) return null;
-      return data as TokenRecord;
+        .eq("token_id", encodedTokenId)
+        .maybeSingle();
+
+      assertSupabaseReadSuccess(error, `get token token_id='${encodedTokenId}'`);
+      return data ? this.decodeTokenRecord(data as TokenRecord) : null;
     }
 
     const row = this.sqlite!
@@ -983,16 +1095,17 @@ export class AppDb {
           toAddress:to_address,
           blockIndex:block_index,
           timestamp
-        `);
+        `)
+        .like("token_id", this.getSupabaseScopePattern());
       
-      if (tokenId) query = query.eq("token_id", tokenId);
+      if (tokenId) query = query.eq("token_id", this.encodeSupabaseTokenId(tokenId));
       
       const { data, error } = await query
         .order("id", { ascending: false })
         .limit(limit);
-      
-      if (error) return [];
-      return data as TransferRecord[];
+
+      assertSupabaseReadSuccess(error, `list transfers${tokenId ? ` token_id='${tokenId}'` : ""}`);
+      return ((data as TransferRecord[] | null) ?? []).map((row) => this.decodeTransferRecord(row));
     }
 
     if (tokenId) {
@@ -1032,9 +1145,9 @@ export class AppDb {
   async getStats(): Promise<{ collectionCount: number; tokenCount: number; transferCount: number }> {
     if (this.supabase) {
       const [collectionsResult, tokensResult, transfersResult] = await Promise.all([
-        this.supabase.from("collections").select("*", { count: "exact", head: true }),
-        this.supabase.from("tokens").select("*", { count: "exact", head: true }).eq("burned", 0),
-        this.supabase.from("transfers").select("*", { count: "exact", head: true }),
+        this.supabase.from("collections").select("*", { count: "exact", head: true }).like("collection_id", this.getSupabaseScopePattern()),
+        this.supabase.from("tokens").select("*", { count: "exact", head: true }).like("collection_id", this.getSupabaseScopePattern()).eq("burned", 0),
+        this.supabase.from("transfers").select("*", { count: "exact", head: true }).like("token_id", this.getSupabaseScopePattern()),
       ]);
       assertSupabaseSuccess(collectionsResult.error, "count collections");
       assertSupabaseSuccess(tokensResult.error, "count active tokens");

@@ -181,7 +181,7 @@ export class NeoNftPlatformClient {
   async balanceOf(owner: string): Promise<string> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("balanceOf", [integerArg(toIntegerLike(owner, 0))])
+        ? await this.rpc.invokeRead("balanceOf", [hash160Arg(owner)])
         : await this.rpc.invokeRead("balanceOf", [hash160Arg(owner)]);
     return value?.toString() ?? "0";
   }
@@ -189,7 +189,7 @@ export class NeoNftPlatformClient {
   async ownerOf(tokenIdHex: string): Promise<string> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("ownerOf", [integerArg(toIntegerLike(tokenIdHex, 0))])
+        ? await this.rpc.invokeRead("ownerOf", [toByteArrayArg(tokenIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("ownerOf", [hash256Arg(tokenIdHex)])
           : await this.rpc.invokeRead("ownerOf", [toByteArrayArg(tokenIdHex)]);
@@ -199,7 +199,7 @@ export class NeoNftPlatformClient {
   async getCollection(collectionIdHex: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getCollection", [integerArg(toIntegerLike(collectionIdHex, 0))])
+        ? await this.rpc.invokeRead("getCollection", [toByteArrayArg(collectionIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getCollection", [integerArg(collectionIdHex)])
           : await this.rpc.invokeRead("getCollection", [toByteArrayArg(collectionIdHex)]);
@@ -209,7 +209,7 @@ export class NeoNftPlatformClient {
   async getToken(tokenIdHex: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getToken", [integerArg(toIntegerLike(tokenIdHex, 0))])
+        ? await this.rpc.invokeRead("getToken", [toByteArrayArg(tokenIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getToken", [hash256Arg(tokenIdHex)])
           : await this.rpc.invokeRead("getToken", [toByteArrayArg(tokenIdHex)]);
@@ -219,7 +219,7 @@ export class NeoNftPlatformClient {
   async getDropConfig(collectionIdHex: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getDropConfig", [integerArg(toIntegerLike(collectionIdHex, 0))])
+        ? await this.rpc.invokeRead("getDropConfig", [toByteArrayArg(collectionIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getDropConfig", [integerArg(collectionIdHex)])
           : await this.rpc.invokeRead("getDropConfig", [toByteArrayArg(collectionIdHex)]);
@@ -229,10 +229,7 @@ export class NeoNftPlatformClient {
   async getDropWalletStats(collectionIdHex: string, account: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getDropWalletStats", [
-          integerArg(toIntegerLike(collectionIdHex, 0)),
-          integerArg(toIntegerLike(account, 0)),
-        ])
+        ? await this.rpc.invokeRead("getDropWalletStats", [toByteArrayArg(collectionIdHex), hash160Arg(account)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getDropWalletStats", [integerArg(collectionIdHex), hash160Arg(account)])
           : await this.rpc.invokeRead("getDropWalletStats", [toByteArrayArg(collectionIdHex), hash160Arg(account)]);
@@ -242,10 +239,7 @@ export class NeoNftPlatformClient {
   async canClaimDrop(collectionIdHex: string, account: string): Promise<boolean> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("canClaimDrop", [
-          integerArg(toIntegerLike(collectionIdHex, 0)),
-          integerArg(toIntegerLike(account, 0)),
-        ])
+        ? await this.rpc.invokeRead("canClaimDrop", [toByteArrayArg(collectionIdHex), hash160Arg(account)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("canClaimDrop", [integerArg(collectionIdHex), hash160Arg(account)])
           : await this.rpc.invokeRead("canClaimDrop", [toByteArrayArg(collectionIdHex), hash160Arg(account)]);
@@ -255,7 +249,7 @@ export class NeoNftPlatformClient {
   async getCheckInProgram(collectionIdHex: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getCheckInProgram", [integerArg(toIntegerLike(collectionIdHex, 0))])
+        ? await this.rpc.invokeRead("getCheckInProgram", [toByteArrayArg(collectionIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getCheckInProgram", [integerArg(collectionIdHex)])
           : await this.rpc.invokeRead("getCheckInProgram", [toByteArrayArg(collectionIdHex)]);
@@ -265,10 +259,7 @@ export class NeoNftPlatformClient {
   async getCheckInWalletStats(collectionIdHex: string, account: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getCheckInWalletStats", [
-          integerArg(toIntegerLike(collectionIdHex, 0)),
-          integerArg(toIntegerLike(account, 0)),
-        ])
+        ? await this.rpc.invokeRead("getCheckInWalletStats", [toByteArrayArg(collectionIdHex), hash160Arg(account)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getCheckInWalletStats", [integerArg(collectionIdHex), hash160Arg(account)])
           : await this.rpc.invokeRead("getCheckInWalletStats", [toByteArrayArg(collectionIdHex), hash160Arg(account)]);
@@ -278,10 +269,7 @@ export class NeoNftPlatformClient {
   async canCheckIn(collectionIdHex: string, account: string): Promise<boolean> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("canCheckIn", [
-          integerArg(toIntegerLike(collectionIdHex, 0)),
-          integerArg(toIntegerLike(account, 0)),
-        ])
+        ? await this.rpc.invokeRead("canCheckIn", [toByteArrayArg(collectionIdHex), hash160Arg(account)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("canCheckIn", [integerArg(collectionIdHex), hash160Arg(account)])
           : await this.rpc.invokeRead("canCheckIn", [toByteArrayArg(collectionIdHex), hash160Arg(account)]);
@@ -291,10 +279,7 @@ export class NeoNftPlatformClient {
   async getMembershipStatus(collectionIdHex: string, account: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getMembershipStatus", [
-          integerArg(toIntegerLike(collectionIdHex, 0)),
-          integerArg(toIntegerLike(account, 0)),
-        ])
+        ? await this.rpc.invokeRead("getMembershipStatus", [toByteArrayArg(collectionIdHex), hash160Arg(account)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getMembershipStatus", [integerArg(collectionIdHex), hash160Arg(account)])
           : await this.rpc.invokeRead("getMembershipStatus", [toByteArrayArg(collectionIdHex), hash160Arg(account)]);
@@ -304,7 +289,7 @@ export class NeoNftPlatformClient {
   async getTokenClass(tokenIdHex: string): Promise<string> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getTokenClass", [integerArg(toIntegerLike(tokenIdHex, 0))])
+        ? await this.rpc.invokeRead("getTokenClass", [toByteArrayArg(tokenIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getTokenClass", [hash256Arg(tokenIdHex)])
           : await this.rpc.invokeRead("getTokenClass", [toByteArrayArg(tokenIdHex)]);
@@ -333,7 +318,7 @@ export class NeoNftPlatformClient {
   async getRoyalties(tokenIdHex: string): Promise<string> {
     const [value] =
       this.dialect === "rust"
-        ? await this.rpc.invokeRead("getRoyalties", [integerArg(toIntegerLike(tokenIdHex, 0))])
+        ? await this.rpc.invokeRead("getRoyalties", [toByteArrayArg(tokenIdHex)])
         : this.dialect === "solidity"
           ? await this.rpc.invokeRead("getRoyalties", [hash256Arg(tokenIdHex)])
           : await this.rpc.invokeRead("getRoyalties", [toByteArrayArg(tokenIdHex)]);
@@ -417,8 +402,8 @@ export class NeoNftPlatformClient {
     const [value] =
       this.dialect === "rust"
         ? await this.rpc.invokeRead("royaltyInfo", [
-          integerArg(toIntegerLike(tokenIdHex, 0)),
-          integerArg(toIntegerLike(royaltyToken ?? 0, 0)),
+          toByteArrayArg(tokenIdHex),
+          hash160Arg(royaltyToken ?? "0x0000000000000000000000000000000000000000"),
           integerArg(salePrice),
         ])
         : this.dialect === "solidity"

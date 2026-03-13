@@ -1,12 +1,19 @@
 import { experimental, rpc, sc, tx, u, wallet } from "@cityofzion/neon-js";
 
 // Configuration
-const WIF = "KzjaqMvqzF1uup6KrTKRxTgjcXE7PbKLRH84e6ckyXDt3fu7afUb";
 const RPC_URL = "https://testnet1.neo.coz.io:443";
 const FACTORY_HASH = "0xc1868eba3ce06ad93962378537f8a59f3cae1548";
 const NETWORK_MAGIC = 894710606; // N3 Testnet
 
-const ACCOUNT = new wallet.Account(WIF);
+function readRequiredWif() {
+  const wif = process.env.NEO_TEST_WIF?.trim();
+  if (!wif) {
+    throw new Error("Missing NEO_TEST_WIF. Set it to a Neo N3 testnet WIF before running this script.");
+  }
+  return wif;
+}
+
+const ACCOUNT = new wallet.Account(readRequiredWif());
 const rpcClient = new rpc.RPCClient(RPC_URL);
 
 async function main() {
@@ -90,6 +97,7 @@ async function main() {
 
   } catch (err) {
     console.error("Error in script:", err);
+    process.exitCode = 1;
   }
 }
 
