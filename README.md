@@ -309,3 +309,4 @@ set -a; source .env.testnet; set +a; npm run test:testnet
 - `docs/neoline-frontend-integration.md`
 - `docs/wallet-release-checklist.md`
 - `docs/production-config-audit.md`
+- `docs/security-secrets-incident-response.md`
