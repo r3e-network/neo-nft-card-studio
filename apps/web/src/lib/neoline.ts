@@ -968,6 +968,55 @@ async function findAccountAcrossProviders(
   return null;
 }
 
+async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLineAccount | null> {
+  const providerRecord = asRecord(provider);
+  if (providerRecord && typeof providerRecord.enable === "function") {
+    enableAttemptedProviders.delete(providerRecord);
+  }
+
+  const enabledResult = await ensureProviderEnabled(provider);
+  const enabledAccount = normalizeAccount(enabledResult);
+  if (enabledAccount) {
+    cachedProvider = provider;
+    return enabledAccount;
+  }
+
+  const interactiveMethods: Array<keyof NeoLineN3Provider> = [
+    "requestAccounts",
+    "getAccount",
+    "getAddress",
+    "getWalletAddress",
+    "getAccounts",
+  ];
+
+  for (const methodName of interactiveMethods) {
+    const value = await tryCallProviderMethod(provider, methodName);
+    if (value === undefined) {
+      continue;
+    }
+
+    const account = normalizeAccount(value);
+    if (account) {
+      cachedProvider = provider;
+      return account;
+    }
+  }
+
+  for (const method of ["requestAccounts", "getAccount", "getAddress", "getWalletAddress", "getAccounts"]) {
+    try {
+      const account = normalizeAccount(await requestProvider(provider, { method }));
+      if (account) {
+        cachedProvider = provider;
+        return account;
+      }
+    } catch {
+      // try next interactive method
+    }
+  }
+
+  return null;
+}
+
 async function readNetworkFromProvider(provider: NeoLineN3Provider): Promise<NeoWalletNetwork | null> {
   const attempts: unknown[] = [];
 
@@ -1065,7 +1114,8 @@ export async function connectNeoWallet(): Promise<NeoLineAccount> {
     throw new Error(buildNoWalletFoundErrorMessage());
   }
 
-  const account = await findAccountAcrossProviders(providers, true);
+  const preferredProvider = getNeoProvider() ?? providers[0];
+  const account = preferredProvider ? await connectSingleProvider(preferredProvider) : null;
   if (account) {
     return account;
   }

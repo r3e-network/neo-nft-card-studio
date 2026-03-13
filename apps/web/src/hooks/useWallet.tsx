@@ -190,9 +190,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       connect: async () => {
         setIsConnecting(true);
         try {
-          await connectNeoWallet();
+          const account = await connectNeoWallet();
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
-          await syncWalletSession(false);
+          const currentNetwork = await getNeoWalletNetwork(true);
+          const nextAddress = account.address?.trim() || null;
+          const nextNetwork = nextAddress ? currentNetwork : null;
+
+          setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+          setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+          setRuntimeWalletNetwork(nextNetwork);
         } catch (err) {
           console.error("Connect failed:", err);
           throw err;
