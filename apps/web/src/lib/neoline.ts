@@ -974,16 +974,9 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     enableAttemptedProviders.delete(providerRecord);
   }
 
-  const enabledResult = await ensureProviderEnabled(provider);
-  const enabledAccount = normalizeAccount(enabledResult);
-  if (enabledAccount) {
-    cachedProvider = provider;
-    return enabledAccount;
-  }
-
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
-    "requestAccounts",
     "getAccount",
+    "requestAccounts",
     "getAddress",
     "getWalletAddress",
     "getAccounts",
@@ -1002,7 +995,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     }
   }
 
-  for (const method of ["requestAccounts", "getAccount", "getAddress", "getWalletAddress", "getAccounts"]) {
+  for (const method of ["getAccount", "requestAccounts", "getAddress", "getWalletAddress", "getAccounts"]) {
     try {
       const account = normalizeAccount(await requestProvider(provider, { method }));
       if (account) {
@@ -1012,6 +1005,13 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     } catch {
       // try next interactive method
     }
+  }
+
+  const enabledResult = await ensureProviderEnabled(provider);
+  const enabledAccount = normalizeAccount(enabledResult);
+  if (enabledAccount) {
+    cachedProvider = provider;
+    return enabledAccount;
   }
 
   return null;
@@ -1133,7 +1133,7 @@ export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount
     return null;
   }
 
-  return findAccountAcrossProviders(providers, !silent);
+  return findAccountAcrossProviders(providers, false);
 }
 
 export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwork> {
@@ -1163,8 +1163,6 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
 
   for (const provider of providers) {
     try {
-      await ensureProviderEnabled(provider);
-
       if (typeof provider.invoke === "function") {
         cachedProvider = provider;
         return normalizeInvokeResult(await provider.invoke(payload));
