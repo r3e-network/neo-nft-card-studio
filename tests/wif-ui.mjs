@@ -167,14 +167,21 @@ async function run() {
   }
   console.log("NFT successfully minted!");
 
-  // 7. Go to Portfolio
-  console.log("Checking 'Portfolio' page...");
-  const portfolioLink = page.locator("a.topnav-link[href='/portfolio']");
-  if (await portfolioLink.count() > 0) {
-     await portfolioLink.click();
-     await page.waitForURL("**/portfolio");
-     console.log("Portfolio loaded.");
-  }
+  // 7. Verify connected state survives cross-page navigation and reloads
+  console.log("Checking connected state on Portfolio route...");
+  await page.goto(`${new URL(baseUrl).origin}/portfolio`, { waitUntil: "domcontentloaded" });
+  await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+  console.log("Portfolio loaded with preserved wallet state.");
+
+  console.log("Reloading Portfolio page...");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+  console.log("Reload preserved wallet state.");
+
+  console.log("Navigating back to Explore...");
+  await page.goto(`${new URL(baseUrl).origin}/explore`, { waitUntil: "domcontentloaded" });
+  await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+  console.log("Explore loaded with preserved wallet state.");
 
   await browser.close();
 

@@ -94,7 +94,9 @@ let neoLineInitInstance: unknown = null;
 let readyListenersInstalled = false;
 
 function walletDebug(...args: unknown[]): void {
-  console.info("[wallet-debug]", ...args);
+  if (import.meta.env.DEV || import.meta.env.VITE_WALLET_DEBUG === "true") {
+    console.info("[wallet-debug]", ...args);
+  }
 }
 
 function sleep(ms: number): Promise<void> {
