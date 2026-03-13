@@ -546,7 +546,7 @@ function extractAddress(value: unknown): string {
     }
   }
 
-  const nestedKeys = ["account", "result", "data", "wallet"];
+  const nestedKeys = ["account", "result", "data", "wallet", "detail"];
   for (const key of nestedKeys) {
     const address = extractAddress(record[key]);
     if (address) {
@@ -564,7 +564,11 @@ function extractLabel(value: unknown): string | undefined {
   }
 
   const label = record.label;
-  return typeof label === "string" && label.trim().length > 0 ? label.trim() : undefined;
+  if (typeof label === "string" && label.trim().length > 0) {
+    return label.trim();
+  }
+
+  return extractLabel(record.detail);
 }
 
 function normalizeAccount(value: unknown): NeoLineAccount | null {
@@ -692,7 +696,7 @@ function extractNetworkMagic(value: unknown): number | null {
     }
   }
 
-  for (const key of ["network", "result", "data", "chain", "current", "selected"]) {
+  for (const key of ["network", "result", "data", "chain", "current", "selected", "detail"]) {
     const magic = extractNetworkMagic(record[key]);
     if (magic) {
       return magic;
@@ -730,7 +734,7 @@ function extractRpcUrl(value: unknown): string | undefined {
     }
   }
 
-  for (const key of ["network", "result", "data", "current", "selected"]) {
+  for (const key of ["network", "result", "data", "current", "selected", "detail"]) {
     const rpcUrl = extractRpcUrl(record[key]);
     if (rpcUrl) {
       return rpcUrl;
@@ -986,7 +990,18 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   const waitForConnectedEvent = () => new Promise<NeoLineAccount | null>((resolve) => {
     const connectedEvent = provider.EVENT?.CONNECTED;
     const accountChangedEvent = provider.EVENT?.ACCOUNT_CHANGED;
-    if (!provider.addEventListener || (!connectedEvent && !accountChangedEvent)) {
+    const globalEvents = [
+      connectedEvent,
+      accountChangedEvent,
+      "NEOLine.NEO.EVENT.CONNECTED",
+      "NEOLine.NEO.EVENT.ACCOUNT_CHANGED",
+      "NEOLine.N3.EVENT.CONNECTED",
+      "NEOLine.N3.EVENT.ACCOUNT_CHANGED",
+    ].filter((value, index, list): value is string => typeof value === "string" && list.indexOf(value) === index);
+
+    const canListenProvider = !!provider.addEventListener && (!!connectedEvent || !!accountChangedEvent);
+    const canListenWindow = typeof window !== "undefined" && globalEvents.length > 0;
+    if (!canListenProvider && !canListenWindow) {
       resolve(null);
       return;
     }
@@ -996,11 +1011,19 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
     const cleanup = () => {
       globalThis.clearTimeout(timeoutId);
-      if (connectedEvent) {
-        provider.removeEventListener?.(connectedEvent, onAccountEvent);
+      if (canListenProvider) {
+        if (connectedEvent) {
+          provider.removeEventListener?.(connectedEvent, onAccountEvent);
+        }
+        if (accountChangedEvent) {
+          provider.removeEventListener?.(accountChangedEvent, onAccountEvent);
+        }
       }
-      if (accountChangedEvent) {
-        provider.removeEventListener?.(accountChangedEvent, onAccountEvent);
+      if (canListenWindow) {
+        for (const eventName of globalEvents) {
+          window.removeEventListener(eventName, onAccountEvent as EventListener);
+          document.removeEventListener?.(eventName, onAccountEvent as EventListener);
+        }
       }
     };
 
@@ -1025,11 +1048,19 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
       resolve(null);
     }, 30000);
 
-    if (connectedEvent) {
-      provider.addEventListener(connectedEvent, onAccountEvent);
+    if (canListenProvider) {
+      if (connectedEvent) {
+        provider.addEventListener!(connectedEvent, onAccountEvent);
+      }
+      if (accountChangedEvent) {
+        provider.addEventListener!(accountChangedEvent, onAccountEvent);
+      }
     }
-    if (accountChangedEvent) {
-      provider.addEventListener(accountChangedEvent, onAccountEvent);
+    if (canListenWindow) {
+      for (const eventName of globalEvents) {
+        window.addEventListener(eventName, onAccountEvent as EventListener);
+        document.addEventListener?.(eventName, onAccountEvent as EventListener);
+      }
     }
   });
 
