@@ -28,6 +28,8 @@ interface WalletState {
 const WalletContext = createContext<WalletState | null>(null);
 const WALLET_CONNECTED_KEY = "opennft_wallet_connected";
 const DEV_WIF_KEY = "opennft_wallet_wif";
+const WALLET_ADDRESS_KEY = "opennft_wallet_address";
+const WALLET_NETWORK_KEY = "opennft_wallet_network";
 
 function isSameWalletNetwork(a: NeoWalletNetwork | null, b: NeoWalletNetwork | null): boolean {
   if (!a && !b) {
@@ -87,15 +89,62 @@ function extractWalletAddressFromEvent(data: unknown): string | null {
   return tryValue(data);
 }
 
+function readStoredWalletAddress(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = localStorage.getItem(WALLET_ADDRESS_KEY)?.trim();
+  return value ? value : null;
+}
+
+function readStoredWalletNetwork(): NeoWalletNetwork | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = localStorage.getItem(WALLET_NETWORK_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as NeoWalletNetwork;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    if (
+      parsed.network !== "mainnet" &&
+      parsed.network !== "testnet" &&
+      parsed.network !== "private" &&
+      parsed.network !== "unknown"
+    ) {
+      return null;
+    }
+
+    return {
+      network: parsed.network,
+      magic: typeof parsed.magic === "number" ? parsed.magic : null,
+      rpcUrl: typeof parsed.rpcUrl === "string" ? parsed.rpcUrl : undefined,
+      raw: parsed.raw ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [address, setAddress] = useState<string | null>(null);
-  const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
+  const [address, setAddress] = useState<string | null>(() => readStoredWalletAddress());
+  const [network, setNetwork] = useState<NeoWalletNetwork | null>(() => readStoredWalletNetwork());
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
   const suppressSilentSyncUntilRef = useRef(0);
 
   const clearWalletSession = useCallback((preserveDevWif = true) => {
     localStorage.removeItem(WALLET_CONNECTED_KEY);
+    localStorage.removeItem(WALLET_ADDRESS_KEY);
+    localStorage.removeItem(WALLET_NETWORK_KEY);
     if (!preserveDevWif) {
       localStorage.removeItem(DEV_WIF_KEY);
     }
@@ -123,6 +172,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const nextAddress = account.address;
           const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+          localStorage.setItem(WALLET_ADDRESS_KEY, nextAddress);
+          localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
           setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
           setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
           setRuntimeWalletNetwork(nextNetwork);
@@ -138,22 +189,29 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const nextNetwork = nextAddress ? currentNetwork : null;
 
       if (silent && !nextAddress) {
-        const fallbackAddress = address?.trim() || null;
+        const fallbackAddress = address?.trim() || readStoredWalletAddress();
+        const fallbackNetwork = network ?? readStoredWalletNetwork();
         if (fallbackAddress) {
           setAddress((prev) => (isSameWalletAddress(prev, fallbackAddress) ? prev : fallbackAddress));
-          setNetwork((prev) => (isSameWalletNetwork(prev, network) ? prev : network));
-          setRuntimeWalletNetwork(network);
+          setNetwork((prev) => (isSameWalletNetwork(prev, fallbackNetwork) ? prev : fallbackNetwork));
+          setRuntimeWalletNetwork(fallbackNetwork);
           return {
             address: fallbackAddress,
-            network,
+            network: fallbackNetwork,
           };
         }
       }
 
       if (nextAddress) {
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+        localStorage.setItem(WALLET_ADDRESS_KEY, nextAddress);
+        if (nextNetwork) {
+          localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
+        }
       } else {
         localStorage.removeItem(WALLET_CONNECTED_KEY);
+        localStorage.removeItem(WALLET_ADDRESS_KEY);
+        localStorage.removeItem(WALLET_NETWORK_KEY);
       }
 
       setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
@@ -189,7 +247,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
         suppressSilentSyncUntilRef.current = Date.now() + 5000;
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+        localStorage.setItem(WALLET_ADDRESS_KEY, addr);
         void getNeoWalletNetwork(true).then((nextNetwork) => {
+          localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
           setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
           setRuntimeWalletNetwork(nextNetwork);
         });
@@ -266,6 +326,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           if (!nextAddress) {
             throw new Error("Wallet connected but no address was returned.");
           }
+          localStorage.setItem(WALLET_ADDRESS_KEY, nextAddress);
 
           setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
 
@@ -275,6 +336,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 ? null
                 : currentNetwork;
 
+              if (nextNetwork) {
+                localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
+              }
               setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
               setRuntimeWalletNetwork(nextNetwork);
             })
