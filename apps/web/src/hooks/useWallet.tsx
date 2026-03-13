@@ -45,6 +45,48 @@ function isSameWalletAddress(a: string | null, b: string | null): boolean {
   return (a ?? "").trim() === (b ?? "").trim();
 }
 
+function extractWalletAddressFromEvent(data: unknown): string | null {
+  const tryValue = (value: unknown): string | null => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const found = tryValue(entry);
+        if (found) {
+          return found;
+        }
+      }
+      return null;
+    }
+
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    for (const key of ["address", "accAddress", "walletAddress"]) {
+      const found = tryValue(record[key]);
+      if (found) {
+        return found;
+      }
+    }
+
+    for (const key of ["detail", "data", "account", "result"]) {
+      const found = tryValue(record[key]);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  };
+
+  return tryValue(data);
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
@@ -121,10 +163,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!provider) return;
 
       const onAccountChanged = (data: any) => {
-        const addr = data?.address || data?.[0]?.address || null;
+        const addr = extractWalletAddressFromEvent(data);
         setAddress(addr);
         if (!addr) {
-          clearWalletSession();
+          void syncWalletSession(true);
           return;
         }
 
