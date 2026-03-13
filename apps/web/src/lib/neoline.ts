@@ -1014,6 +1014,12 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     return enabledAccount;
   }
 
+  const accountAfterEnable = await readAccountFromProvider(provider);
+  if (accountAfterEnable) {
+    cachedProvider = provider;
+    return accountAfterEnable;
+  }
+
   return null;
 }
 
