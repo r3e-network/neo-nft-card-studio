@@ -981,6 +981,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   if (providerRecord && typeof providerRecord.enable === "function") {
     enableAttemptedProviders.delete(providerRecord);
   }
+  const CONNECT_METHOD_TIMEOUT_MS = 12000;
 
   const waitForConnectedEvent = () => new Promise<NeoLineAccount | null>((resolve) => {
     const connectedEvent = provider.EVENT?.CONNECTED;
@@ -1034,6 +1035,22 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
   const pendingConnectedEvent = waitForConnectedEvent();
 
+  const withTimeoutOrEvent = async (attempt: () => Promise<unknown | undefined>): Promise<NeoLineAccount | null> => {
+    const result = await Promise.race<unknown | NeoLineAccount | null>([
+      attempt(),
+      pendingConnectedEvent,
+      sleep(CONNECT_METHOD_TIMEOUT_MS).then(() => null),
+    ]);
+
+    const eventAccount = normalizeAccount(result);
+    if (eventAccount) {
+      cachedProvider = provider;
+      return eventAccount;
+    }
+
+    return null;
+  };
+
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
     "getAccount",
     "requestAccounts",
@@ -1043,12 +1060,13 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   ];
 
   for (const methodName of interactiveMethods) {
-    const value = await tryCallProviderMethod(provider, methodName);
-    if (value === undefined) {
-      continue;
-    }
-
-    const account = normalizeAccount(value);
+    const account = await withTimeoutOrEvent(async () => {
+      const value = await tryCallProviderMethod(provider, methodName);
+      if (value === undefined) {
+        return undefined;
+      }
+      return normalizeAccount(value);
+    });
     if (account) {
       cachedProvider = provider;
       return account;
@@ -1057,7 +1075,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
   for (const method of ["getAccount", "requestAccounts", "getAddress", "getWalletAddress", "getAccounts"]) {
     try {
-      const account = normalizeAccount(await requestProvider(provider, { method }));
+      const account = await withTimeoutOrEvent(async () => normalizeAccount(await requestProvider(provider, { method })));
       if (account) {
         cachedProvider = provider;
         return account;
@@ -1067,14 +1085,20 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     }
   }
 
-  const enabledResult = await ensureProviderEnabled(provider);
-  const enabledAccount = normalizeAccount(enabledResult);
+  const enabledAccount = await withTimeoutOrEvent(async () => {
+    const enabledResult = await ensureProviderEnabled(provider);
+    return normalizeAccount(enabledResult);
+  });
   if (enabledAccount) {
     cachedProvider = provider;
     return enabledAccount;
   }
 
-  const accountAfterEnable = await readAccountFromProvider(provider);
+  const accountAfterEnable = await Promise.race([
+    readAccountFromProvider(provider),
+    pendingConnectedEvent,
+    sleep(CONNECT_METHOD_TIMEOUT_MS).then(() => null),
+  ]);
   if (accountAfterEnable) {
     cachedProvider = provider;
     return accountAfterEnable;
