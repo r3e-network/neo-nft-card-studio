@@ -10,6 +10,10 @@ export type ApiNetworkName = "mainnet" | "testnet" | "private";
 const API_NETWORKS: ApiNetworkName[] = ["mainnet", "testnet", "private"];
 const DEFAULT_DB_FILE = process.env.VERCEL ? "/tmp/nft-platform.db" : "apps/api/data/nft-platform.db";
 const BUILTIN_DEFAULTS: Partial<Record<ApiNetworkName, { rpcUrl?: string; contractHash?: string }>> = {
+  mainnet: {
+    rpcUrl: "https://mainnet1.neo.coz.io:443",
+    contractHash: "0xc1868eba3ce06ad93962378537f8a59f3cae1548",
+  },
   testnet: {
     rpcUrl: "http://seed2t5.neo.org:20332",
     contractHash: "0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22",
@@ -280,20 +284,12 @@ function resolveNetworkConfig(config: RawAppConfig, network: ApiNetworkName): Ap
   const pinToBuiltIn = network === "testnet";
 
   // Keep built-in values as last-resort defaults so env/network overrides remain effective.
-  const rpcUrl = pinToBuiltIn
-    ? builtIn?.rpcUrl ??
-      envValues.rpcUrl ??
-      (isDefault ? normalizeOptional(config.NEO_RPC_URL) : undefined)
-    : envValues.rpcUrl ??
-      (isDefault ? normalizeOptional(config.NEO_RPC_URL) : undefined) ??
-      builtIn?.rpcUrl;
-  const contractHash = pinToBuiltIn
-    ? builtIn?.contractHash ??
-      envValues.contractHash ??
-      (isDefault ? normalizeOptional(config.NEO_CONTRACT_HASH) : undefined)
-    : envValues.contractHash ??
-      (isDefault ? normalizeOptional(config.NEO_CONTRACT_HASH) : undefined) ??
-      builtIn?.contractHash;
+  const rpcUrl = envValues.rpcUrl ??
+    (isDefault ? normalizeOptional(config.NEO_RPC_URL) : undefined) ??
+    builtIn?.rpcUrl;
+  const contractHash = envValues.contractHash ??
+    (isDefault ? normalizeOptional(config.NEO_CONTRACT_HASH) : undefined) ??
+    builtIn?.contractHash;
 
   const hasAnyNetworkSpecificValue =
     !!envValues.dbFile ||

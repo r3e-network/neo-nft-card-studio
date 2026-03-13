@@ -145,6 +145,48 @@ export function pickTokenMediaUri(token: TokenDto, properties: Record<string, un
   return normalizedTokenUri;
 }
 
+export interface CollectionPreview {
+  imageUri: string;
+  tokenId: string;
+  tokenName: string;
+}
+
+export function pickCollectionPreview(collection: { name: string; collectionId: string }, tokens: TokenDto[]): CollectionPreview {
+  const byNewest = [...tokens].sort((a, b) => {
+    const aTs = Date.parse(a.mintedAt || a.updatedAt || "");
+    const bTs = Date.parse(b.mintedAt || b.updatedAt || "");
+    const safeA = Number.isFinite(aTs) ? aTs : 0;
+    const safeB = Number.isFinite(bTs) ? bTs : 0;
+    return safeB - safeA;
+  });
+
+  for (const token of byNewest) {
+    const properties = parseTokenProperties(token.propertiesJson);
+    const media = pickTokenMediaUri(token, properties);
+    if (!media) {
+      continue;
+    }
+
+    const tokenName = typeof properties.name === "string" && properties.name.trim().length > 0
+      ? properties.name.trim()
+      : `${collection.name} #${token.tokenId}`;
+
+    return {
+      imageUri: media,
+      tokenId: token.tokenId,
+      tokenName,
+    };
+  }
+
+  const fallbackToken = byNewest[0];
+  const fallbackTokenId = fallbackToken?.tokenId ?? collection.collectionId;
+  return {
+    imageUri: buildNftFallbackImage(collection.name, fallbackTokenId, collection.name),
+    tokenId: fallbackTokenId,
+    tokenName: `${collection.name} #${fallbackTokenId}`,
+  };
+}
+
 function escapeXml(input: string): string {
   return input
     .replace(/&/g, "&amp;")

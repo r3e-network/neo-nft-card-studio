@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { FolderOpen, ImageOff, Loader2, Settings, Tag, Wallet, Copy, Check, Share2, Twitter } from "lucide-react";
+import { FolderOpen, ImageOff, Loader2, Settings, Wallet, Copy, Check, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, fetchMarketListings } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
-import { formatGasAmount, isZeroUInt160Hash, parseGasAmountToInteger, shortHash, tokenSerial } from "../lib/marketplace";
-import { buildNftFallbackImage, parseTokenProperties, pickTokenMediaUri } from "../lib/nft-media";
+import { isZeroUInt160Hash, parseGasAmountToInteger, shortHash } from "../lib/marketplace";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
+
+import { NFTGrid } from "../components/nft/NFTGrid";
+import { StatusMessage } from "../components/common/StatusMessage";
 
 type Tab = "collected" | "created" | "activity";
 
@@ -60,7 +62,6 @@ export function PortfolioPage() {
     setError("");
 
     try {
-      // Try DB first
       const [ownedCollections, collected] = await Promise.all([
         fetchCollections(wallet.address),
         fetchMarketListings({ owner: wallet.address, limit: 500 }),
@@ -68,11 +69,6 @@ export function PortfolioPage() {
 
       setCreatedCollections(ownedCollections);
       setCollectedListings(collected.filter((entry) => entry.token.burned !== 1));
-
-      // Trigger a sync in background if DB is empty but we just minted something
-      if (collected.length === 0) {
-        void fetch("/api/sync?network=testnet", { method: "POST" }).catch(() => {});
-      }
     } catch (err) {
       setError(toUserErrorMessage(t, err));
       setCollectedListings([]);
@@ -86,23 +82,26 @@ export function PortfolioPage() {
     void reloadPortfolio();
   }, [reloadPortfolio, wallet.network?.network, wallet.network?.magic]);
 
-  const onListToken = async (entry: MarketListingDto) => {
+  const onListToken = async (token: TokenDto) => {
+    const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
+    if (!listing) return;
+
     let price: string;
     try {
-      price = parseGasAmountToInteger(listPriceByTokenId[entry.token.tokenId] ?? "");
+      price = parseGasAmountToInteger(listPriceByTokenId[token.tokenId] ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid price");
       return;
     }
 
-    setActionTokenId(entry.token.tokenId);
+    setActionTokenId(token.tokenId);
     setError("");
     setMessage("");
 
     try {
       await wallet.sync();
-      const client = getCollectionClient(entry.collection);
-      const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: entry.token.tokenId, price }));
+      const client = getCollectionClient(listing.collection);
+      const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing submitted: ${txid}`);
       await reloadPortfolio();
     } catch (err) {
@@ -112,15 +111,18 @@ export function PortfolioPage() {
     }
   };
 
-  const onCancelListing = async (entry: MarketListingDto) => {
-    setActionTokenId(entry.token.tokenId);
+  const onCancelListing = async (token: TokenDto) => {
+    const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
+    if (!listing) return;
+
+    setActionTokenId(token.tokenId);
     setError("");
     setMessage("");
 
     try {
       await wallet.sync();
-      const client = getCollectionClient(entry.collection);
-      const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: entry.token.tokenId }));
+      const client = getCollectionClient(listing.collection);
+      const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Listing canceled: ${txid}`);
       await reloadPortfolio();
     } catch (err) {
@@ -137,6 +139,21 @@ export function PortfolioPage() {
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  const collectedTokens = useMemo(() => collectedListings.map(l => l.token), [collectedListings]);
+  const collectedSalesMap = useMemo(() => 
+    Object.fromEntries(collectedListings.map(l => [l.token.tokenId, {
+      listed: l.sale.listed,
+      seller: l.sale.seller,
+      price: l.sale.price,
+      listedAt: l.sale.listedAt
+    }])), 
+    [collectedListings]
+  );
+  const collectionsMap = useMemo(() => 
+    Object.fromEntries(collectedListings.map(l => [l.collection.collectionId, l.collection])),
+    [collectedListings]
+  );
 
   if (!wallet.address) {
     return (
@@ -162,7 +179,7 @@ export function PortfolioPage() {
           width: "130px", 
           height: "130px", 
           borderRadius: "50%", 
-          border: "6px solid #04060A", 
+          border: "6px solid var(--bg-main)", 
           background: "#1c2638",
           display: "flex",
           alignItems: "center",
@@ -171,7 +188,7 @@ export function PortfolioPage() {
           boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
           zIndex: 10
         }}>
-          <div style={{ width: "100%", height: "100%", background: "linear-gradient(45deg, #2081E2, #00E599)" }}></div>
+          <div style={{ width: "100%", height: "100%", background: "linear-gradient(45deg, #2081E2, var(--neo-green))" }}></div>
         </div>
       </div>
 
@@ -190,15 +207,15 @@ export function PortfolioPage() {
                   background: "rgba(255,255,255,0.05)", 
                   borderRadius: "20px",
                   cursor: "pointer",
-                  color: "#8A939B",
+                  color: "var(--text-muted)",
                   fontSize: "0.9rem",
                   fontWeight: 600
                 }}
               >
                 <span style={{ color: "#fff" }}>{shortHash(wallet.address)}</span>
-                {copied ? <Check size={14} color="#00E599" /> : <Copy size={14} />}
+                {copied ? <Check size={14} color="var(--neo-green)" /> : <Copy size={14} />}
               </div>
-              <span style={{ color: "#8A939B", fontSize: "0.9rem" }}>Joined March 2026</span>
+              <span style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Joined March 2026</span>
             </div>
           </div>
 
@@ -210,7 +227,7 @@ export function PortfolioPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid rgba(255, 255, 255, 0.1)", margin: "2.5rem 0" }}>
+        <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid var(--glass-border)", margin: "2.5rem 0" }}>
           {[
             { id: "collected", label: "Collected", count: collectedListings.length },
             { id: "created", label: "Created", count: createdCollections.length },
@@ -223,7 +240,7 @@ export function PortfolioPage() {
                 background: "none",
                 border: "none",
                 padding: "1rem 0",
-                color: tab === t.id ? "#fff" : "#8A939B",
+                color: tab === t.id ? "var(--text-main)" : "var(--text-muted)",
                 fontWeight: 600,
                 fontSize: "1rem",
                 cursor: "pointer",
@@ -243,89 +260,29 @@ export function PortfolioPage() {
           <div className="stack-md">
             {loading ? (
               <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-                {[1, 2, 3, 4].map(i => <div key={i} className="panel" style={{ height: "400px", background: "rgba(255,255,255,0.05)" }}></div>)}
+                {[1, 2, 3, 4].map(i => <div key={i} className="panel skeleton" style={{ height: "400px" }}></div>)}
               </div>
             ) : collectedListings.length === 0 ? (
               <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
-                <ImageOff size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
+                <ImageOff size={48} color="var(--text-muted)" style={{ marginBottom: "1rem" }} />
                 <h3>No items found</h3>
                 <p className="hint">Explore the marketplace to find your first NFT.</p>
                 <Link className="btn" to="/explore" style={{ marginTop: "1.5rem", background: "#2081E2" }}>Explore Marketplace</Link>
               </div>
             ) : (
-              <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-                {collectedListings.map((entry) => {
-                  const properties = parseTokenProperties(entry.token.propertiesJson);
-                  const media = pickTokenMediaUri(entry.token, properties);
-                  const tokenName =
-                    typeof properties.name === "string" && properties.name.trim().length > 0
-                      ? properties.name.trim()
-                      : `${entry.collection.symbol} #${tokenSerial(entry.token.tokenId)}`;
-                  const fallbackImage = buildNftFallbackImage(tokenName, entry.token.tokenId, entry.collection.name);
-                  const isActing = actionTokenId === entry.token.tokenId;
-
-                  return (
-                    <div className="panel" key={entry.token.tokenId} style={{ padding: 0, overflow: "hidden" }}>
-                      <Link to={`/collections/${entry.collection.collectionId}`}>
-                        <img
-                          alt={tokenName}
-                          onError={(event) => {
-                            if (event.currentTarget.src !== fallbackImage) {
-                              event.currentTarget.src = fallbackImage;
-                            }
-                          }}
-                          src={media || fallbackImage}
-                          style={{ width: "100%", height: "280px", objectFit: "cover" }}
-                        />
-                      </Link>
-
-                      <div style={{ padding: "1.2rem" }}>
-                        <div style={{ fontSize: "0.75rem", color: "#8A939B", fontWeight: 600 }}>{entry.collection.name}</div>
-                        <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "1rem" }}>{tokenName}</div>
-
-                        {entry.sale.listed ? (
-                          <div style={{ marginBottom: "1rem" }}>
-                            <div style={{ fontSize: "0.75rem", color: "#8A939B", fontWeight: 600 }}>Listed Price</div>
-                            <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>{formatGasAmount(entry.sale.price)} GAS</div>
-                          </div>
-                        ) : (
-                          <div style={{ marginBottom: "1rem", color: "#8A939B", fontSize: "0.9rem" }}>Not listed</div>
-                        )}
-
-                        {isCsharp && (
-                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem" }}>
-                            {entry.sale.listed ? (
-                              <button
-                                className="btn btn-secondary"
-                                disabled={isActing}
-                                onClick={() => void onCancelListing(entry)}
-                                type="button"
-                                style={{ width: "100%", borderRadius: "10px" }}
-                              >
-                                {isActing ? "..." : "Cancel Listing"}
-                              </button>
-                            ) : (
-                              <div className="stack-xs">
-                                <input
-                                  onChange={(event) =>
-                                    setListPriceByTokenId((prev) => ({ ...prev, [entry.token.tokenId]: event.target.value }))
-                                  }
-                                  placeholder="Price in GAS"
-                                  value={listPriceByTokenId[entry.token.tokenId] ?? ""}
-                                  style={{ height: "40px", marginBottom: "0.5rem" }}
-                                />
-                                <button className="btn" disabled={isActing} onClick={() => void onListToken(entry)} type="button" style={{ width: "100%", borderRadius: "10px", background: "#2081E2" }}>
-                                  {isActing ? "..." : "List for Sale"}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <NFTGrid
+                tokens={collectedTokens}
+                collections={collectionsMap}
+                salesByTokenId={collectedSalesMap}
+                listPriceByTokenId={listPriceByTokenId}
+                onListPriceChange={(id, val) => setListPriceByTokenId(prev => ({ ...prev, [id]: val }))}
+                onList={onListToken}
+                onCancel={onCancelListing}
+                onBuy={() => {}} // Buy not usually from portfolio
+                actionTokenId={actionTokenId}
+                isCsharp={isCsharp}
+                walletAddress={wallet.address}
+              />
             )}
           </div>
         )}
@@ -334,11 +291,11 @@ export function PortfolioPage() {
           <div className="stack-md">
             {loading ? (
               <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
-                {[1, 2].map(i => <div key={i} className="panel" style={{ height: "250px", background: "rgba(255,255,255,0.05)" }}></div>)}
+                {[1, 2].map(i => <div key={i} className="panel skeleton" style={{ height: "250px" }}></div>)}
               </div>
             ) : createdCollections.length === 0 ? (
               <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
-                <FolderOpen size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
+                <FolderOpen size={48} color="var(--text-muted)" style={{ marginBottom: "1rem" }} />
                 <h3>No collections created</h3>
                 <p className="hint">Start your journey by creating your first NFT collection.</p>
                 <Link className="btn" to="/collections/new" style={{ marginTop: "1.5rem", background: "#2081E2" }}>Create Collection</Link>
@@ -349,26 +306,26 @@ export function PortfolioPage() {
                   const dedicatedHash = resolveCollectionContractHash(collection);
 
                   return (
-                    <div className="panel" key={collection.collectionId} style={{ padding: 0, overflow: "hidden" }}>
+                    <div className="panel nft-card" key={collection.collectionId} style={{ padding: 0, overflow: "hidden" }}>
                       <div style={{ height: "120px", background: "linear-gradient(45deg, #121822, #1c2638)", position: "relative" }}>
-                        <div style={{ position: "absolute", bottom: "-20px", left: "20px", width: "60px", height: "60px", borderRadius: "10px", background: "linear-gradient(135deg, #2081E2, #00E599)", border: "3px solid #04060A" }}></div>
+                        <div style={{ position: "absolute", bottom: "-20px", left: "20px", width: "60px", height: "60px", borderRadius: "10px", background: "linear-gradient(135deg, #2081E2, var(--neo-green))", border: "3px solid var(--bg-main)" }}></div>
                       </div>
                       <div style={{ padding: "30px 1.5rem 1.5rem" }}>
                         <h3 style={{ margin: 0 }}>{collection.name}</h3>
-                        <div style={{ fontSize: "0.9rem", color: "#8A939B", marginBottom: "1rem" }}>{collection.symbol}</div>
+                        <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "1rem" }}>{collection.symbol}</div>
                         
                         <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
                           <div>
                             <div style={{ fontWeight: 700 }}>{collection.minted}</div>
-                            <div style={{ fontSize: "0.75rem", color: "#8A939B" }}>Items</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Items</div>
                           </div>
                           <div>
                             <div style={{ fontWeight: 700 }}>{(collection.royaltyBps / 100).toFixed(1)}%</div>
-                            <div style={{ fontSize: "0.75rem", color: "#8A939B" }}>Royalty</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Royalty</div>
                           </div>
                           <div>
                             <div style={{ fontWeight: 700 }}>{dedicatedHash ? "Isolated" : "Shared"}</div>
-                            <div style={{ fontSize: "0.75rem", color: "#8A939B" }}>Mode</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Mode</div>
                           </div>
                         </div>
 
@@ -387,15 +344,23 @@ export function PortfolioPage() {
 
         {tab === "activity" && (
           <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
-            <Loader2 size={48} color="#8A939B" className="animate-spin" style={{ marginBottom: "1rem" }} />
+            <Loader2 size={48} color="var(--text-muted)" className="animate-spin" style={{ marginBottom: "1rem" }} />
             <h3>Activity tracking coming soon</h3>
-            <p className="hint">We are integrating historical data for your wallet.</p>
+            <p className="hint">We are working on integrating historical data for your wallet.</p>
           </div>
         )}
       </div>
 
-      {message ? <p className="success" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{message}</p> : null}
-      {error ? <p className="error" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{error}</p> : null}
+      <StatusMessage 
+        message={message} 
+        type="success" 
+        onClose={() => setMessage("")} 
+      />
+      <StatusMessage 
+        message={error} 
+        type="error" 
+        onClose={() => setError("")} 
+      />
     </div>
   );
 }

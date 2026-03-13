@@ -63,10 +63,15 @@ cp .env.example .env
 - API 多网络（同一个 API 实例可同时服务多链环境）：
   - 默认网络：`NEO_DEFAULT_NETWORK=mainnet|testnet|private`
   - 基础配置：`DB_FILE`（`NEO_RPC_URL`、`NEO_CONTRACT_HASH` 现在可选，代码内置 testnet 默认值）
+  - **Mainnet (Neo N3)**: `0xc1868eba3ce06ad93962378537f8a59f3cae1548`
+  - **Testnet (T5)**: `0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22`
+  
+  - 内置 mainnet 默认：`NEO_RPC_URL=https://mainnet1.neo.coz.io:443`、`NEO_CONTRACT_HASH=0xc1868eba3ce06ad93962378537f8a59f3cae1548`
   - 内置 testnet 默认：`NEO_RPC_URL=http://seed2t5.neo.org:20332`、`NEO_CONTRACT_HASH=0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22`
   - 可选多网络覆盖：`NEO_RPC_URL_MAINNET/TESTNET/PRIVATE`、`NEO_CONTRACT_HASH_MAINNET/TESTNET/PRIVATE`、`DB_FILE_MAINNET/TESTNET/PRIVATE`
   - 查询接口可带 `?network=mainnet|testnet|private`，前端会按钱包网络自动附加
 - 前端默认以钱包当前网络为准：连接钱包后自动识别 `mainnet/testnet/private` 并切换对应配置
+  - 内置 mainnet 默认：`VITE_NEO_RPC_URL=https://mainnet1.neo.coz.io:443`、`VITE_NEO_CONTRACT_HASH=0xc1868eba3ce06ad93962378537f8a59f3cae1548`
   - 内置 testnet 默认：`VITE_NEO_RPC_URL=http://seed2t5.neo.org:20332`、`VITE_NEO_CONTRACT_HASH=0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22`
   - 可选覆盖：`VITE_NEO_RPC_URL_MAINNET/TESTNET/PRIVATE`
   - 可选覆盖：`VITE_NEO_CONTRACT_HASH_MAINNET/TESTNET/PRIVATE`

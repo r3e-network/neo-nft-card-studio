@@ -8,6 +8,7 @@ import { fetchCollections, uploadToNeoFs } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import { getPlatformClient, getNftClientForHash } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
+import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import type { CollectionDto } from "../lib/types";
 
 export function MintNftPage() {
@@ -92,12 +93,19 @@ export function MintNftPage() {
       let isDedicated = false;
       const tokenClassValue = tokenClass === "standard" ? 0 : tokenClass === "membership" ? 1 : 2;
       
-      if (contractDialect === "csharp" && collection.contractHash && collection.contractHash !== "0x0000000000000000000000000000000000000000") {
+      const platformHash = getRuntimeNetworkConfig().contractHash;
+      console.log(`Checking hashes: collectionHash=${collection.contractHash}, platformHash=${platformHash}`);
+      if (
+        contractDialect === "csharp" && 
+        collection.contractHash && 
+        collection.contractHash !== "0x0000000000000000000000000000000000000000" &&
+        collection.contractHash.toLowerCase() !== platformHash?.toLowerCase()
+      ) {
         client = getNftClientForHash(collection.contractHash);
         isDedicated = true;
       }
 
-      // 4. Build Invoke
+      // 3. Determine target contract (Platform vs Dedicated)
       const payload = isDedicated && contractDialect === "csharp"
         ? client.buildMintInvoke({
             collectionId: selectedCollectionId,
@@ -129,6 +137,10 @@ export function MintNftPage() {
             ...(contractDialect === "csharp" ? { tokenClass: tokenClassValue } : {})
           }
         );
+
+      // FIX: Override SDK's broken ByteArray encoding with plain String 
+      // matching the C# contract's exact expectation of counter.ToString() bytes
+      payload.args[0] = { type: "String", value: selectedCollectionId };
 
       const txid = await wallet.invoke(payload);
       setResult(`Success! Transaction Hash: ${txid}`);

@@ -3,7 +3,7 @@
 import { experimental, rpc, sc, tx, u, wallet } from "@cityofzion/neon-js";
 
 const DEFAULT_RPC_URL = "http://seed2t5.neo.org:20332";
-const DEFAULT_FACTORY_HASH = "0xbf7607d16a9ed9e7e9a8ebda24acbedcd6208b22";
+const DEFAULT_FACTORY_HASH = "0xc1868eba3ce06ad93962378537f8a59f3cae1548";
 const GAS_HASH = "0xd2a4cff31913016155e38e474a2c06d08be276cf";
 
 function log(message) {

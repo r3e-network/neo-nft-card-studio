@@ -84,11 +84,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   };
 
   const runtimeNetwork = getRuntimeNetworkConfig();
-  const missingContractHashWarning = wallet.address
-    && wallet.network?.network === "mainnet"
-    && !runtimeNetwork.contractHash
-    ? "Contract hash is missing for MAINNET network."
-    : "";
 
   return (
     <div className="app-shell">
@@ -151,10 +146,45 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           ) : (
-            <button className="btn btn-primary" onClick={() => void wallet.connect()} disabled={wallet.isConnecting} type="button" style={{ background: "#2081E2", color: "#fff", borderRadius: "12px" }}>
-              <Wallet size={18} style={{ marginRight: "0.5rem" }} />
-              {wallet.isConnecting ? "Connecting..." : "Connect"}
-            </button>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {import.meta.env.DEV && (
+                <div style={{ display: "flex" }}>
+                  <input
+                    type="password"
+                    placeholder="WIF Key"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const value = (e.target as HTMLInputElement).value;
+                      (window as any)._devWifInput = value;
+                    }}
+                    style={{
+                      padding: "0 0.5rem",
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: "12px 0 0 12px",
+                      color: "white",
+                      width: "120px"
+                    }}
+                  />
+                  <button 
+                    className="btn btn-soft" 
+                    onClick={() => {
+                      const wif = (window as any)._devWifInput;
+                      if (wif) void wallet.connectWif(wif);
+                    }} 
+                    disabled={wallet.isConnecting} 
+                    type="button"
+                    style={{ borderRadius: "0 12px 12px 0" }}
+                  >
+                    < Zap size={18} />
+                  </button>
+                </div>
+              )}
+              <button className="btn btn-primary" onClick={() => void wallet.connect()} disabled={wallet.isConnecting} type="button" style={{ background: "#2081E2", color: "#fff", borderRadius: "12px" }}>
+                <Wallet size={18} style={{ marginRight: "0.5rem" }} />
+                {wallet.isConnecting ? "Connecting..." : "Connect"}
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -166,7 +196,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {dialectMismatchMessage ? <div className="notice notice-warn">{dialectMismatchMessage}</div> : null}
-      {missingContractHashWarning ? <div className="notice notice-error">{missingContractHashWarning}</div> : null}
 
       <main className="app-main" style={{ maxWidth: "1600px" }}>{children}</main>
     </div>

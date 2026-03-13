@@ -107,7 +107,8 @@ export function CreateCollectionPage() {
           });
 
       const txid = await wallet.invoke(payload);
-      setResult(`Success! Transaction sent: ${txid}`);
+      console.log(`SUBMITTED_TXID_FOR_PLAYWRIGHT_E2E=${txid}`);
+      setResult(`Collection Launched! Transaction Hash: ${txid}`);
       setStep(3);
     } catch (err) {
       setError(toUserErrorMessage(t, err));

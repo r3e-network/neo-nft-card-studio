@@ -23,3 +23,6 @@ tools/nccs
 .serena/
 tools/.store/
 *.tsbuildinfo
+.vercel
+.npm-cache
+

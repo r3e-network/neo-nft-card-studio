@@ -5,7 +5,8 @@ import path from "node:path";
 
 import { experimental, rpc, sc, tx, u, wallet } from "@cityofzion/neon-js";
 
-const DEFAULT_RPC_URL = "https://testnet1.neo.coz.io:443";
+const DEFAULT_RPC_URL = "http://seed2t5.neo.org:20332";
+const DEFAULT_RPC_FAILOVER_URLS = ["https://n3seed1.ngd.network:20332"];
 const PLATFORM_CONTRACT_NEF =
   process.env.TESTNET_PLATFORM_NEF_PATH?.trim() ||
   "contracts/multi-tenant-nft-platform/build/MultiTenantNftPlatform.nef";
@@ -405,8 +406,53 @@ function collectionParam(collectionId) {
   return byteArrayParamFromHex(idToByteArrayHex(collectionId));
 }
 
-async function main() {
-  const rpcUrl = process.env.TESTNET_RPC_URL?.trim() || DEFAULT_RPC_URL;
+function resolveRpcCandidates() {
+  const primaryFromEnv = process.env.TESTNET_RPC_URL
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  const failoverFromEnv = process.env.TESTNET_RPC_FALLBACK_URLS
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  const ordered = [
+    DEFAULT_RPC_URL,
+    ...(primaryFromEnv ?? []),
+    ...(failoverFromEnv && failoverFromEnv.length > 0 ? failoverFromEnv : DEFAULT_RPC_FAILOVER_URLS),
+  ];
+
+  const deduped = [];
+  const seen = new Set();
+  for (const entry of ordered) {
+    const key = entry.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(entry);
+  }
+  return deduped;
+}
+
+function isTransientRpcError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("econnreset") ||
+    lower.includes("etimedout") ||
+    lower.includes("eai_again") ||
+    lower.includes("socket hang up") ||
+    lower.includes("network error") ||
+    lower.includes("fetch failed") ||
+    lower.includes("gateway timeout") ||
+    lower.includes("bad gateway") ||
+    lower.includes("service unavailable") ||
+    lower.includes("temporarily unavailable")
+  );
+}
+
+async function runLifecycleWithRpc(rpcUrl) {
   const sellerWif = requireEnv("TESTNET_WIF");
   const buyerWif = requireEnv("TESTNET_BUYER_WIF");
   const salePrice = readPositiveIntegerEnv("TESTNET_SALE_PRICE", DEFAULT_SALE_PRICE);
@@ -1445,6 +1491,7 @@ async function main() {
     [
       "Operation not allowed in dedicated NFT contract mode",
       "method not found: createCollection/7",
+      "Method \"createCollection\" with 7 parameter(s) doesn't exist in the contract",
     ],
   );
   summary.dedicated.isolation.wrongScopeException = await assertFaultInvoke(
@@ -1561,6 +1608,35 @@ async function main() {
 
   log("full lifecycle test succeeded");
   console.log(JSON.stringify(summary, null, 2));
+}
+
+async function main() {
+  const candidates = resolveRpcCandidates();
+  let lastError = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const rpcUrl = candidates[index];
+    if (index > 0) {
+      log(`retry with failover RPC (${index + 1}/${candidates.length}): ${rpcUrl}`);
+    }
+
+    try {
+      await runLifecycleWithRpc(rpcUrl);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientRpcError(error) || index === candidates.length - 1) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      log(`transient RPC error on ${rpcUrl}: ${message}`);
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error("No RPC endpoints configured");
 }
 
 main().catch((error) => {

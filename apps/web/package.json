@@ -13,6 +13,7 @@
     "format": "echo 'No format step for web'"
   },
   "dependencies": {
+    "@cityofzion/neon-js": "^5.8.1",
     "@platform/neo-sdk": "1.0.0",
     "axios": "^1.7.7",
     "i18next": "^25.8.11",

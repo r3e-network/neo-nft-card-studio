@@ -1,24 +1,23 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowUpRight, ImageOff, Loader2, ShoppingCart, Tag, ExternalLink, Globe, Twitter, Share2 } from "lucide-react";
+import { ExternalLink, Globe, Loader2, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
-import { fetchCollection, fetchCollectionTokens, fetchGhostMarketMeta, fetchMarketListings, getNeoFsResourceProxyUrl, uploadToNeoFs } from "../lib/api";
+import { fetchCollection, fetchCollectionTokens, fetchGhostMarketMeta, fetchMarketListings, uploadToNeoFs } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import {
-  formatGasAmount,
   isZeroUInt160Hash,
   parseGasAmountToInteger,
   shortHash,
-  tokenSerial,
-  toIsoTime,
   type TokenSaleState,
 } from "../lib/marketplace";
-import { buildNftFallbackImage, parseTokenProperties, pickTokenMediaUri } from "../lib/nft-media";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, GhostMarketMetaDto, TokenDto } from "../lib/types";
+
+import { NFTGrid } from "../components/nft/NFTGrid";
+import { StatusMessage } from "../components/common/StatusMessage";
 
 interface MintFormState {
   to: string;
@@ -219,11 +218,6 @@ export function CollectionDetailPage() {
     };
   }, [collectionId, isCsharp, wallet.network?.network, wallet.network?.magic]);
 
-  const listedCount = useMemo(
-    () => Object.values(salesByTokenId).filter((sale) => sale.listed).length,
-    [salesByTokenId],
-  );
-
   const onMintToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!wallet.address) {
@@ -379,11 +373,12 @@ export function CollectionDetailPage() {
     );
   }
 
+  const collectionsMap = { [collection.collectionId]: collection };
+
   return (
     <div className="fade-in" style={{ margin: "-1.4rem -1.2rem 0" }}>
       {/* Banner Section */}
       <div style={{ height: "300px", background: "linear-gradient(45deg, #121822, #1c2638)", position: "relative" }}>
-        {/* Collection Logo */}
         <div style={{ 
           position: "absolute", 
           bottom: "-80px", 
@@ -391,8 +386,8 @@ export function CollectionDetailPage() {
           width: "160px", 
           height: "160px", 
           borderRadius: "16px", 
-          border: "6px solid #04060A", 
-          background: "linear-gradient(135deg, #2081E2, #00E599)",
+          border: "6px solid var(--bg-main)", 
+          background: "linear-gradient(135deg, #2081E2, var(--neo-green))",
           boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
           zIndex: 10
         }}></div>
@@ -402,7 +397,7 @@ export function CollectionDetailPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div className="stack-sm">
             <h1 style={{ fontSize: "2.5rem", fontWeight: 700, margin: 0 }}>{collection.name}</h1>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem", color: "#8A939B", fontWeight: 500 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", color: "var(--text-muted)", fontWeight: 500 }}>
               <span>By <span style={{ color: "#2081E2" }}>{shortHash(collection.owner)}</span></span>
               <span>·</span>
               <span>{collection.symbol}</span>
@@ -425,28 +420,28 @@ export function CollectionDetailPage() {
         <div style={{ display: "flex", gap: "2rem", margin: "2rem 0" }}>
           <div>
             <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{collection.minted}</div>
-            <div style={{ fontSize: "0.85rem", color: "#8A939B" }}>Items</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Items</div>
           </div>
           <div>
             <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{collection.owner === wallet.address ? "1" : "0"}</div>
-            <div style={{ fontSize: "0.85rem", color: "#8A939B" }}>Owners</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Owners</div>
           </div>
           <div>
             <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{(collection.royaltyBps / 100).toFixed(1)}%</div>
-            <div style={{ fontSize: "0.85rem", color: "#8A939B" }}>Creator Fee</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Creator Fee</div>
           </div>
           <div>
             <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{isDedicatedCollection ? "Isolated" : "Shared"}</div>
-            <div style={{ fontSize: "0.85rem", color: "#8A939B" }}>Deployment</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Deployment</div>
           </div>
         </div>
 
-        <p style={{ maxWidth: "800px", lineHeight: 1.6, color: "#8A939B", fontSize: "1.1rem" }}>
+        <p style={{ maxWidth: "800px", lineHeight: 1.6, color: "var(--text-muted)", fontSize: "1.1rem" }}>
           {collection.description || "No description provided for this collection."}
         </p>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid rgba(255, 255, 255, 0.1)", margin: "2rem 0" }}>
+        <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid var(--glass-border)", margin: "2rem 0" }}>
           {["items", "mint", "activity"].map(tab => (
             <button
               key={tab}
@@ -455,7 +450,7 @@ export function CollectionDetailPage() {
                 background: "none",
                 border: "none",
                 padding: "1rem 0",
-                color: activeTab === tab ? "#fff" : "#8A939B",
+                color: activeTab === tab ? "var(--text-main)" : "var(--text-muted)",
                 fontWeight: 600,
                 fontSize: "1rem",
                 cursor: "pointer",
@@ -471,7 +466,7 @@ export function CollectionDetailPage() {
         {activeTab === "items" && (
           <div className="stack-md">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ color: "#8A939B", fontWeight: 500 }}>{tokens.length} items</div>
+              <div style={{ color: "var(--text-muted)", fontWeight: 500 }}>{tokens.length} items</div>
               {isCsharp && (
                 <button className="btn btn-secondary" onClick={() => void reloadSales(collection, tokens)} style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", borderRadius: "10px" }}>
                   <Loader2 size={14} className={loadingSales ? "animate-spin" : ""} style={{ marginRight: "0.5rem" }} />
@@ -480,93 +475,19 @@ export function CollectionDetailPage() {
               )}
             </div>
 
-            {tokens.length === 0 ? (
-              <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-                <ImageOff size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
-                <h3>No items yet</h3>
-                <p className="hint">Items will appear here once they are minted.</p>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-                {tokens.map((token) => {
-                  const properties = parseTokenProperties(token.propertiesJson);
-                  const media = pickTokenMediaUri(token, properties);
-                  const sale = salesByTokenId[token.tokenId] ?? { listed: false, seller: "", price: "0", listedAt: "" };
-                  const isOwner = !!wallet.address && wallet.address === token.owner;
-                  const isActing = actionTokenId === token.tokenId;
-                  const displayName =
-                    typeof properties.name === "string" && properties.name.trim().length > 0
-                      ? properties.name.trim()
-                      : `${collection.symbol} #${tokenSerial(token.tokenId)}`;
-                  const fallbackImage = buildNftFallbackImage(displayName, token.tokenId, collection.name);
-
-                  return (
-                    <div className="panel" key={token.tokenId} style={{ padding: 0, overflow: "hidden" }}>
-                      <img
-                        alt={displayName}
-                        onError={(event) => {
-                          if (event.currentTarget.src !== fallbackImage) {
-                            event.currentTarget.src = fallbackImage;
-                          }
-                        }}
-                        src={media || fallbackImage}
-                        style={{ width: "100%", height: "280px", objectFit: "cover" }}
-                      />
-
-                      <div style={{ padding: "1.2rem" }}>
-                        <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>{displayName}</div>
-                        <div style={{ fontSize: "0.85rem", color: "#8A939B", marginBottom: "1rem" }}>Token #{tokenSerial(token.tokenId)}</div>
-
-                        {sale.listed ? (
-                          <div style={{ marginBottom: "1rem" }}>
-                            <div style={{ fontSize: "0.75rem", color: "#8A939B", fontWeight: 600 }}>Price</div>
-                            <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>{formatGasAmount(sale.price)} GAS</div>
-                          </div>
-                        ) : (
-                          <div style={{ marginBottom: "1rem", height: "38px", display: "flex", alignItems: "center", color: "#8A939B", fontSize: "0.9rem" }}>Not listed</div>
-                        )}
-
-                        {isCsharp && (
-                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem" }}>
-                            {isOwner ? (
-                              sale.listed ? (
-                                <button
-                                  className="btn btn-secondary"
-                                  disabled={isActing}
-                                  onClick={() => void onCancelListing(token)}
-                                  type="button"
-                                  style={{ width: "100%", borderRadius: "10px" }}
-                                >
-                                  {isActing ? "..." : "Cancel Listing"}
-                                </button>
-                              ) : (
-                                <div className="stack-xs">
-                                  <input
-                                    onChange={(event) =>
-                                      setListPriceByTokenId((prev) => ({ ...prev, [token.tokenId]: event.target.value }))
-                                    }
-                                    placeholder="Price in GAS"
-                                    value={listPriceByTokenId[token.tokenId] ?? ""}
-                                    style={{ height: "40px", marginBottom: "0.5rem" }}
-                                  />
-                                  <button className="btn" disabled={isActing} onClick={() => void onListToken(token)} type="button" style={{ width: "100%", borderRadius: "10px", background: "#2081E2" }}>
-                                    {isActing ? "..." : "List for Sale"}
-                                  </button>
-                                </div>
-                              )
-                            ) : sale.listed ? (
-                              <button className="btn" disabled={isActing || !wallet.address} onClick={() => void onBuyToken(token)} type="button" style={{ width: "100%", borderRadius: "10px", background: "#2081E2" }}>
-                                <ShoppingCart size={16} style={{ marginRight: "0.5rem" }} /> {isActing ? "..." : "Buy Now"}
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <NFTGrid
+              tokens={tokens}
+              collections={collectionsMap}
+              salesByTokenId={salesByTokenId}
+              listPriceByTokenId={listPriceByTokenId}
+              onListPriceChange={(id, val) => setListPriceByTokenId(prev => ({ ...prev, [id]: val }))}
+              onList={onListToken}
+              onCancel={onCancelListing}
+              onBuy={onBuyToken}
+              actionTokenId={actionTokenId}
+              isCsharp={isCsharp}
+              walletAddress={wallet.address}
+            />
           </div>
         )}
 
@@ -632,15 +553,23 @@ export function CollectionDetailPage() {
 
         {activeTab === "activity" && (
           <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
-            <Loader2 size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
+            <Loader2 size={48} color="var(--text-muted)" style={{ marginBottom: "1rem" }} />
             <h3>Activity tracking coming soon</h3>
             <p className="hint">We are working on integrating full on-chain activity logs.</p>
           </div>
         )}
       </div>
 
-      {message ? <p className="success" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{message}</p> : null}
-      {error ? <p className="error" style={{ position: "fixed", bottom: "2rem", right: "2rem", maxWidth: "400px", zIndex: 100 }}>{error}</p> : null}
+      <StatusMessage 
+        message={message} 
+        type="success" 
+        onClose={() => setMessage("")} 
+      />
+      <StatusMessage 
+        message={error} 
+        type="error" 
+        onClose={() => setError("")} 
+      />
     </div>
   );
 }

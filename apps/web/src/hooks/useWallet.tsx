@@ -10,7 +10,8 @@ import {
   invokeNeoWallet,
   type NeoWalletNetwork,
 } from "../lib/neoline";
-import { setRuntimeWalletNetwork } from "../lib/runtime-network";
+import { setRuntimeWalletNetwork, getRuntimeNetworkConfig } from "../lib/runtime-network";
+import { getWifAccount, invokeNeoWalletWithWif } from "../lib/wifWallet";
 
 interface WalletState {
   address: string | null;
@@ -18,6 +19,7 @@ interface WalletState {
   isReady: boolean;
   isConnecting: boolean;
   connect: () => Promise<void>;
+  connectWif: (wif: string) => Promise<void>;
   disconnect: () => void;
   sync: () => Promise<void>;
   invoke: (payload: WalletInvokeRequest) => Promise<string>;
@@ -25,6 +27,7 @@ interface WalletState {
 
 const WalletContext = createContext<WalletState | null>(null);
 const WALLET_CONNECTED_KEY = "opennft_wallet_connected";
+const DEV_WIF_KEY = "opennft_wallet_wif";
 
 function isSameWalletNetwork(a: NeoWalletNetwork | null, b: NeoWalletNetwork | null): boolean {
   if (!a && !b) {
@@ -52,10 +55,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     address: string | null;
     network: NeoWalletNetwork | null;
   }> => {
-    // Only proceed if isConnected flag is set or non-silent mode requested
     const isConnected = localStorage.getItem(WALLET_CONNECTED_KEY) === "true";
+    const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
+
     if (!isConnected && silent) {
       return { address: null, network: null };
+    }
+
+    if (devWif) {
+      const account = getWifAccount(devWif);
+      if (account) {
+        const nextAddress = account.address;
+        const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
+        localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+        setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+        setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+        setRuntimeWalletNetwork(nextNetwork);
+        return { address: nextAddress, network: nextNetwork };
+      }
     }
 
     const [currentNetwork, currentAccount] = await Promise.all([
@@ -158,8 +175,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setIsConnecting(false);
         }
       },
+      connectWif: async (wif: string) => {
+        setIsConnecting(true);
+        try {
+          const account = getWifAccount(wif);
+          if (!account) throw new Error("Invalid WIF key");
+          localStorage.setItem(DEV_WIF_KEY, wif);
+          await syncWalletSession(false);
+        } finally {
+          setIsConnecting(false);
+        }
+      },
       disconnect: () => {
         localStorage.removeItem(WALLET_CONNECTED_KEY);
+        localStorage.removeItem(DEV_WIF_KEY);
         setAddress(null);
         setNetwork(null);
         setRuntimeWalletNetwork(null);
@@ -176,7 +205,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
 
-        const result = await invokeNeoWallet(payload);
+        const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
+        const result = devWif 
+          ? await invokeNeoWalletWithWif(devWif, payload)
+          : await invokeNeoWallet(payload);
+
         const rawTxId = (result.txid ?? result.transaction ?? result.txId ?? result.transactionId ?? "").toString().trim();
         if (!rawTxId) {
           throw new Error("Wallet invoke succeeded but no transaction id was returned. Please check wallet history.");
