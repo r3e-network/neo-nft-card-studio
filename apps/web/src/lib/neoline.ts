@@ -93,6 +93,10 @@ let cachedProvider: NeoLineN3Provider | null = null;
 let neoLineInitInstance: unknown = null;
 let readyListenersInstalled = false;
 
+function walletDebug(...args: unknown[]): void {
+  console.info("[wallet-debug]", ...args);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     globalThis.setTimeout(resolve, ms);
@@ -104,6 +108,44 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return null;
   }
   return value as Record<string, unknown>;
+}
+
+function describeValue(value: unknown): string {
+  if (value === null) {
+    return "null";
+  }
+  if (value === undefined) {
+    return "undefined";
+  }
+  if (typeof value === "string") {
+    return value.length > 80 ? `${value.slice(0, 77)}...` : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `array(len=${value.length})`;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return typeof value;
+  }
+  const keys = Object.keys(record);
+  return `object(keys=${keys.slice(0, 8).join(",")}${keys.length > 8 ? ",..." : ""})`;
+}
+
+function getProviderDebugName(provider: NeoLineN3Provider): string {
+  const record = asRecord(provider);
+  if (!record) {
+    return "unknown-provider";
+  }
+  for (const key of ["name", "label", "id", "title"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return `provider(keys=${Object.keys(record).slice(0, 6).join(",")})`;
 }
 
 function pushUniqueUnknown(list: unknown[], value: unknown): void {
@@ -980,8 +1022,11 @@ async function findAccountAcrossProviders(
   return null;
 }
 
-async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLineAccount | null> {
+async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: string[]): Promise<NeoLineAccount | null> {
   const providerRecord = asRecord(provider);
+  const providerName = getProviderDebugName(provider);
+  diagnostics.push(`provider=${providerName}`);
+  walletDebug("connect:start", providerName);
   if (providerRecord && typeof providerRecord.enable === "function") {
     enableAttemptedProviders.delete(providerRecord);
   }
@@ -1002,6 +1047,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     const canListenProvider = !!provider.addEventListener && (!!connectedEvent || !!accountChangedEvent);
     const canListenWindow = typeof window !== "undefined" && globalEvents.length > 0;
     if (!canListenProvider && !canListenWindow) {
+      diagnostics.push("events=unavailable");
       resolve(null);
       return;
     }
@@ -1029,12 +1075,14 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
     const onAccountEvent = (value: unknown) => {
       const account = normalizeAccount(value);
+      walletDebug("connect:event", providerName, describeValue(value), account?.address ?? "no-address");
       if (!account || settled) {
         return;
       }
 
       settled = true;
       cleanup();
+      diagnostics.push(`event=${account.address}`);
       resolve(account);
     };
 
@@ -1045,6 +1093,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
       settled = true;
       cleanup();
+      diagnostics.push("event=timeout");
       resolve(null);
     }, 30000);
 
@@ -1066,7 +1115,11 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
   const pendingConnectedEvent = waitForConnectedEvent();
 
-  const withTimeoutOrEvent = async (attempt: () => Promise<unknown | undefined>): Promise<NeoLineAccount | null> => {
+  const withTimeoutOrEvent = async (
+    label: string,
+    attempt: () => Promise<unknown | undefined>,
+  ): Promise<NeoLineAccount | null> => {
+    walletDebug("connect:attempt", providerName, label);
     const result = await Promise.race<unknown | NeoLineAccount | null>([
       attempt(),
       pendingConnectedEvent,
@@ -1076,8 +1129,13 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     const eventAccount = normalizeAccount(result);
     if (eventAccount) {
       cachedProvider = provider;
+      diagnostics.push(`${label}=${eventAccount.address}`);
+      walletDebug("connect:success", providerName, label, eventAccount.address);
       return eventAccount;
     }
+
+    diagnostics.push(`${label}=no-account(${describeValue(result)})`);
+    walletDebug("connect:no-account", providerName, label, describeValue(result));
 
     return null;
   };
@@ -1091,7 +1149,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   ];
 
   for (const methodName of interactiveMethods) {
-    const account = await withTimeoutOrEvent(async () => {
+    const account = await withTimeoutOrEvent(`method:${methodName}`, async () => {
       const value = await tryCallProviderMethod(provider, methodName);
       if (value === undefined) {
         return undefined;
@@ -1106,17 +1164,21 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
 
   for (const method of ["getAccount", "requestAccounts", "getAddress", "getWalletAddress", "getAccounts"]) {
     try {
-      const account = await withTimeoutOrEvent(async () => normalizeAccount(await requestProvider(provider, { method })));
+      const account = await withTimeoutOrEvent(
+        `rpc:${method}`,
+        async () => normalizeAccount(await requestProvider(provider, { method })),
+      );
       if (account) {
         cachedProvider = provider;
         return account;
       }
     } catch {
+      diagnostics.push(`rpc:${method}=error`);
       // try next interactive method
     }
   }
 
-  const enabledAccount = await withTimeoutOrEvent(async () => {
+  const enabledAccount = await withTimeoutOrEvent("method:enable", async () => {
     const enabledResult = await ensureProviderEnabled(provider);
     return normalizeAccount(enabledResult);
   });
@@ -1132,14 +1194,19 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   ]);
   if (accountAfterEnable) {
     cachedProvider = provider;
+    diagnostics.push(`post-enable-read=${accountAfterEnable.address}`);
     return accountAfterEnable;
   }
 
   const accountFromEvent = await pendingConnectedEvent;
   if (accountFromEvent) {
     cachedProvider = provider;
+    diagnostics.push(`final-event=${accountFromEvent.address}`);
     return accountFromEvent;
   }
+
+  diagnostics.push("connect=failed");
+  walletDebug("connect:failed", providerName, diagnostics.join(" | "));
 
   return null;
 }
@@ -1237,17 +1304,19 @@ export function getNeoProvider(): NeoLineN3Provider | null {
 
 export async function connectNeoWallet(): Promise<NeoLineAccount> {
   const providers = await loadProvidersWithReadySync();
+  walletDebug("connect:providers", providers.map((provider) => getProviderDebugName(provider)));
   if (providers.length === 0) {
     throw new Error(buildNoWalletFoundErrorMessage());
   }
 
   const preferredProvider = getNeoProvider() ?? providers[0];
-  const account = preferredProvider ? await connectSingleProvider(preferredProvider) : null;
+  const diagnostics: string[] = [];
+  const account = preferredProvider ? await connectSingleProvider(preferredProvider, diagnostics) : null;
   if (account) {
     return account;
   }
 
-  throw new Error("Failed to connect to wallet.");
+  throw new Error(`Failed to connect to wallet. ${diagnostics.join(" | ") || "No account returned by wallet provider."}`);
 }
 
 export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount | null> {
