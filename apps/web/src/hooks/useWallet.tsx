@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WalletInvokeRequest } from "@platform/neo-sdk";
 
@@ -92,6 +92,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
+  const suppressSilentSyncUntilRef = useRef(0);
 
   const clearWalletSession = useCallback((preserveDevWif = true) => {
     localStorage.removeItem(WALLET_CONNECTED_KEY);
@@ -136,6 +137,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const nextAddress = currentAccount?.address?.trim() || null;
       const nextNetwork = nextAddress ? currentNetwork : null;
 
+      if (silent && !nextAddress) {
+        const fallbackAddress = address?.trim() || null;
+        if (fallbackAddress) {
+          setAddress((prev) => (isSameWalletAddress(prev, fallbackAddress) ? prev : fallbackAddress));
+          setNetwork((prev) => (isSameWalletNetwork(prev, network) ? prev : network));
+          setRuntimeWalletNetwork(network);
+          return {
+            address: fallbackAddress,
+            network,
+          };
+        }
+      }
+
       if (nextAddress) {
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
       } else {
@@ -152,10 +166,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       };
     } catch (err) {
       if (!silent) console.error("Sync failed:", err);
+      if (silent && address) {
+        return { address, network };
+      }
       clearWalletSession(Boolean(devWif));
       return { address: null, network: null };
     }
-  }, [clearWalletSession]);
+  }, [address, clearWalletSession, network]);
 
   // 1. Initial Readiness & Events Setup
   useEffect(() => {
@@ -170,6 +187,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        suppressSilentSyncUntilRef.current = Date.now() + 5000;
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
         void getNeoWalletNetwork(true).then((nextNetwork) => {
           setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
@@ -223,6 +241,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isReady) return;
     const onFocus = () => {
+      if (Date.now() < suppressSilentSyncUntilRef.current) {
+        return;
+      }
       void syncWalletSession(true);
     };
     window.addEventListener("focus", onFocus);
@@ -239,6 +260,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setIsConnecting(true);
         try {
           const account = await connectNeoWallet();
+          suppressSilentSyncUntilRef.current = Date.now() + 5000;
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
           const nextAddress = account.address?.trim() || null;
           if (!nextAddress) {
