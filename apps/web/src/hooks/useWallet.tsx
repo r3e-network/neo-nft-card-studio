@@ -304,13 +304,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
+        if (address) {
+          return;
+        }
+
         const session = await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
       },
       invoke: async (payload: WalletInvokeRequest) => {
-        const session = await syncWalletSession(false);
+        const session = address
+          ? {
+              address,
+              network,
+            }
+          : await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
