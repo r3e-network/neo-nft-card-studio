@@ -331,7 +331,7 @@ export function PortfolioPage() {
 
                         <div style={{ display: "flex", gap: "0.5rem" }}>
                           <Link className="btn" to={`/collections/${collection.collectionId}`} style={{ flex: 1, padding: "0.6rem", fontSize: "0.9rem", background: "#2081E2" }}>Manage</Link>
-                          <Link className="btn btn-secondary" to="/mint" style={{ flex: 1, padding: "0.6rem", fontSize: "0.9rem" }}>Mint Item</Link>
+                          <Link className="btn btn-secondary" to={`/mint?collectionId=${encodeURIComponent(collection.collectionId)}`} style={{ flex: 1, padding: "0.6rem", fontSize: "0.9rem" }}>Mint Item</Link>
                         </div>
                       </div>
                     </div>

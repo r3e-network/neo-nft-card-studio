@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ExternalLink, Globe, Loader2, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -81,6 +81,7 @@ export function CollectionDetailPage() {
 
   const isCsharp = contractDialect === "csharp";
   const isDedicatedCollection = collection ? resolveCollectionContractHash(collection) !== null : false;
+  const ownerCount = useMemo(() => new Set(tokens.map((token) => token.owner).filter((owner) => owner.length > 0)).size, [tokens]);
 
   useEffect(() => {
     setMintForm((prev) => ({ ...prev, to: wallet.address ?? "" }));
@@ -410,7 +411,7 @@ export function CollectionDetailPage() {
             <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Items</div>
           </div>
           <div>
-            <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{collection.owner === wallet.address ? "1" : "0"}</div>
+            <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{ownerCount}</div>
             <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Owners</div>
           </div>
           <div>

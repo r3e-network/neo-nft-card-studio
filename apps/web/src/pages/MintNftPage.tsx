@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Sparkles, ImagePlus, Wand2, Info, Check, ChevronRight, X, LayoutGrid } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, uploadToNeoFs } from "../lib/api";
@@ -17,6 +17,8 @@ export function MintNftPage() {
   const { t } = useTranslation();
   const wallet = useWallet();
   const contractDialect = useRuntimeContractDialect();
+  const [searchParams] = useSearchParams();
+  const requestedCollectionId = searchParams.get("collectionId")?.trim() || "";
 
   const [collections, setCollections] = useState<CollectionDto[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
@@ -53,6 +55,10 @@ export function MintNftPage() {
           const userCols = res.filter((collection) => collection.owner === wallet.address);
           setCollections(userCols);
           setSelectedCollectionId((current) => {
+            if (requestedCollectionId && userCols.some((collection) => collection.collectionId === requestedCollectionId)) {
+              return requestedCollectionId;
+            }
+
             if (current && userCols.some((collection) => collection.collectionId === current)) {
               return current;
             }
@@ -74,7 +80,7 @@ export function MintNftPage() {
     return () => {
       alive = false;
     };
-  }, [t, wallet.address, wallet.network?.network, wallet.network?.magic]);
+  }, [requestedCollectionId, t, wallet.address, wallet.network?.network, wallet.network?.magic]);
 
   const addAttribute = () => setAttributes([...attributes, { trait_type: "", value: "" }]);
   const updateAttribute = (index: number, key: 'trait_type' | 'value', value: string) => {
