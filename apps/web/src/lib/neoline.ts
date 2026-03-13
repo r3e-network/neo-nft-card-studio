@@ -43,6 +43,7 @@ export interface NeoLineN3Provider {
   getAddress?: () => Promise<unknown>;
   getWalletAddress?: () => Promise<unknown>;
   requestAccounts?: () => Promise<unknown>;
+  switchWalletAccount?: () => Promise<unknown>;
   getNetwork?: () => Promise<unknown>;
   getNetworks?: () => Promise<unknown>;
   enable?: () => Promise<unknown>;
@@ -176,6 +177,7 @@ function hasProviderMethods(value: unknown): value is NeoLineN3Provider {
     "getAddress",
     "getWalletAddress",
     "requestAccounts",
+    "switchWalletAccount",
     "getNetwork",
     "getNetworks",
     "request",
@@ -309,6 +311,7 @@ function normalizeProvider(provider: NeoLineN3Provider): NeoLineN3Provider {
     getAddress: provider.getAddress?.bind(provider),
     getWalletAddress: provider.getWalletAddress?.bind(provider),
     requestAccounts: provider.requestAccounts?.bind(provider),
+    switchWalletAccount: provider.switchWalletAccount?.bind(provider),
     getNetwork: provider.getNetwork?.bind(provider),
     getNetworks: provider.getNetworks?.bind(provider),
     enable: provider.enable?.bind(provider),
@@ -974,9 +977,62 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     enableAttemptedProviders.delete(providerRecord);
   }
 
+  const waitForConnectedEvent = () => new Promise<NeoLineAccount | null>((resolve) => {
+    const connectedEvent = provider.EVENT?.CONNECTED;
+    const accountChangedEvent = provider.EVENT?.ACCOUNT_CHANGED;
+    if (!provider.addEventListener || (!connectedEvent && !accountChangedEvent)) {
+      resolve(null);
+      return;
+    }
+
+    let settled = false;
+    let timeoutId = 0 as unknown as ReturnType<typeof globalThis.setTimeout>;
+
+    const cleanup = () => {
+      globalThis.clearTimeout(timeoutId);
+      if (connectedEvent) {
+        provider.removeEventListener?.(connectedEvent, onAccountEvent);
+      }
+      if (accountChangedEvent) {
+        provider.removeEventListener?.(accountChangedEvent, onAccountEvent);
+      }
+    };
+
+    const onAccountEvent = (value: unknown) => {
+      const account = normalizeAccount(value);
+      if (!account || settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve(account);
+    };
+
+    timeoutId = globalThis.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve(null);
+    }, 30000);
+
+    if (connectedEvent) {
+      provider.addEventListener(connectedEvent, onAccountEvent);
+    }
+    if (accountChangedEvent) {
+      provider.addEventListener(accountChangedEvent, onAccountEvent);
+    }
+  });
+
+  const pendingConnectedEvent = waitForConnectedEvent();
+
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
     "getAccount",
     "requestAccounts",
+    "switchWalletAccount",
     "getAddress",
     "getWalletAddress",
     "getAccounts",
@@ -995,7 +1051,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
     }
   }
 
-  for (const method of ["getAccount", "requestAccounts", "getAddress", "getWalletAddress", "getAccounts"]) {
+  for (const method of ["getAccount", "requestAccounts", "switchWalletAccount", "getAddress", "getWalletAddress", "getAccounts"]) {
     try {
       const account = normalizeAccount(await requestProvider(provider, { method }));
       if (account) {
@@ -1018,6 +1074,12 @@ async function connectSingleProvider(provider: NeoLineN3Provider): Promise<NeoLi
   if (accountAfterEnable) {
     cachedProvider = provider;
     return accountAfterEnable;
+  }
+
+  const accountFromEvent = await pendingConnectedEvent;
+  if (accountFromEvent) {
+    cachedProvider = provider;
+    return accountFromEvent;
   }
 
   return null;
