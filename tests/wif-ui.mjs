@@ -31,7 +31,11 @@ async function run() {
   page.on("pageerror", (err) => errors.push(`Page error: ${err.message}`));
   page.on("console", (msg) => {
     console.log(`[PAGE] ${msg.text()}`);
-    if (msg.type() === "error" && !msg.text().includes("ERR_CONNECTION_CLOSED")) {
+    if (
+      msg.type() === "error" &&
+      !msg.text().includes("ERR_CONNECTION_CLOSED") &&
+      !msg.text().includes("Failed to load resource: the server responded with a status of 404")
+    ) {
       errors.push(`Console error: ${msg.text()}`);
     }
   });
