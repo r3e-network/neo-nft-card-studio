@@ -10,6 +10,7 @@ import {
   invokeNeoWallet,
   type NeoWalletNetwork,
 } from "../lib/neoline";
+import { APP_CONFIG } from "../lib/config";
 import { setRuntimeWalletNetwork } from "../lib/runtime-network";
 import { getWifAccount, invokeNeoWalletWithWif } from "../lib/wifWallet";
 
@@ -170,7 +171,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const account = getWifAccount(devWif);
         if (account) {
           const nextAddress = account.address;
-          const nextNetwork: NeoWalletNetwork = { network: "testnet", magic: 894710606, rpcUrl: "https://n3seed1.ngd.network:20332", raw: null };
+          const nextNetwork: NeoWalletNetwork = {
+            network: "testnet",
+            magic: 894710606,
+            rpcUrl: APP_CONFIG.networks.testnet.rpcUrl ?? APP_CONFIG.rpcUrl,
+            raw: null,
+          };
           localStorage.setItem(WALLET_CONNECTED_KEY, "true");
           localStorage.setItem(WALLET_ADDRESS_KEY, nextAddress);
           localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
