@@ -78,6 +78,7 @@ export function CollectionDetailPage() {
     file: null,
   });
   const requestSequenceRef = useRef(0);
+  const reloadTimerRef = useRef<number | null>(null);
 
   const isCsharp = contractDialect === "csharp";
   const isDedicatedCollection = collection ? resolveCollectionContractHash(collection) !== null : false;
@@ -202,9 +203,23 @@ export function CollectionDetailPage() {
     void reloadCollection();
 
     return () => {
+      if (reloadTimerRef.current !== null) {
+        window.clearTimeout(reloadTimerRef.current);
+      }
       requestSequenceRef.current += 1;
     };
   }, [reloadCollection, wallet.network?.network, wallet.network?.magic]);
+
+  const scheduleReloadCollection = useCallback((delayMs = 5000) => {
+    if (reloadTimerRef.current !== null) {
+      window.clearTimeout(reloadTimerRef.current);
+    }
+
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      void reloadCollection();
+    }, delayMs);
+  }, [reloadCollection]);
 
   const onMintToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -256,8 +271,7 @@ export function CollectionDetailPage() {
 
       setMessage(`Mint submitted: ${txid}`);
       setMintForm({ to: wallet.address ?? "", name: "", description: "", file: null });
-
-      await reloadCollection();
+      scheduleReloadCollection();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {
@@ -289,7 +303,16 @@ export function CollectionDetailPage() {
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing submitted: ${txid}`);
-      await reloadSales(collection, tokens);
+      setSalesByTokenId((prev) => ({
+        ...prev,
+        [token.tokenId]: {
+          listed: true,
+          seller: wallet.address ?? token.owner,
+          price,
+          listedAt: new Date().toISOString(),
+        },
+      }));
+      scheduleReloadCollection();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {
@@ -311,7 +334,16 @@ export function CollectionDetailPage() {
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Listing canceled: ${txid}`);
-      await reloadSales(collection, tokens);
+      setSalesByTokenId((prev) => ({
+        ...prev,
+        [token.tokenId]: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+        },
+      }));
+      scheduleReloadCollection();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {
@@ -333,7 +365,27 @@ export function CollectionDetailPage() {
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: token.tokenId }));
       setMessage(`Purchase submitted: ${txid}`);
-      await reloadCollection();
+      const buyerAddress = wallet.address;
+      if (buyerAddress) {
+        setTokens((prev) => prev.map((entry) => (
+          entry.tokenId === token.tokenId
+            ? {
+                ...entry,
+                owner: buyerAddress,
+              }
+            : entry
+        )));
+      }
+      setSalesByTokenId((prev) => ({
+        ...prev,
+        [token.tokenId]: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+        },
+      }));
+      scheduleReloadCollection();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {

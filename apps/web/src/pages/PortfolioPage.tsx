@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { FolderOpen, ImageOff, Loader2, Settings, Wallet, Copy, Check, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -48,6 +48,7 @@ export function PortfolioPage() {
   const [message, setMessage] = useState("");
   const [actionTokenId, setActionTokenId] = useState("");
   const [copied, setCopied] = useState(false);
+  const reloadTimerRef = useRef<number | null>(null);
 
   const isCsharp = contractDialect === "csharp";
 
@@ -80,7 +81,23 @@ export function PortfolioPage() {
 
   useEffect(() => {
     void reloadPortfolio();
+    return () => {
+      if (reloadTimerRef.current !== null) {
+        window.clearTimeout(reloadTimerRef.current);
+      }
+    };
   }, [reloadPortfolio, wallet.network?.network, wallet.network?.magic]);
+
+  const scheduleReloadPortfolio = useCallback((delayMs = 5000) => {
+    if (reloadTimerRef.current !== null) {
+      window.clearTimeout(reloadTimerRef.current);
+    }
+
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      void reloadPortfolio();
+    }, delayMs);
+  }, [reloadPortfolio]);
 
   const onListToken = async (token: TokenDto) => {
     const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
@@ -103,7 +120,24 @@ export function PortfolioPage() {
       const client = getCollectionClient(listing.collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing submitted: ${txid}`);
-      await reloadPortfolio();
+      setCollectedListings((prev) => prev.map((entry) => {
+        if (entry.token.tokenId !== token.tokenId) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          sale: {
+            ...entry.sale,
+            listed: true,
+            seller: wallet.address ?? entry.sale.seller,
+            price,
+            listedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      }));
+      scheduleReloadPortfolio();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {
@@ -124,7 +158,24 @@ export function PortfolioPage() {
       const client = getCollectionClient(listing.collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Listing canceled: ${txid}`);
-      await reloadPortfolio();
+      setCollectedListings((prev) => prev.map((entry) => {
+        if (entry.token.tokenId !== token.tokenId) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          sale: {
+            ...entry.sale,
+            listed: false,
+            seller: "",
+            price: "0",
+            listedAt: "",
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      }));
+      scheduleReloadPortfolio();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {

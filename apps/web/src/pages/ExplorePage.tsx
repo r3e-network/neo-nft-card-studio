@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ImageOff, Loader2, Search, ShoppingCart, Tag, Filter } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +41,7 @@ export function ExplorePage() {
   const [error, setError] = useState("");
   const [actionTokenId, setActionTokenId] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const reloadTimerRef = useRef<number | null>(null);
 
   const query = searchParams.get("search") || "";
   const isCsharp = contractDialect === "csharp";
@@ -62,7 +63,23 @@ export function ExplorePage() {
 
   useEffect(() => {
     void reloadMarket();
+    return () => {
+      if (reloadTimerRef.current !== null) {
+        window.clearTimeout(reloadTimerRef.current);
+      }
+    };
   }, [reloadMarket, wallet.network?.network, wallet.network?.magic]);
+
+  const scheduleReloadMarket = useCallback((delayMs = 5000) => {
+    if (reloadTimerRef.current !== null) {
+      window.clearTimeout(reloadTimerRef.current);
+    }
+
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      void reloadMarket();
+    }, delayMs);
+  }, [reloadMarket]);
 
   const visibleCards = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -117,7 +134,31 @@ export function ExplorePage() {
       await wallet.sync();
       const client = getCollectionClient(card.collection);
       await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: card.token.tokenId }));
-      await reloadMarket();
+      const buyerAddress = wallet.address;
+      if (buyerAddress) {
+        setCards((prev) => prev.map((entry) => {
+          if (entry.token.tokenId !== card.token.tokenId) {
+            return entry;
+          }
+
+          return {
+            ...entry,
+            token: {
+              ...entry.token,
+              owner: buyerAddress,
+            },
+            sale: {
+              ...entry.sale,
+              listed: false,
+              seller: "",
+              price: "0",
+              listedAt: "",
+              updatedAt: new Date().toISOString(),
+            },
+          };
+        }));
+      }
+      scheduleReloadMarket();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
     } finally {
