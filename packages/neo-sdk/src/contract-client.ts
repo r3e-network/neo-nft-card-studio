@@ -206,6 +206,17 @@ export class NeoNftPlatformClient {
     return value;
   }
 
+  async isCollectionOperator(collectionIdHex: string, operator: string): Promise<boolean> {
+    const [value] =
+      this.dialect === "rust"
+        ? await this.rpc.invokeRead("isCollectionOperator", [toByteArrayArg(collectionIdHex), hash160Arg(operator)])
+        : this.dialect === "solidity"
+          ? await this.rpc.invokeRead("isCollectionOperator", [integerArg(collectionIdHex), hash160Arg(operator)])
+          : await this.rpc.invokeRead("isCollectionOperator", [toByteArrayArg(collectionIdHex), hash160Arg(operator)]);
+
+    return value === true;
+  }
+
   async getToken(tokenIdHex: string): Promise<unknown> {
     const [value] =
       this.dialect === "rust"

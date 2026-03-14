@@ -69,11 +69,13 @@ export function CollectionDetailPage() {
   const [listPriceByTokenId, setListPriceByTokenId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadingSales, setLoadingSales] = useState(false);
+  const [checkingPermissions, setCheckingPermissions] = useState(false);
   const [actionTokenId, setActionTokenId] = useState("");
   const [submittingMint, setSubmittingMint] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState("items");
+  const [walletCanManageCollection, setWalletCanManageCollection] = useState(false);
   const [mintForm, setMintForm] = useState<MintFormState>({
     to: wallet.address ?? "",
     name: "",
@@ -91,6 +93,57 @@ export function CollectionDetailPage() {
   useEffect(() => {
     setMintForm((prev) => ({ ...prev, to: wallet.address ?? "" }));
   }, [wallet.address]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const checkPermissions = async () => {
+      if (!collection || !wallet.address) {
+        if (alive) {
+          setWalletCanManageCollection(false);
+          setCheckingPermissions(false);
+        }
+        return;
+      }
+
+      if (wallet.address === collection.owner) {
+        if (alive) {
+          setWalletCanManageCollection(true);
+          setCheckingPermissions(false);
+        }
+        return;
+      }
+
+      setCheckingPermissions(true);
+      try {
+        const client = getCollectionClient(collection);
+        const allowed = await client.isCollectionOperator(collection.collectionId, wallet.address);
+        if (alive) {
+          setWalletCanManageCollection(allowed);
+        }
+      } catch {
+        if (alive) {
+          setWalletCanManageCollection(false);
+        }
+      } finally {
+        if (alive) {
+          setCheckingPermissions(false);
+        }
+      }
+    };
+
+    void checkPermissions();
+
+    return () => {
+      alive = false;
+    };
+  }, [collection, wallet.address]);
+
+  useEffect(() => {
+    if (activeTab === "mint" && !walletCanManageCollection) {
+      setActiveTab("items");
+    }
+  }, [activeTab, walletCanManageCollection]);
 
   const reloadSales = useCallback(async (
     nextCollection: CollectionDto | null,
@@ -533,7 +586,7 @@ export function CollectionDetailPage() {
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid var(--glass-border)", margin: "2rem 0" }}>
-          {["items", "mint", "activity"].map(tab => (
+          {["items", ...(walletCanManageCollection ? ["mint"] : []), "activity"].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -586,8 +639,12 @@ export function CollectionDetailPage() {
           <div className="panel" style={{ maxWidth: "800px", margin: "0 auto" }}>
             <div className="panel-header">
               <h3>Creator Studio</h3>
-              <p className="hint">Mint new NFTs into this collection.</p>
+              <p className="hint">Mint new NFTs into this collection. Available only to the collection owner or an authorized operator.</p>
             </div>
+
+            {checkingPermissions ? (
+              <p className="hint">Checking collection permissions...</p>
+            ) : null}
 
             <form className="form-grid" onSubmit={onMintToken}>
               <label className="full">
@@ -661,7 +718,7 @@ export function CollectionDetailPage() {
               </label>
 
               <div className="full form-actions" style={{ marginTop: "1rem" }}>
-                <button className="btn" disabled={submittingMint || !wallet.address || !isCsharp} type="submit" style={{ width: "200px", background: "#2081E2" }}>
+                <button className="btn" disabled={submittingMint || !wallet.address || !isCsharp || !walletCanManageCollection || checkingPermissions} type="submit" style={{ width: "200px", background: "#2081E2" }}>
                   {submittingMint ? "Minting..." : "Create NFT"}
                 </button>
               </div>
