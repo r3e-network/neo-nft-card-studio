@@ -14,7 +14,7 @@ export function getWifAccount(wif: string) {
 function toContractParam(arg: ContractArgument): any {
   switch (arg.type) {
     case "ByteArray":
-      return sc.ContractParam.byteArray(String(arg.value ?? ""));
+      return sc.ContractParam.byteArray(u.HexString.fromHex(String(arg.value ?? ""), true));
     case "String":
       return sc.ContractParam.string(String(arg.value ?? ""));
     case "Integer":
