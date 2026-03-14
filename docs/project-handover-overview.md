@@ -65,6 +65,12 @@ npm run audit:production-config
 npm run audit:security
 ```
 
+### Runtime Contract Interface Audit
+
+```bash
+npm run audit:runtime-contracts
+```
+
 ### Contract Validation
 
 ```bash
@@ -80,6 +86,7 @@ Manual workflow:
 It can run:
 
 - production config audit
+- runtime contract audit
 - typecheck
 - build
 - API smoke

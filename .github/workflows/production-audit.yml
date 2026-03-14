@@ -32,6 +32,9 @@ jobs:
       - name: Audit Security Surface
         run: npm run audit:security
 
+      - name: Audit Runtime Contracts
+        run: npm run audit:runtime-contracts
+
       - name: Typecheck
         run: npm run check
 
