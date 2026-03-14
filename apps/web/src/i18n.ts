@@ -32,6 +32,13 @@ const resources = {
                 err_wallet_txid_missing: "Wallet did not return a transaction ID. Please confirm in wallet history.",
                 err_wallet_txid_invalid: "Wallet returned an invalid transaction ID format. Please confirm in wallet history.",
                 install_wallet_required: "No Neo N3 wallet found. Please install NeoLine, O3, or OneGate.",
+                err_connect_wallet_first: "Connect wallet first.",
+                err_token_owner_required: "Only the current token owner can perform this action.",
+                err_token_not_listed: "This token is not currently listed for sale.",
+                err_token_already_listed: "This token is already listed for sale.",
+                err_cannot_buy_own_token: "You cannot buy your own token.",
+                err_collection_manage_permission_required: "Only the collection owner or an authorized operator can mint from this collection.",
+                err_marketplace_csharp_required: "Marketplace actions are available only in C# contract mode.",
                 generic_error: "Request failed. Please check wallet/network and try again."
             },
             detail: {
@@ -328,6 +335,13 @@ const resources = {
                 err_wallet_txid_missing: "钱包未返回交易 ID，请到钱包交易记录中确认。",
                 err_wallet_txid_invalid: "钱包返回的交易 ID 格式无效，请到钱包交易记录中确认。",
                 install_wallet_required: "未检测到 Neo N3 钱包，请安装 NeoLine、O3 或 OneGate。",
+                err_connect_wallet_first: "请先连接钱包。",
+                err_token_owner_required: "只有当前 Token 持有人才能执行此操作。",
+                err_token_not_listed: "该 Token 当前未上架出售。",
+                err_token_already_listed: "该 Token 已经处于上架状态。",
+                err_cannot_buy_own_token: "不能购买自己持有的 Token。",
+                err_collection_manage_permission_required: "只有集合所有者或授权操作员才能在该集合中铸造。",
+                err_marketplace_csharp_required: "市场交易操作目前仅支持 C# 合约模式。",
                 generic_error: "请求失败，请检查钱包与网络后重试。"
             },
             detail: {

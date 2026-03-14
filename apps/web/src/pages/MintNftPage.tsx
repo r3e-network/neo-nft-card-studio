@@ -5,15 +5,13 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, uploadToNeoFs } from "../lib/api";
+import { getCollectionClient } from "../lib/collection-client";
 import { toUserErrorMessage } from "../lib/errors";
 import { mergePendingCollections } from "../lib/pending-collections";
-import { getPlatformClient, getNftClientForHash } from "../lib/platformClient";
+import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
-import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import type { CollectionDto } from "../lib/types";
 import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
-
-const ZERO_UINT160_HASH = "0x0000000000000000000000000000000000000000";
 
 export function MintNftPage() {
   const { t } = useTranslation();
@@ -126,18 +124,10 @@ export function MintNftPage() {
       const propertiesJson = JSON.stringify(propertiesObj);
 
       // 3. Determine target contract (platform vs dedicated collection contract)
-      let client = getPlatformClient();
+      const client = contractDialect === "csharp"
+        ? getCollectionClient(collection)
+        : getPlatformClient();
       const tokenClassValue = tokenClass === "standard" ? 0 : tokenClass === "membership" ? 1 : 2;
-
-      const platformHash = getRuntimeNetworkConfig().contractHash;
-      if (
-        contractDialect === "csharp" &&
-        collection.contractHash &&
-        collection.contractHash !== ZERO_UINT160_HASH &&
-        collection.contractHash.toLowerCase() !== platformHash?.toLowerCase()
-      ) {
-        client = getNftClientForHash(collection.contractHash);
-      }
 
       const payload = client.buildMintInvoke(
         contractDialect === "rust"

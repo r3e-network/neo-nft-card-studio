@@ -5,11 +5,11 @@ import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, fetchMarketListings } from "../lib/api";
+import { getCollectionClient, resolveCollectionContractHash } from "../lib/collection-client";
 import { toUserErrorMessage } from "../lib/errors";
-import { isZeroUInt160Hash, parseGasAmountToInteger, shortHash } from "../lib/marketplace";
+import { parseGasAmountToInteger, shortHash } from "../lib/marketplace";
 import { mergePendingCollections } from "../lib/pending-collections";
 import { mergePendingMarketState, setPendingMarketState } from "../lib/pending-market";
-import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
 
@@ -17,24 +17,6 @@ import { NFTGrid } from "../components/nft/NFTGrid";
 import { StatusMessage } from "../components/common/StatusMessage";
 
 type Tab = "collected" | "created" | "activity";
-
-function resolveCollectionContractHash(collection: CollectionDto): string | null {
-  if (!collection.contractHash) {
-    return null;
-  }
-
-  const trimmed = collection.contractHash.trim();
-  if (!trimmed || isZeroUInt160Hash(trimmed)) {
-    return null;
-  }
-
-  return trimmed;
-}
-
-function getCollectionClient(collection: CollectionDto) {
-  const dedicatedHash = resolveCollectionContractHash(collection);
-  return dedicatedHash ? getNftClientForHash(dedicatedHash) : getPlatformClient();
-}
 
 export function PortfolioPage() {
   const wallet = useWallet();
@@ -53,6 +35,14 @@ export function PortfolioPage() {
   const reloadTimerRef = useRef<number | null>(null);
 
   const isCsharp = contractDialect === "csharp";
+  const requireWalletAddress = (): string | null => {
+    const nextAddress = wallet.address?.trim() || null;
+    if (!nextAddress) {
+      setError(t("app.err_connect_wallet_first"));
+      return null;
+    }
+    return nextAddress;
+  };
 
   const reloadPortfolio = useCallback(async () => {
     if (!wallet.address) {
@@ -104,6 +94,25 @@ export function PortfolioPage() {
   const onListToken = async (token: TokenDto) => {
     const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
     if (!listing) return;
+    if (!isCsharp) {
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
+      return;
+    }
+
+    if (token.owner !== connectedAddress) {
+      setError(t("app.err_token_owner_required"));
+      return;
+    }
+
+    if (listing.sale.listed) {
+      setError(t("app.err_token_already_listed"));
+      return;
+    }
 
     let price: string;
     try {
@@ -125,10 +134,10 @@ export function PortfolioPage() {
       const nowIso = new Date().toISOString();
       setPendingMarketState({
         tokenId: token.tokenId,
-        owner: wallet.address ?? token.owner,
+        owner: connectedAddress,
         sale: {
           listed: true,
-          seller: wallet.address ?? token.owner,
+          seller: connectedAddress,
           price,
           listedAt: nowIso,
           updatedAt: nowIso,
@@ -144,7 +153,7 @@ export function PortfolioPage() {
           sale: {
             ...entry.sale,
             listed: true,
-            seller: wallet.address ?? entry.sale.seller,
+            seller: connectedAddress,
             price,
             listedAt: nowIso,
             updatedAt: nowIso,
@@ -162,6 +171,25 @@ export function PortfolioPage() {
   const onCancelListing = async (token: TokenDto) => {
     const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
     if (!listing) return;
+    if (!isCsharp) {
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
+      return;
+    }
+
+    if (token.owner !== connectedAddress) {
+      setError(t("app.err_token_owner_required"));
+      return;
+    }
+
+    if (!listing.sale.listed) {
+      setError(t("app.err_token_not_listed"));
+      return;
+    }
 
     setActionTokenId(token.tokenId);
     setError("");

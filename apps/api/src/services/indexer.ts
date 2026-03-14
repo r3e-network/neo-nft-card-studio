@@ -58,6 +58,18 @@ interface RawNeotubeContractResponse {
 
 const SYNC_BLOCK_KEY_PREFIX = "last_synced_block";
 const UINT160_HASH_WITH_PREFIX_REGEX = /^0x[0-9a-f]{40}$/;
+const RETRYABLE_INDEXER_RPC_GAP_REGEX =
+  /unknown height|unknown block|unknown transaction|unknown tx|block .*not found|transaction .*not found|invalid block/i;
+
+class RetryableIndexerGapError extends Error {
+  constructor(
+    readonly blockIndex: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "RetryableIndexerGapError";
+  }
+}
 
 function normalizeHash(hash: string): string {
   if (!hash || hash.length === 0) {
@@ -71,6 +83,18 @@ function normalizeHash(hash: string): string {
   }
 
   return trimmed.toLowerCase();
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function isRetryableIndexerRpcGap(error: unknown): boolean {
+  return RETRYABLE_INDEXER_RPC_GAP_REGEX.test(describeError(error).toLowerCase());
 }
 
 function stackItemsFromNotification(notification: RawNotification): unknown[] {
@@ -156,6 +180,7 @@ export class IndexerService {
   private readonly eventsEnabled: boolean;
   private lastKnownChainBlockHeight: number | null = null;
   private chainHeightFetchInFlight: Promise<number | null> | null = null;
+  private lastDeferredBlockLog: { blockIndex: number; message: string; at: number } | null = null;
 
   constructor(
     private readonly config: ResolvedNetworkAppConfig,
@@ -411,7 +436,16 @@ export class IndexerService {
     this.log.info({ from: cursor, to: target }, "Running one-off sync batch");
 
     for (let index = cursor; index <= target; index += 1) {
-      await this.indexBlock(index, trackedHashes);
+      try {
+        await this.indexBlock(index, trackedHashes);
+        this.lastDeferredBlockLog = null;
+      } catch (error) {
+        if (error instanceof RetryableIndexerGapError) {
+          this.logDeferredBlock(error, chainHeight);
+          break;
+        }
+        throw error;
+      }
       await this.db.setSyncState(syncStateKey, (index + 1).toString());
     }
   }
@@ -437,13 +471,26 @@ export class IndexerService {
       }
 
       const target = Math.min(chainHeight, cursor + this.config.INDEXER_BATCH_SIZE - 1);
+      let indexedUntil = cursor - 1;
 
       for (let index = cursor; index <= target; index += 1) {
-        await this.indexBlock(index, trackedHashes);
+        try {
+          await this.indexBlock(index, trackedHashes);
+          this.lastDeferredBlockLog = null;
+        } catch (error) {
+          if (error instanceof RetryableIndexerGapError) {
+            this.logDeferredBlock(error, chainHeight);
+            break;
+          }
+          throw error;
+        }
         await this.db.setSyncState(syncStateKey, (index + 1).toString());
+        indexedUntil = index;
       }
 
-      this.log.info({ cursor: target + 1, chainHeight }, "Indexed blocks");
+      if (indexedUntil >= cursor) {
+        this.log.info({ cursor: indexedUntil + 1, chainHeight }, "Indexed blocks");
+      }
     } catch (error) {
       this.log.error({ err: error }, "Indexer tick failed");
     } finally {
@@ -476,8 +523,46 @@ export class IndexerService {
     return tracked;
   }
 
+  private logDeferredBlock(error: RetryableIndexerGapError, chainHeight: number): void {
+    const now = Date.now();
+    const shouldLog = !this.lastDeferredBlockLog
+      || this.lastDeferredBlockLog.blockIndex !== error.blockIndex
+      || this.lastDeferredBlockLog.message !== error.message
+      || now - this.lastDeferredBlockLog.at >= 30_000;
+
+    if (shouldLog) {
+      this.log.info(
+        {
+          blockIndex: error.blockIndex,
+          chainHeight,
+          rpcUrl: this.rpc.getActiveRpcUrl(),
+          reason: error.message,
+        },
+        "Indexer deferred block until RPC catches up",
+      );
+    }
+
+    this.lastDeferredBlockLog = {
+      blockIndex: error.blockIndex,
+      message: error.message,
+      at: now,
+    };
+  }
+
   private async indexBlock(blockIndex: number, trackedHashes: Set<string>): Promise<void> {
-    const block = (await this.rpc.getBlock(blockIndex, true)) as RawBlock;
+    let block: RawBlock;
+    try {
+      block = (await this.rpc.getBlock(blockIndex, true)) as RawBlock;
+    } catch (error) {
+      if (isRetryableIndexerRpcGap(error)) {
+        throw new RetryableIndexerGapError(
+          blockIndex,
+          `Block ${blockIndex} is not available yet on ${this.rpc.getActiveRpcUrl()}`,
+        );
+      }
+      throw error;
+    }
+
     const txids = (block.tx ?? [])
       .map((tx) => (typeof tx === "string" ? tx : tx.hash ?? tx.txid ?? ""))
       .filter((value) => value.length > 0);
@@ -493,7 +578,19 @@ export class IndexerService {
     blockTime: number | undefined,
     trackedHashes: Set<string>,
   ): Promise<void> {
-    const appLog = (await this.rpc.getApplicationLog(txid)) as RawAppLog;
+    let appLog: RawAppLog;
+    try {
+      appLog = (await this.rpc.getApplicationLog(txid)) as RawAppLog;
+    } catch (error) {
+      if (isRetryableIndexerRpcGap(error)) {
+        throw new RetryableIndexerGapError(
+          blockIndex,
+          `Application log for ${txid} in block ${blockIndex} is not available yet on ${this.rpc.getActiveRpcUrl()}`,
+        );
+      }
+      throw error;
+    }
+
     const notifications = (appLog.executions ?? []).flatMap((execution) => execution.notifications ?? []);
     const matched = notifications.filter((notification) => trackedHashes.has(normalizeHash(notification.contract)));
 

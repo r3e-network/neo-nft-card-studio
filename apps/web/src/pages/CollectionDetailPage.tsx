@@ -5,15 +5,14 @@ import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollection, fetchCollectionTokens, fetchGhostMarketMeta, fetchMarketListings, uploadToNeoFs } from "../lib/api";
+import { getCollectionClient, resolveCollectionContractHash } from "../lib/collection-client";
 import { toUserErrorMessage } from "../lib/errors";
 import {
-  isZeroUInt160Hash,
   parseGasAmountToInteger,
   shortHash,
   type TokenSaleState,
 } from "../lib/marketplace";
 import { setPendingMarketState } from "../lib/pending-market";
-import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, GhostMarketMetaDto, TokenDto } from "../lib/types";
 import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
@@ -27,24 +26,6 @@ interface MintFormState {
   description: string;
   file: File | null;
   tokenClass: "standard" | "membership" | "checkin_proof";
-}
-
-function resolveCollectionContractHash(collection: CollectionDto): string | null {
-  if (!collection.contractHash) {
-    return null;
-  }
-
-  const trimmed = collection.contractHash.trim();
-  if (!trimmed || isZeroUInt160Hash(trimmed)) {
-    return null;
-  }
-
-  return trimmed;
-}
-
-function getCollectionClient(collection: CollectionDto) {
-  const dedicatedHash = resolveCollectionContractHash(collection);
-  return dedicatedHash ? getNftClientForHash(dedicatedHash) : getPlatformClient();
 }
 
 function buildMintProperties(name: string, description: string, imageUri: string): string {
@@ -89,6 +70,14 @@ export function CollectionDetailPage() {
   const isCsharp = contractDialect === "csharp";
   const isDedicatedCollection = collection ? resolveCollectionContractHash(collection) !== null : false;
   const ownerCount = useMemo(() => new Set(tokens.map((token) => token.owner).filter((owner) => owner.length > 0)).size, [tokens]);
+  const requireWalletAddress = (): string | null => {
+    const nextAddress = wallet.address?.trim() || null;
+    if (!nextAddress) {
+      setError(t("app.err_connect_wallet_first"));
+      return null;
+    }
+    return nextAddress;
+  };
 
   useEffect(() => {
     setMintForm((prev) => ({ ...prev, to: wallet.address ?? "" }));
@@ -280,8 +269,8 @@ export function CollectionDetailPage() {
 
   const onMintToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!wallet.address) {
-      setError("Connect wallet first.");
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
       return;
     }
 
@@ -306,7 +295,12 @@ export function CollectionDetailPage() {
     }
 
     if (!isCsharp) {
-      setError("Mint from collection page currently supports C# contract mode only.");
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    if (!walletCanManageCollection) {
+      setError(t("app.err_collection_manage_permission_required"));
       return;
     }
 
@@ -339,7 +333,7 @@ export function CollectionDetailPage() {
       );
 
       setMessage(`Mint transaction submitted: ${txid}`);
-      setMintForm({ to: wallet.address ?? "", name: "", description: "", file: null, tokenClass: "standard" });
+      setMintForm({ to: connectedAddress, name: "", description: "", file: null, tokenClass: "standard" });
       scheduleReloadCollection();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
@@ -350,6 +344,27 @@ export function CollectionDetailPage() {
 
   const onListToken = async (token: TokenDto) => {
     if (!collection) {
+      return;
+    }
+
+    if (!isCsharp) {
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
+      return;
+    }
+
+    if (token.owner !== connectedAddress) {
+      setError(t("app.err_token_owner_required"));
+      return;
+    }
+
+    const sale = salesByTokenId[token.tokenId];
+    if (sale?.listed) {
+      setError(t("app.err_token_already_listed"));
       return;
     }
 
@@ -375,10 +390,10 @@ export function CollectionDetailPage() {
       const nowIso = new Date().toISOString();
       setPendingMarketState({
         tokenId: token.tokenId,
-        owner: wallet.address ?? token.owner,
+        owner: connectedAddress,
         sale: {
           listed: true,
-          seller: wallet.address ?? token.owner,
+          seller: connectedAddress,
           price,
           listedAt: nowIso,
           updatedAt: nowIso,
@@ -388,7 +403,7 @@ export function CollectionDetailPage() {
         ...prev,
         [token.tokenId]: {
           listed: true,
-          seller: wallet.address ?? token.owner,
+          seller: connectedAddress,
           price,
           listedAt: nowIso,
         },
@@ -403,6 +418,27 @@ export function CollectionDetailPage() {
 
   const onCancelListing = async (token: TokenDto) => {
     if (!collection) {
+      return;
+    }
+
+    if (!isCsharp) {
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
+      return;
+    }
+
+    if (token.owner !== connectedAddress) {
+      setError(t("app.err_token_owner_required"));
+      return;
+    }
+
+    const sale = salesByTokenId[token.tokenId];
+    if (!sale?.listed) {
+      setError(t("app.err_token_not_listed"));
       return;
     }
 
@@ -448,6 +484,27 @@ export function CollectionDetailPage() {
       return;
     }
 
+    if (!isCsharp) {
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
+      return;
+    }
+
+    const sale = salesByTokenId[token.tokenId];
+    if (!sale?.listed) {
+      setError(t("app.err_token_not_listed"));
+      return;
+    }
+
+    if (token.owner === connectedAddress) {
+      setError(t("app.err_cannot_buy_own_token"));
+      return;
+    }
+
     setActionTokenId(token.tokenId);
     setError("");
     setMessage("");
@@ -457,29 +514,26 @@ export function CollectionDetailPage() {
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: token.tokenId }));
       setMessage(`Purchase transaction submitted: ${txid}`);
-      const buyerAddress = wallet.address;
-      if (buyerAddress) {
-        const nowIso = new Date().toISOString();
-        setPendingMarketState({
-          tokenId: token.tokenId,
-          owner: buyerAddress,
-          sale: {
-            listed: false,
-            seller: "",
-            price: "0",
-            listedAt: "",
-            updatedAt: nowIso,
-          },
-        });
-        setTokens((prev) => prev.map((entry) => (
-          entry.tokenId === token.tokenId
-            ? {
-                ...entry,
-                owner: buyerAddress,
-              }
-            : entry
-        )));
-      }
+      const nowIso = new Date().toISOString();
+      setPendingMarketState({
+        tokenId: token.tokenId,
+        owner: connectedAddress,
+        sale: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+          updatedAt: nowIso,
+        },
+      });
+      setTokens((prev) => prev.map((entry) => (
+        entry.tokenId === token.tokenId
+          ? {
+              ...entry,
+              owner: connectedAddress,
+            }
+          : entry
+      )));
       setSalesByTokenId((prev) => ({
         ...prev,
         [token.tokenId]: {

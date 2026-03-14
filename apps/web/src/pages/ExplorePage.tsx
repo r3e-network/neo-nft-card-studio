@@ -5,31 +5,13 @@ import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchMarketListings } from "../lib/api";
+import { getCollectionClient } from "../lib/collection-client";
 import { toUserErrorMessage } from "../lib/errors";
-import { formatGasAmount, isZeroUInt160Hash, shortHash, tokenSerial } from "../lib/marketplace";
+import { formatGasAmount, shortHash, tokenSerial } from "../lib/marketplace";
 import { buildNftFallbackImage, parseTokenProperties, pickTokenMediaUri } from "../lib/nft-media";
 import { mergePendingMarketState, setPendingMarketState } from "../lib/pending-market";
-import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
-import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
-
-function resolveCollectionContractHash(collection: CollectionDto): string | null {
-  if (!collection.contractHash) {
-    return null;
-  }
-
-  const trimmed = collection.contractHash.trim();
-  if (!trimmed || isZeroUInt160Hash(trimmed)) {
-    return null;
-  }
-
-  return trimmed;
-}
-
-function getCollectionClient(collection: CollectionDto) {
-  const dedicatedHash = resolveCollectionContractHash(collection);
-  return dedicatedHash ? getNftClientForHash(dedicatedHash) : getPlatformClient();
-}
+import type { MarketListingDto } from "../lib/types";
 
 export function ExplorePage() {
   const wallet = useWallet();
@@ -46,6 +28,14 @@ export function ExplorePage() {
 
   const query = searchParams.get("search") || "";
   const isCsharp = contractDialect === "csharp";
+  const requireWalletAddress = (): string | null => {
+    const nextAddress = wallet.address?.trim() || null;
+    if (!nextAddress) {
+      setError(t("app.err_connect_wallet_first"));
+      return null;
+    }
+    return nextAddress;
+  };
 
   const reloadMarket = useCallback(async () => {
     setLoading(true);
@@ -124,7 +114,23 @@ export function ExplorePage() {
   }, [cards, query, activeTab]);
 
   const onBuyToken = async (card: MarketListingDto) => {
-    if (!isCsharp || !card.sale.listed) {
+    if (!isCsharp) {
+      setError(t("app.err_marketplace_csharp_required"));
+      return;
+    }
+
+    const connectedAddress = requireWalletAddress();
+    if (!connectedAddress) {
+      return;
+    }
+
+    if (!card.sale.listed) {
+      setError(t("app.err_token_not_listed"));
+      return;
+    }
+
+    if (connectedAddress === card.token.owner) {
+      setError(t("app.err_cannot_buy_own_token"));
       return;
     }
 
@@ -135,42 +141,39 @@ export function ExplorePage() {
       await wallet.sync();
       const client = getCollectionClient(card.collection);
       await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: card.token.tokenId }));
-      const buyerAddress = wallet.address;
-      if (buyerAddress) {
-        const nowIso = new Date().toISOString();
-        setPendingMarketState({
-          tokenId: card.token.tokenId,
-          owner: buyerAddress,
+      const nowIso = new Date().toISOString();
+      setPendingMarketState({
+        tokenId: card.token.tokenId,
+        owner: connectedAddress,
+        sale: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+          updatedAt: nowIso,
+        },
+      });
+      setCards((prev) => prev.map((entry) => {
+        if (entry.token.tokenId !== card.token.tokenId) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          token: {
+            ...entry.token,
+            owner: connectedAddress,
+          },
           sale: {
+            ...entry.sale,
             listed: false,
             seller: "",
             price: "0",
             listedAt: "",
             updatedAt: nowIso,
           },
-        });
-        setCards((prev) => prev.map((entry) => {
-          if (entry.token.tokenId !== card.token.tokenId) {
-            return entry;
-          }
-
-          return {
-            ...entry,
-            token: {
-              ...entry.token,
-              owner: buyerAddress,
-            },
-            sale: {
-              ...entry.sale,
-              listed: false,
-              seller: "",
-              price: "0",
-              listedAt: "",
-              updatedAt: nowIso,
-            },
-          };
-        }));
-      }
+        };
+      }));
       scheduleReloadMarket();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
