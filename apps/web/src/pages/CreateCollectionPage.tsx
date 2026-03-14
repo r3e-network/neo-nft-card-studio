@@ -130,7 +130,7 @@ export function CreateCollectionPage() {
           transferable: form.transferable,
         },
       }).catch(() => null);
-      setResult(`Collection Launched! Transaction Hash: ${txid}`);
+      setResult(`Collection transaction submitted. Transaction Hash: ${txid}`);
       setStep(3);
     } catch (err) {
       setError(toUserErrorMessage(t, err));
@@ -354,9 +354,9 @@ export function CreateCollectionPage() {
           }}>
             <Check size={48} color="#fff" />
           </div>
-          <h2 style={{ fontSize: "2.2rem", fontWeight: 800, marginBottom: "1rem" }}>Collection Launched!</h2>
+          <h2 style={{ fontSize: "2.2rem", fontWeight: 800, marginBottom: "1rem" }}>Collection Transaction Submitted</h2>
           <p style={{ fontSize: "1.1rem", color: "#8A939B", marginBottom: "2rem", maxWidth: "500px", margin: "0 auto 2rem" }}>
-            Your collection has been successfully deployed to the Neo N3 network. It may take a few seconds for the indexer to process your transaction.
+            Your collection creation transaction has been submitted to Neo N3. Wait for wallet/network confirmation and a short indexing delay before expecting it to appear everywhere in the app.
           </p>
           <div className="panel" style={{ background: "rgba(255,255,255,0.02)", marginBottom: "3rem", padding: "1.5rem" }}>
             <p className="hint" style={{ fontSize: "0.85rem", wordBreak: "break-all" }}>{result}</p>

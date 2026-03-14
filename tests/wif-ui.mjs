@@ -106,7 +106,7 @@ async function run() {
   try {
      // Wait for either the success message OR an error message in the DOM
      await Promise.race([
-        page.waitForSelector('text="Collection Launched!"', { timeout: 45000 }),
+        page.waitForSelector('text="Collection Transaction Submitted"', { timeout: 45000 }),
         page.waitForSelector('.error', { timeout: 45000 }).then(async (el) => {
            if (el) throw new Error("UI Error popped up: " + await el.innerText());
         })
@@ -115,7 +115,7 @@ async function run() {
      console.error("Failed to launch collection: " + e.message);
      process.exit(1);
   }
-  console.log("Collection successfully deployed!");
+  console.log("Collection transaction submitted.");
 
   // Wait a few seconds for indexer to catch up
   console.log("Waiting 30s for NeoFS and GraphQL indexer to synchronize...");
@@ -167,7 +167,7 @@ async function run() {
   console.log("Waiting for Mint transaction confirmation...");
   try {
      await Promise.race([
-        page.waitForSelector('text="Item Minted!"', { timeout: 45000 }),
+        page.waitForSelector('text="Mint Transaction Submitted"', { timeout: 45000 }),
         page.waitForSelector('.error', { timeout: 45000 }).then(async (el) => {
            if (el) throw new Error("UI Error popped up: " + await el.innerText());
         })
@@ -176,7 +176,7 @@ async function run() {
      console.error("Failed to mint NFT: " + e.message);
      process.exit(1);
   }
-  console.log("NFT successfully minted!");
+  console.log("Mint transaction submitted.");
 
   // 7. Verify connected state survives cross-page navigation and reloads
   console.log("Checking connected state on Portfolio route...");

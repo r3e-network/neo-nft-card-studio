@@ -161,7 +161,7 @@ export function MintNftPage() {
       );
 
       const txid = await wallet.invoke(payload);
-      setResult(`Success! Transaction Hash: ${txid}`);
+      setResult(`Mint transaction submitted. Transaction Hash: ${txid}`);
       setStep(3);
     } catch (err) {
       setError(toUserErrorMessage(t, err));
@@ -408,9 +408,9 @@ export function MintNftPage() {
           }}>
             <Check size={48} color="#fff" />
           </div>
-          <h2 style={{ fontSize: "2.2rem", fontWeight: 800, marginBottom: "1rem" }}>Item Minted!</h2>
+          <h2 style={{ fontSize: "2.2rem", fontWeight: 800, marginBottom: "1rem" }}>Mint Transaction Submitted</h2>
           <p style={{ fontSize: "1.1rem", color: "#8A939B", marginBottom: "2rem", maxWidth: "500px", margin: "0 auto 2rem" }}>
-            Your NFT has been successfully minted and uploaded to NeoFS. You can now view it in your portfolio or list it for sale.
+            Your media has been uploaded to NeoFS and the mint transaction has been submitted. Wait for chain confirmation and indexing before expecting the NFT to appear everywhere.
           </p>
           <div className="panel" style={{ background: "rgba(255,255,255,0.02)", marginBottom: "3rem", padding: "1.5rem" }}>
             <p className="hint" style={{ fontSize: "0.85rem", wordBreak: "break-all" }}>{result}</p>
