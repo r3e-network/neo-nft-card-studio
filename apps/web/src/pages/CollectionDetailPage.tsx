@@ -26,6 +26,7 @@ interface MintFormState {
   name: string;
   description: string;
   file: File | null;
+  tokenClass: "standard" | "membership" | "checkin_proof";
 }
 
 function resolveCollectionContractHash(collection: CollectionDto): string | null {
@@ -78,6 +79,7 @@ export function CollectionDetailPage() {
     name: "",
     description: "",
     file: null,
+    tokenClass: "standard",
   });
   const requestSequenceRef = useRef(0);
   const reloadTimerRef = useRef<number | null>(null);
@@ -265,6 +267,12 @@ export function CollectionDetailPage() {
       const upload = await uploadToNeoFs(mintForm.file);
       const tokenUri = upload.uri;
       const propertiesJson = buildMintProperties(mintForm.name || `#${collection.minted}`, mintForm.description, tokenUri);
+      const tokenClassValue =
+        mintForm.tokenClass === "standard"
+          ? 0
+          : mintForm.tokenClass === "membership"
+            ? 1
+            : 2;
 
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(
@@ -273,11 +281,12 @@ export function CollectionDetailPage() {
           to: mintForm.to.trim(),
           tokenUri,
           propertiesJson,
+          tokenClass: tokenClassValue,
         }),
       );
 
       setMessage(`Mint submitted: ${txid}`);
-      setMintForm({ to: wallet.address ?? "", name: "", description: "", file: null });
+      setMintForm({ to: wallet.address ?? "", name: "", description: "", file: null, tokenClass: "standard" });
       scheduleReloadCollection();
     } catch (err) {
       setError(toUserErrorMessage(t, err));
@@ -608,6 +617,23 @@ export function CollectionDetailPage() {
                   placeholder="Describe your NFT..."
                   value={mintForm.description}
                 />
+              </label>
+
+              <label className="full">
+                NFT Type
+                <select
+                  value={mintForm.tokenClass}
+                  onChange={(event) => setMintForm((prev) => ({
+                    ...prev,
+                    tokenClass: event.target.value as "standard" | "membership" | "checkin_proof",
+                  }))}
+                  style={{ height: "55px", background: "rgba(255,255,255,0.02)", borderRadius: "12px" }}
+                >
+                  <option value="standard">Standard (tokenClass 0)</option>
+                  <option value="membership">Membership (tokenClass 1)</option>
+                  <option value="checkin_proof">Check-In Proof (tokenClass 2)</option>
+                </select>
+                <p className="hint">Choose the on-chain token class to mint for this collection.</p>
               </label>
 
               <label className="full">
