@@ -18,6 +18,8 @@ async function run() {
   const testWif = readRequiredWif();
   const configuredBaseUrl = process.env.WIF_UI_BASE_URL?.trim();
   const baseUrl = configuredBaseUrl || "http://127.0.0.1:5173/";
+  const collectionName = `Playwright E2E Collection ${Date.now()}`;
+  const collectionSymbol = `E${Date.now().toString().slice(-3)}`;
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -84,8 +86,8 @@ async function run() {
   await page.getByRole("button", { name: /continue/i }).click();
 
   console.log("Filling out collection details...");
-  await page.getByLabel(/Collection Name/i).fill("Playwright E2E Collection");
-  await page.getByLabel(/Symbol/i).fill("E2E");
+  await page.getByLabel(/Collection Name/i).fill(collectionName);
+  await page.getByLabel(/Symbol/i).fill(collectionSymbol);
   await page.getByLabel(/Description/i).fill("Test collection created by playwright");
   
   // Upload logo
@@ -129,7 +131,7 @@ async function run() {
      try {
         const options = await page.locator('select').first().locator('option').allInnerTexts();
         console.log("Available options in dropdown: ", options);
-        match = options.find(o => o.includes("Playwright E2E Collection"));
+        match = options.find(o => o.includes(collectionName));
         if (match) break;
      } catch(e) {}
      console.log("Not found yet, reloading page and waiting 5s...");
@@ -259,7 +261,7 @@ async function run() {
   await createdMintLink.click();
   await page.waitForURL(/\/mint\?collectionId=/, { timeout: 30000 });
   const selectedOptionLabel = await page.locator("select").first().locator("option:checked").innerText();
-  if (!selectedOptionLabel.includes("Playwright E2E Collection")) {
+  if (!selectedOptionLabel.includes(collectionName)) {
     throw new Error(`Mint page did not preserve selected collection context. Selected option: ${selectedOptionLabel}`);
   }
   console.log("Mint Item handoff preserved selected collection.");
