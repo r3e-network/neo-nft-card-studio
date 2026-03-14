@@ -11,6 +11,7 @@ import { getPlatformClient, getNftClientForHash } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import { getRuntimeNetworkConfig } from "../lib/runtime-network";
 import type { CollectionDto } from "../lib/types";
+import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
 
 const ZERO_UINT160_HASH = "0x0000000000000000000000000000000000000000";
 
@@ -102,6 +103,7 @@ export function MintNftPage() {
     if (!wallet.address) return setError(t("mint.err_connect"));
     if (!selectedCollectionId) return setError("Please select a collection first.");
     if (!file) return setError("An image or media file is required to mint.");
+    if (isFileTooLarge(file)) return setError(getUploadTooLargeMessage());
 
     const collection = collections.find(c => c.collectionId === selectedCollectionId);
     if (!collection) return setError("Invalid collection.");
@@ -247,10 +249,25 @@ export function MintNftPage() {
                       <div className="stack-sm flex-center">
                         <ImagePlus size={48} color="#8A939B" />
                         <span style={{ fontWeight: 600, fontSize: "1.1rem" }}>Drag and drop or click to upload</span>
-                        <span style={{ color: "#8A939B", fontSize: "0.85rem" }}>Supports JPG, PNG, GIF, SVG, MP4, WEBM. Max 100MB.</span>
+                        <span style={{ color: "#8A939B", fontSize: "0.85rem" }}>Supports JPG, PNG, GIF, SVG, MP4, WEBM. Max {NEOFS_UPLOAD_MAX_MB}MB.</span>
                       </div>
                     )}
-                    <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const nextFile = e.target.files?.[0] || null;
+                        if (isFileTooLarge(nextFile)) {
+                          setError(getUploadTooLargeMessage());
+                          setFile(null);
+                          e.currentTarget.value = "";
+                          return;
+                        }
+                        setError("");
+                        setFile(nextFile);
+                      }}
+                    />
                   </div>
                 </div>
 

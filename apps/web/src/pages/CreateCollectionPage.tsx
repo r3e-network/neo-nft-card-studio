@@ -9,6 +9,7 @@ import { toUserErrorMessage } from "../lib/errors";
 import { cachePendingCollectionFromTx } from "../lib/pending-collections";
 import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
+import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
 
 interface FormState {
   mode: "shared" | "dedicated";
@@ -62,6 +63,11 @@ export function CreateCollectionPage() {
 
     if (!form.name || !form.symbol) {
       setError("Name and symbol are required.");
+      return;
+    }
+
+    if (isFileTooLarge(file)) {
+      setError(getUploadTooLargeMessage());
       return;
     }
 
@@ -258,10 +264,25 @@ export function CreateCollectionPage() {
                       <div className="stack-sm flex-center">
                         <UploadCloud size={32} color="#8A939B" />
                         <span style={{ fontWeight: 600 }}>Upload logo</span>
-                        <span style={{ color: "#8A939B", fontSize: "0.85rem" }}>Recommended size: 350 x 350. Max 20MB.</span>
+                        <span style={{ color: "#8A939B", fontSize: "0.85rem" }}>Recommended size: 350 x 350. Max {NEOFS_UPLOAD_MAX_MB}MB.</span>
                       </div>
                     )}
-                    <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const nextFile = e.target.files?.[0] || null;
+                        if (isFileTooLarge(nextFile)) {
+                          setError(getUploadTooLargeMessage());
+                          setFile(null);
+                          e.currentTarget.value = "";
+                          return;
+                        }
+                        setError("");
+                        setFile(nextFile);
+                      }}
+                    />
                   </div>
                 </div>
 

@@ -16,6 +16,7 @@ import { setPendingMarketState } from "../lib/pending-market";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, GhostMarketMetaDto, TokenDto } from "../lib/types";
+import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
 
 import { NFTGrid } from "../components/nft/NFTGrid";
 import { StatusMessage } from "../components/common/StatusMessage";
@@ -241,6 +242,11 @@ export function CollectionDetailPage() {
 
     if (!mintForm.file) {
       setError("Upload media file before mint.");
+      return;
+    }
+
+    if (isFileTooLarge(mintForm.file)) {
+      setError(getUploadTooLargeMessage());
       return;
     }
 
@@ -607,14 +613,24 @@ export function CollectionDetailPage() {
               <label className="full">
                 Media File
                 <div className="upload-area" style={{ padding: "3rem" }}>
-                   <input
+                  <input
                     required
                     accept="image/*,video/*"
-                    onChange={(event) => setMintForm((prev) => ({ ...prev, file: event.target.files?.[0] ?? null }))}
+                    onChange={(event) => {
+                      const nextFile = event.target.files?.[0] ?? null;
+                      if (isFileTooLarge(nextFile)) {
+                        setError(getUploadTooLargeMessage());
+                        setMintForm((prev) => ({ ...prev, file: null }));
+                        event.currentTarget.value = "";
+                        return;
+                      }
+                      setError("");
+                      setMintForm((prev) => ({ ...prev, file: nextFile }));
+                    }}
                     type="file"
                     style={{ marginTop: 0 }}
                   />
-                  <p className="hint" style={{ marginTop: "1rem" }}>PNG, JPG, GIF, MP4 (Max 20MB). Uploaded to NeoFS.</p>
+                  <p className="hint" style={{ marginTop: "1rem" }}>PNG, JPG, GIF, MP4 (Max {NEOFS_UPLOAD_MAX_MB}MB). Uploaded to NeoFS.</p>
                 </div>
               </label>
 
