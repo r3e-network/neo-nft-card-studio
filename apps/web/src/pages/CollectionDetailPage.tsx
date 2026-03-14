@@ -338,7 +338,7 @@ export function CollectionDetailPage() {
         }),
       );
 
-      setMessage(`Mint submitted: ${txid}`);
+      setMessage(`Mint transaction submitted: ${txid}`);
       setMintForm({ to: wallet.address ?? "", name: "", description: "", file: null, tokenClass: "standard" });
       scheduleReloadCollection();
     } catch (err) {
@@ -371,7 +371,7 @@ export function CollectionDetailPage() {
       await wallet.sync();
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
-      setMessage(`Listing submitted: ${txid}`);
+      setMessage(`Listing transaction submitted: ${txid}`);
       const nowIso = new Date().toISOString();
       setPendingMarketState({
         tokenId: token.tokenId,
@@ -414,7 +414,7 @@ export function CollectionDetailPage() {
       await wallet.sync();
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
-      setMessage(`Listing canceled: ${txid}`);
+      setMessage(`Cancel listing transaction submitted: ${txid}`);
       setPendingMarketState({
         tokenId: token.tokenId,
         owner: token.owner,
@@ -456,7 +456,7 @@ export function CollectionDetailPage() {
       await wallet.sync();
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: token.tokenId }));
-      setMessage(`Purchase submitted: ${txid}`);
+      setMessage(`Purchase transaction submitted: ${txid}`);
       const buyerAddress = wallet.address;
       if (buyerAddress) {
         const nowIso = new Date().toISOString();

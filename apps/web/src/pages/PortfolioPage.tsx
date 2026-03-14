@@ -121,7 +121,7 @@ export function PortfolioPage() {
       await wallet.sync();
       const client = getCollectionClient(listing.collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
-      setMessage(`Listing submitted: ${txid}`);
+      setMessage(`Listing transaction submitted: ${txid}`);
       const nowIso = new Date().toISOString();
       setPendingMarketState({
         tokenId: token.tokenId,
@@ -171,7 +171,7 @@ export function PortfolioPage() {
       await wallet.sync();
       const client = getCollectionClient(listing.collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
-      setMessage(`Listing canceled: ${txid}`);
+      setMessage(`Cancel listing transaction submitted: ${txid}`);
       const nowIso = new Date().toISOString();
       setPendingMarketState({
         tokenId: token.tokenId,
