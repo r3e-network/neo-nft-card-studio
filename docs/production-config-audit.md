@@ -37,6 +37,7 @@ Audit scope:
 2. Keep `outputDirectory` as `apps/web/dist`.
 3. Add a private-network cron only if you actually run a private deployment that needs scheduled indexing.
 4. Keep the Vercel CLI out of project dependencies unless you intentionally want it installed with the app dependencies.
+5. Use `NEO_ENABLED_NETWORKS` when a deployment should intentionally serve only a subset of networks.
 
 ## 2. Supabase Audit
 
@@ -47,6 +48,7 @@ Audit scope:
 
 Additional server variables as needed:
 
+- `NEO_ENABLED_NETWORKS`
 - `NEO_DEFAULT_NETWORK`
 - `NEO_RPC_URL*`
 - `NEO_CONTRACT_HASH*`
@@ -117,6 +119,7 @@ Wallet diagnostics in [apps/web/src/lib/neoline.ts](/Users/jinghuiliao/git/NFT/a
 
 Set these in Vercel project env:
 
+- `NEO_ENABLED_NETWORKS`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEO_DEFAULT_NETWORK`
@@ -194,6 +197,7 @@ NEO_TEST_WIF=... npm run test:wif-ui
 4. Confirm Vercel is building the intended commit, not an older one.
 5. Confirm `VITE_WALLET_DEBUG` is blank in production unless actively debugging.
 6. Confirm only server-side Vercel env holds Supabase service credentials.
+7. Set `NEO_ENABLED_NETWORKS` explicitly when the deployment should not expose all built-in network profiles.
 
 ## 7. GitHub Actions Recommendation
 

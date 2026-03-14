@@ -82,6 +82,7 @@ const configSchema = z.object({
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().default(8080),
   API_CORS_ORIGIN: z.string().default(""),
+  NEO_ENABLED_NETWORKS: optionalStringFromEnv,
   NEO_DEFAULT_NETWORK: z.enum(["mainnet", "testnet", "private"]).default("testnet"),
   DB_FILE: z.string().default(DEFAULT_DB_FILE),
   DB_FILE_MAINNET: optionalStringFromEnv,
@@ -318,9 +319,40 @@ function resolveNetworkConfig(config: RawAppConfig, network: ApiNetworkName): Ap
   };
 }
 
+function resolveEnabledNetworks(config: RawAppConfig): ApiNetworkName[] {
+  const raw = normalizeOptional(config.NEO_ENABLED_NETWORKS);
+  if (!raw) {
+    return API_NETWORKS;
+  }
+
+  const requested = raw
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+
+  if (requested.length === 0) {
+    return API_NETWORKS;
+  }
+
+  const invalid = requested.filter((entry) => !API_NETWORKS.includes(entry as ApiNetworkName));
+  if (invalid.length > 0) {
+    throw new Error(`Invalid NEO_ENABLED_NETWORKS entries: ${invalid.join(", ")}`);
+  }
+
+  const deduped = [...new Set(requested)] as ApiNetworkName[];
+  if (!deduped.includes(config.NEO_DEFAULT_NETWORK)) {
+    throw new Error(
+      `NEO_DEFAULT_NETWORK=${config.NEO_DEFAULT_NETWORK} must be included in NEO_ENABLED_NETWORKS=${raw}`,
+    );
+  }
+
+  return deduped;
+}
+
 function resolveNetworks(config: RawAppConfig): Partial<Record<ApiNetworkName, ApiNetworkConfig>> {
+  const enabledNetworks = resolveEnabledNetworks(config);
   const networks: Partial<Record<ApiNetworkName, ApiNetworkConfig>> = {};
-  for (const network of API_NETWORKS) {
+  for (const network of enabledNetworks) {
     const resolved = resolveNetworkConfig(config, network);
     if (resolved) {
       networks[network] = resolved;

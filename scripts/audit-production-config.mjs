@@ -79,6 +79,7 @@ if (cronPaths.length === 0) {
 }
 
 const recommendedServerVars = [
+  "NEO_ENABLED_NETWORKS",
   "NEO_DEFAULT_NETWORK",
   "NEO_RPC_URL",
   "NEO_RPC_URL_MAINNET",
@@ -130,6 +131,12 @@ for (const requiredKey of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "VITE_AP
   if (!envKeys.has(requiredKey)) {
     warnings.push(`.env.example is missing ${requiredKey}`);
   }
+}
+
+if (!envKeys.has("NEO_ENABLED_NETWORKS")) {
+  warnings.push(".env.example is missing NEO_ENABLED_NETWORKS");
+} else {
+  findings.push(".env.example includes NEO_ENABLED_NETWORKS for deployment-scoped network selection");
 }
 
 if (!envKeys.has("VITE_WALLET_DEBUG")) {

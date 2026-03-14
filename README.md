@@ -57,6 +57,7 @@ cp .env.example .env
 ```
 
 关键项：
+- `NEO_ENABLED_NETWORKS`: 可选，限制当前 API 实例启用的网络集合，例如 `testnet` 或 `mainnet,testnet`
 - `NEO_CONTRACT_DIALECT`: `csharp | solidity | rust`
 - `VITE_CONTRACT_DIALECT`: 前端方言，需与后端一致
 - 所有 `*_CONTRACT_HASH*` 必须是 20-byte 十六进制脚本哈希（40 hex，可带 `0x`/`0X` 前缀；系统会归一化为小写 `0x...`）
