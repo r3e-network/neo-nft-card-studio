@@ -57,7 +57,7 @@ wait_for_url() {
 
 trap cleanup EXIT INT TERM
 
-npm run dev:api > api.log 2>&1 &
+NEO_ENABLED_NETWORKS=testnet INDEXER_ENABLE_EVENTS=false npm run dev:api > api.log 2>&1 &
 API_PID=$!
 npm run dev:web > web.log 2>&1 &
 WEB_PID=$!

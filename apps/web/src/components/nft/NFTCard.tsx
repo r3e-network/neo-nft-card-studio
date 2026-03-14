@@ -1,7 +1,7 @@
 import { ShoppingCart } from "lucide-react";
 import type { TokenDto } from "../../lib/types";
 import { parseTokenProperties, pickTokenMediaUri, buildNftFallbackImage } from "../../lib/nft-media";
-import { formatGasAmount, tokenSerial, type TokenSaleState } from "../../lib/marketplace";
+import { formatGasAmount, isValidGasAmountInput, tokenSerial, type TokenSaleState } from "../../lib/marketplace";
 
 interface NFTCardProps {
   token: TokenDto;
@@ -41,6 +41,7 @@ export function NFTCard({
       ? properties.name.trim()
       : `${collectionSymbol} #${tokenSerial(token.tokenId)}`;
   const fallbackImage = buildNftFallbackImage(displayName, token.tokenId, collectionName);
+  const canSubmitListing = isValidGasAmountInput(listPrice);
 
   return (
     <div className="panel nft-card" style={{ padding: 0, overflow: "hidden" }}>
@@ -100,7 +101,7 @@ export function NFTCard({
                   />
                   <button 
                     className="btn" 
-                    disabled={isActing} 
+                    disabled={isActing || !canSubmitListing} 
                     onClick={onList} 
                     type="button" 
                     style={{ width: "100%", borderRadius: "10px", background: "#2081E2" }}

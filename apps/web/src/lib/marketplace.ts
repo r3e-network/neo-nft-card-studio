@@ -101,6 +101,15 @@ export function parseGasAmountToInteger(input: string): string {
   return combined;
 }
 
+export function isValidGasAmountInput(input: string): boolean {
+  try {
+    parseGasAmountToInteger(input);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function toIsoTime(unixSecondsText: string): string {
   const value = Number(unixSecondsText);
   if (!Number.isFinite(value) || value <= 0) {
