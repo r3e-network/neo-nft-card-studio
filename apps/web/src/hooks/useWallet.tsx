@@ -297,6 +297,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     void syncWalletSession(true);
   }, [isReady, syncWalletSession]);
 
+  // Keep the module-level runtime network aligned with React state so
+  // cross-page actions and reloads continue to resolve the correct network.
+  useEffect(() => {
+    setRuntimeWalletNetwork(network);
+  }, [network]);
+
   // 3. Focus Recovery (less frequent)
   useEffect(() => {
     if (!isReady) return;
