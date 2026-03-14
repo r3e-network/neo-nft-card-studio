@@ -275,6 +275,12 @@ npm run audit:production-config
 npm run audit:security
 ```
 
+默认部署运行时合约接口审计（对比本地工件与默认 mainnet/testnet 合约）：
+
+```bash
+npm run audit:runtime-contracts
+```
+
 附加测试网真实交易流（会发交易，覆盖 `create + deploy + mint + configureCheckInProgram + checkIn + transfer + burn`）：
 
 ```bash
