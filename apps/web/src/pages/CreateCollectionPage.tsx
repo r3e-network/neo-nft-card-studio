@@ -6,6 +6,7 @@ import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck, Info, ChevronRigh
 import { useWallet } from "../hooks/useWallet";
 import { uploadToNeoFs } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
+import { cachePendingCollectionFromTx } from "../lib/pending-collections";
 import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 
@@ -110,6 +111,19 @@ export function CreateCollectionPage() {
       if (import.meta.env.DEV) {
         console.log(`SUBMITTED_TXID_FOR_PLAYWRIGHT_E2E=${txid}`);
       }
+      await cachePendingCollectionFromTx({
+        txid,
+        owner: wallet.address,
+        fallback: {
+          name: form.name,
+          symbol: form.symbol,
+          description: form.description,
+          baseUri: neofsUri,
+          maxSupply: form.maxSupply,
+          royaltyBps: Number(form.royaltyBps),
+          transferable: form.transferable,
+        },
+      }).catch(() => null);
       setResult(`Collection Launched! Transaction Hash: ${txid}`);
       setStep(3);
     } catch (err) {

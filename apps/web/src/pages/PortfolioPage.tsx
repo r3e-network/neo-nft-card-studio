@@ -7,6 +7,7 @@ import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, fetchMarketListings } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import { isZeroUInt160Hash, parseGasAmountToInteger, shortHash } from "../lib/marketplace";
+import { mergePendingCollections } from "../lib/pending-collections";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
@@ -68,7 +69,7 @@ export function PortfolioPage() {
         fetchMarketListings({ owner: wallet.address, limit: 500 }),
       ]);
 
-      setCreatedCollections(ownedCollections);
+      setCreatedCollections(mergePendingCollections(ownedCollections, { owner: wallet.address }));
       setCollectedListings(collected.filter((entry) => entry.token.burned !== 1));
     } catch (err) {
       setError(toUserErrorMessage(t, err));

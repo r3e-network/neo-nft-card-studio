@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollections, uploadToNeoFs } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
+import { mergePendingCollections } from "../lib/pending-collections";
 import { getPlatformClient, getNftClientForHash } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import { getRuntimeNetworkConfig } from "../lib/runtime-network";
@@ -52,7 +53,8 @@ export function MintNftPage() {
     fetchCollections()
       .then((res) => {
         if (alive) {
-          const userCols = res.filter((collection) => collection.owner === wallet.address);
+          const mergedCollections = mergePendingCollections(res, { owner: wallet.address ?? undefined });
+          const userCols = mergedCollections.filter((collection) => collection.owner === wallet.address);
           setCollections(userCols);
           setSelectedCollectionId((current) => {
             if (requestedCollectionId && userCols.some((collection) => collection.collectionId === requestedCollectionId)) {
@@ -213,7 +215,7 @@ export function MintNftPage() {
             <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
               <LayoutGrid size={48} color="#8A939B" style={{ marginBottom: "1rem" }} />
               <h3>No collections found</h3>
-              <p className="hint">You need at least one collection to mint an NFT.</p>
+              <p className="hint">You need at least one collection to mint an NFT. Newly created collections can take a short time to index.</p>
               <Link className="btn" to="/collections/new" style={{ marginTop: "1.5rem", background: "#2081E2" }}>Create Collection</Link>
             </div>
           ) : (
