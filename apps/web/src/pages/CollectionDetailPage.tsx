@@ -12,6 +12,7 @@ import {
   shortHash,
   type TokenSaleState,
 } from "../lib/marketplace";
+import { setPendingMarketState } from "../lib/pending-market";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, GhostMarketMetaDto, TokenDto } from "../lib/types";
@@ -303,13 +304,25 @@ export function CollectionDetailPage() {
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing submitted: ${txid}`);
+      const nowIso = new Date().toISOString();
+      setPendingMarketState({
+        tokenId: token.tokenId,
+        owner: wallet.address ?? token.owner,
+        sale: {
+          listed: true,
+          seller: wallet.address ?? token.owner,
+          price,
+          listedAt: nowIso,
+          updatedAt: nowIso,
+        },
+      });
       setSalesByTokenId((prev) => ({
         ...prev,
         [token.tokenId]: {
           listed: true,
           seller: wallet.address ?? token.owner,
           price,
-          listedAt: new Date().toISOString(),
+          listedAt: nowIso,
         },
       }));
       scheduleReloadCollection();
@@ -334,6 +347,17 @@ export function CollectionDetailPage() {
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Listing canceled: ${txid}`);
+      setPendingMarketState({
+        tokenId: token.tokenId,
+        owner: token.owner,
+        sale: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+          updatedAt: new Date().toISOString(),
+        },
+      });
       setSalesByTokenId((prev) => ({
         ...prev,
         [token.tokenId]: {
@@ -367,6 +391,18 @@ export function CollectionDetailPage() {
       setMessage(`Purchase submitted: ${txid}`);
       const buyerAddress = wallet.address;
       if (buyerAddress) {
+        const nowIso = new Date().toISOString();
+        setPendingMarketState({
+          tokenId: token.tokenId,
+          owner: buyerAddress,
+          sale: {
+            listed: false,
+            seller: "",
+            price: "0",
+            listedAt: "",
+            updatedAt: nowIso,
+          },
+        });
         setTokens((prev) => prev.map((entry) => (
           entry.tokenId === token.tokenId
             ? {

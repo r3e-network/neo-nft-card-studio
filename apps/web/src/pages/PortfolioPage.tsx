@@ -8,6 +8,7 @@ import { fetchCollections, fetchMarketListings } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import { isZeroUInt160Hash, parseGasAmountToInteger, shortHash } from "../lib/marketplace";
 import { mergePendingCollections } from "../lib/pending-collections";
+import { mergePendingMarketState, setPendingMarketState } from "../lib/pending-market";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
@@ -70,7 +71,7 @@ export function PortfolioPage() {
       ]);
 
       setCreatedCollections(mergePendingCollections(ownedCollections, { owner: wallet.address }));
-      setCollectedListings(collected.filter((entry) => entry.token.burned !== 1));
+      setCollectedListings(mergePendingMarketState(collected).filter((entry) => entry.token.burned !== 1));
     } catch (err) {
       setError(toUserErrorMessage(t, err));
       setCollectedListings([]);
@@ -121,6 +122,18 @@ export function PortfolioPage() {
       const client = getCollectionClient(listing.collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing submitted: ${txid}`);
+      const nowIso = new Date().toISOString();
+      setPendingMarketState({
+        tokenId: token.tokenId,
+        owner: wallet.address ?? token.owner,
+        sale: {
+          listed: true,
+          seller: wallet.address ?? token.owner,
+          price,
+          listedAt: nowIso,
+          updatedAt: nowIso,
+        },
+      });
       setCollectedListings((prev) => prev.map((entry) => {
         if (entry.token.tokenId !== token.tokenId) {
           return entry;
@@ -133,8 +146,8 @@ export function PortfolioPage() {
             listed: true,
             seller: wallet.address ?? entry.sale.seller,
             price,
-            listedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            listedAt: nowIso,
+            updatedAt: nowIso,
           },
         };
       }));
@@ -159,6 +172,18 @@ export function PortfolioPage() {
       const client = getCollectionClient(listing.collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Listing canceled: ${txid}`);
+      const nowIso = new Date().toISOString();
+      setPendingMarketState({
+        tokenId: token.tokenId,
+        owner: token.owner,
+        sale: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+          updatedAt: nowIso,
+        },
+      });
       setCollectedListings((prev) => prev.map((entry) => {
         if (entry.token.tokenId !== token.tokenId) {
           return entry;
@@ -172,7 +197,7 @@ export function PortfolioPage() {
             seller: "",
             price: "0",
             listedAt: "",
-            updatedAt: new Date().toISOString(),
+            updatedAt: nowIso,
           },
         };
       }));

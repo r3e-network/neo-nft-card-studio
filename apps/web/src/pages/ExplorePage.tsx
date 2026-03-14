@@ -8,6 +8,7 @@ import { fetchMarketListings } from "../lib/api";
 import { toUserErrorMessage } from "../lib/errors";
 import { formatGasAmount, isZeroUInt160Hash, shortHash, tokenSerial } from "../lib/marketplace";
 import { buildNftFallbackImage, parseTokenProperties, pickTokenMediaUri } from "../lib/nft-media";
+import { mergePendingMarketState, setPendingMarketState } from "../lib/pending-market";
 import { getNftClientForHash, getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
@@ -52,7 +53,7 @@ export function ExplorePage() {
 
     try {
       const listings = await fetchMarketListings({ limit: 500 });
-      setCards(listings.filter((entry) => entry.token.burned !== 1));
+      setCards(mergePendingMarketState(listings).filter((entry) => entry.token.burned !== 1));
     } catch (err) {
       setCards([]);
       setError(toUserErrorMessage(t, err));
@@ -136,6 +137,18 @@ export function ExplorePage() {
       await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: card.token.tokenId }));
       const buyerAddress = wallet.address;
       if (buyerAddress) {
+        const nowIso = new Date().toISOString();
+        setPendingMarketState({
+          tokenId: card.token.tokenId,
+          owner: buyerAddress,
+          sale: {
+            listed: false,
+            seller: "",
+            price: "0",
+            listedAt: "",
+            updatedAt: nowIso,
+          },
+        });
         setCards((prev) => prev.map((entry) => {
           if (entry.token.tokenId !== card.token.tokenId) {
             return entry;
@@ -153,7 +166,7 @@ export function ExplorePage() {
               seller: "",
               price: "0",
               listedAt: "",
-              updatedAt: new Date().toISOString(),
+              updatedAt: nowIso,
             },
           };
         }));
