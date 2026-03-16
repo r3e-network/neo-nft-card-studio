@@ -372,17 +372,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
-        let session = address
+        const session = address
           ? await syncWalletSession(true)
           : await syncWalletSession(false);
-
-        const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
-        if (!devWif && session.address) {
-          const liveAccount = await getNeoWalletAccount(true);
-          if (!liveAccount || !isSameWalletAddress(liveAccount.address, session.address)) {
-            session = await syncWalletSession(false);
-          }
-        }
 
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
