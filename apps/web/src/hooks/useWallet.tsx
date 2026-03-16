@@ -7,6 +7,7 @@ import {
   getNeoProvider,
   getNeoWalletAccount,
   getNeoWalletNetwork,
+  getNeoWalletNetworkForAddress,
   invokeNeoWallet,
   type NeoWalletNetwork,
 } from "../lib/neoline";
@@ -197,12 +198,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Single call to get network/account, prioritized by provider
-      const currentNetwork = await getNeoWalletNetwork(silent);
-      const currentAccount = await getNeoWalletAccount(silent);
       const fallbackAddress = address?.trim() || readStoredWalletAddress();
       const fallbackNetwork = network ?? readStoredWalletNetwork();
+      const currentAccount = await getNeoWalletAccount(silent);
       const providerAddress = currentAccount?.address?.trim() || null;
+      // Resolve network after account so the matching provider is preferred.
+      const currentNetwork = await getNeoWalletNetworkForAddress(providerAddress || fallbackAddress, silent);
       const session = resolveWalletSessionSnapshot({
         silent,
         fallbackAddress,

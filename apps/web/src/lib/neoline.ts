@@ -486,6 +486,32 @@ function getCandidateProvidersInPriorityOrder(): NeoLineN3Provider[] {
   });
 }
 
+function prioritizeProvidersByAddress(address: string | null | undefined): NeoLineN3Provider[] {
+  const trimmedAddress = address?.trim() ?? "";
+  const providers = getCandidateProvidersInPriorityOrder();
+  if (!trimmedAddress) {
+    return providers;
+  }
+
+  return providers.sort((left, right) => {
+    const leftMatches = readDirectAccountFromProvider(left)?.address === trimmedAddress;
+    const rightMatches = readDirectAccountFromProvider(right)?.address === trimmedAddress;
+    if (leftMatches && !rightMatches) {
+      return -1;
+    }
+    if (!leftMatches && rightMatches) {
+      return 1;
+    }
+    if (left === cachedProvider) {
+      return -1;
+    }
+    if (right === cachedProvider) {
+      return 1;
+    }
+    return providerScore(right) - providerScore(left);
+  });
+}
+
 function dispatchProviderRequestEvents(): void {
   if (typeof window === "undefined") {
     return;
@@ -1347,10 +1373,19 @@ export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount
 }
 
 export async function getNeoWalletNetwork(silent = true): Promise<NeoWalletNetwork> {
+  return getNeoWalletNetworkForAddress(null, silent);
+}
+
+export async function getNeoWalletNetworkForAddress(
+  addressHint: string | null,
+  silent = true,
+): Promise<NeoWalletNetwork> {
   let providers = getCandidateProvidersInPriorityOrder();
   if (!silent && providers.length === 0) {
     providers = await loadProvidersWithReadySync();
   }
+
+  providers = prioritizeProvidersByAddress(addressHint);
 
   for (const provider of providers) {
     const network = await readNetworkFromProvider(provider);
