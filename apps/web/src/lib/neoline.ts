@@ -900,10 +900,29 @@ function pickNetworkPayload(value: unknown): unknown {
 
   const selected = value.find((entry) => {
     const record = asRecord(entry);
-    return !!record && (record.selected === true || record.current === true || record.isCurrent === true);
+    return !!record && (
+      record.selected === true
+      || record.current === true
+      || record.isCurrent === true
+      || record.active === true
+      || record.isActive === true
+      || record.connected === true
+      || record.default === true
+    );
   });
 
-  return selected ?? value[0] ?? null;
+  if (selected) {
+    return selected;
+  }
+
+  // Some wallets return all supported networks here rather than the current
+  // one. Do not guess from the first array entry when multiple options are
+  // present, because that can incorrectly force TESTNET wallets onto MAINNET.
+  if (value.length === 1) {
+    return value[0] ?? null;
+  }
+
+  return null;
 }
 
 function unwrapRpcResponse(value: unknown): unknown {
@@ -1289,18 +1308,29 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
 
 async function readNetworkFromProvider(provider: NeoLineN3Provider): Promise<NeoWalletNetwork | null> {
   const attempts: unknown[] = [];
+  const getNetworkAttempts: unknown[] = [];
+  const getNetworksAttempts: unknown[] = [];
 
-  for (const methodName of ["getNetwork", "getNetworks"] as const) {
+  for (const methodName of ["getNetwork"] as const) {
     const value = await tryCallProviderMethod(provider, methodName);
     if (value !== undefined) {
-      attempts.push(value);
+      getNetworkAttempts.push(value);
+    }
+  }
+
+  for (const methodName of ["getNetworks"] as const) {
+    const value = await tryCallProviderMethod(provider, methodName);
+    if (value !== undefined) {
+      getNetworksAttempts.push(value);
     }
   }
 
   const providerRecord = asRecord(provider);
+  attempts.push(...getNetworkAttempts);
   if (providerRecord) {
     attempts.push(providerRecord.network, providerRecord.currentNetwork, providerRecord.selectedNetwork);
   }
+  attempts.push(...getNetworksAttempts);
 
   if (providerRecord?.request || providerRecord?.send || providerRecord?.sendAsync) {
     for (const method of ["getNetwork", "getNetworks"]) {
