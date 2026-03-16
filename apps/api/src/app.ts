@@ -12,12 +12,22 @@ function buildCorsOriginResolver(configuredOrigins: string) {
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
 
-  if (normalized.includes("*")) {
+  const vercelOrigins = [
+    process.env.VERCEL_URL,
+    process.env.VERCEL_BRANCH_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .map((value) => (value.startsWith("http://") || value.startsWith("https://") ? value : `https://${value}`));
+
+  const allowSet = new Set([...normalized, ...vercelOrigins]);
+
+  if (allowSet.has("*")) {
     return true;
   }
 
   const loopbackOriginRegex = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
-  const allowSet = new Set(normalized);
 
   return (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
     if (!origin) {
