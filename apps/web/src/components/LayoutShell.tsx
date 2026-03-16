@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
-import { Compass, FolderOpen, Home, LayoutGrid, PlusCircle, Search, Sparkles, Wallet, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Compass, FolderOpen, Search, Sparkles, Wallet, Zap } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchContractMeta } from "../lib/api";
 import { APP_CONFIG } from "../lib/config";
-import { getRuntimeNetworkConfig } from "../lib/runtime-network";
+import {
+  getRuntimeNetworkConfig,
+  setRuntimeSelectedFrontendNetwork,
+  type FrontendNetworkName,
+  useRuntimeNetworkState,
+} from "../lib/runtime-network";
 import {
   resetRuntimeContractDialect,
   setRuntimeContractDialect,
@@ -47,12 +53,32 @@ function formatWalletNetworkLabel(
   );
 }
 
+function formatNetworkNameLabel(network: "mainnet" | "testnet" | "private" | "unknown"): string {
+  return network.toUpperCase();
+}
+
+function getFallbackAvailableNetworks(): FrontendNetworkName[] {
+  const options: FrontendNetworkName[] = ["testnet", "mainnet"];
+  if (APP_CONFIG.networks.private.apiBaseUrl || APP_CONFIG.networks.private.rpcUrl || APP_CONFIG.networks.private.contractHash) {
+    options.push("private");
+  }
+  return options;
+}
+
 export function LayoutShell({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const wallet = useWallet();
   const navigate = useNavigate();
   const runtimeDialect = useRuntimeContractDialect();
+  const runtimeState = useRuntimeNetworkState();
   const [dialectMismatchMessage, setDialectMismatchMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [availableNetworks, setAvailableNetworks] = useState<FrontendNetworkName[]>(() => getFallbackAvailableNetworks());
+
+  const walletKnownNetwork = runtimeState.walletNetwork && runtimeState.walletNetwork.network !== "unknown"
+    ? runtimeState.walletNetwork.network
+    : null;
+  const hasWalletMismatch = Boolean(walletKnownNetwork && walletKnownNetwork !== runtimeState.selectedNetwork);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +91,20 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         }
 
         setRuntimeContractDialect(meta.dialect);
+        const nextAvailableNetworks = meta.availableNetworks?.length
+          ? meta.availableNetworks
+          : getFallbackAvailableNetworks();
+        setAvailableNetworks(nextAvailableNetworks);
+
+        if (
+          !walletKnownNetwork &&
+          nextAvailableNetworks.length > 0 &&
+          !nextAvailableNetworks.includes(runtimeState.selectedNetwork) &&
+          meta.network
+        ) {
+          setRuntimeSelectedFrontendNetwork(meta.network);
+        }
+
         if (meta.dialect !== APP_CONFIG.contractDialect) {
           setDialectMismatchMessage(
             `Runtime dialect ${meta.dialect.toUpperCase()} differs from env ${APP_CONFIG.contractDialect.toUpperCase()}.`,
@@ -78,6 +118,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           return;
         }
         resetRuntimeContractDialect();
+        setAvailableNetworks(getFallbackAvailableNetworks());
         setDialectMismatchMessage("");
       }
     };
@@ -86,7 +127,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [wallet.network?.network, wallet.network?.magic]);
+  }, [runtimeState.runtimeKey, runtimeState.selectedNetwork, walletKnownNetwork]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,6 +138,17 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   };
 
   const runtimeNetwork = getRuntimeNetworkConfig();
+  const networkTone = runtimeNetwork.network === "mainnet"
+    ? "#3A5EFF"
+    : runtimeNetwork.network === "unknown"
+      ? "#F59E0B"
+      : "#00D4FF";
+  const networkStatusLabel = useMemo(() => {
+    if (!walletKnownNetwork) {
+      return t("app.network_status_no_wallet");
+    }
+    return hasWalletMismatch ? t("app.network_status_mismatch") : t("app.network_status_matched");
+  }, [hasWalletMismatch, t, walletKnownNetwork]);
 
   return (
     <div className="app-shell">
@@ -203,22 +255,87 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div style={{ 
-        background: wallet.network?.network === "mainnet" ? "rgba(58, 94, 255, 0.1)" : "rgba(0, 229, 153, 0.1)", 
+        background: runtimeNetwork.network === "mainnet" ? "rgba(58, 94, 255, 0.1)" : "rgba(0, 229, 153, 0.1)", 
         padding: "0.5rem 1.4rem", 
         display: "flex", 
-        justifyContent: "center", 
+        justifyContent: "center",
+        flexWrap: "wrap",
         gap: "1.5rem", 
         fontSize: "0.8rem", 
         borderBottom: "1px solid rgba(255, 255, 255, 0.05)" 
       }}>
         <span className="flex-align-center gap-xs"><Zap size={12} color="#00E599" /> {runtimeDialect.toUpperCase()} Dialect</span>
-        <span className="flex-align-center gap-xs"><Compass size={12} color={wallet.network?.network === "mainnet" ? "#3A5EFF" : "#00D4FF"} /> {formatWalletNetworkLabel(wallet.network)}</span>
+        <span className="flex-align-center gap-xs" style={{ gap: "0.6rem" }}>
+          <span style={{ opacity: 0.7 }}>{t("app.frontend_network")}</span>
+          <span style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+            {availableNetworks.map((network) => {
+              const selected = runtimeState.selectedNetwork === network;
+              return (
+                <button
+                  key={network}
+                  className="btn"
+                  onClick={() => setRuntimeSelectedFrontendNetwork(network)}
+                  type="button"
+                  style={{
+                    padding: "0.2rem 0.55rem",
+                    fontSize: "0.72rem",
+                    minHeight: "unset",
+                    borderRadius: "999px",
+                    background: selected ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.04)",
+                    border: selected ? "1px solid rgba(255,255,255,0.22)" : "1px solid rgba(255,255,255,0.1)",
+                    color: "#fff",
+                  }}
+                >
+                  {formatNetworkNameLabel(network)}
+                </button>
+              );
+            })}
+          </span>
+        </span>
+        <span className="flex-align-center gap-xs"><Compass size={12} color={wallet.network?.network === "mainnet" ? "#3A5EFF" : wallet.network?.network === "unknown" ? "#F59E0B" : "#00D4FF"} /> {formatWalletNetworkLabel(wallet.network)}</span>
+        <span className="flex-align-center gap-xs" style={{ gap: "0.6rem" }}>
+          <span style={{ opacity: 0.7 }}>{t("app.active_network")}</span>
+          <span className="chip" style={{ background: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.12)", color: networkTone }}>
+            {formatNetworkNameLabel(runtimeNetwork.network)}
+          </span>
+        </span>
+        <span className="flex-align-center gap-xs" style={{ gap: "0.6rem" }}>
+          <span style={{ opacity: 0.7 }}>{t("app.network_match")}</span>
+          <span className="chip" style={{
+            background: hasWalletMismatch ? "rgba(245, 158, 11, 0.14)" : "rgba(0, 229, 153, 0.12)",
+            borderColor: hasWalletMismatch ? "rgba(245, 158, 11, 0.24)" : "rgba(0, 229, 153, 0.22)",
+            color: hasWalletMismatch ? "#F59E0B" : "#00E599",
+          }}>
+            {networkStatusLabel}
+          </span>
+        </span>
         <span className="flex-align-center gap-xs"><Sparkles size={12} color="#FFD700" /> GhostMarket Compatible</span>
       </div>
 
       {dialectMismatchMessage ? <div className="notice notice-warn">{dialectMismatchMessage}</div> : null}
+      {hasWalletMismatch ? (
+        <div className="notice notice-warn" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <AlertTriangle size={16} />
+            {t("app.network_mismatch_notice", {
+              selected: formatNetworkNameLabel(runtimeState.selectedNetwork),
+              wallet: formatNetworkNameLabel(walletKnownNetwork ?? "unknown"),
+            })}
+          </span>
+          {walletKnownNetwork ? (
+            <button
+              className="btn btn-soft"
+              onClick={() => setRuntimeSelectedFrontendNetwork(walletKnownNetwork)}
+              type="button"
+              style={{ padding: "0.45rem 0.85rem", fontSize: "0.8rem" }}
+            >
+              {t("app.use_wallet_network")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
-      <main className="app-main" style={{ maxWidth: "1600px" }}>{children}</main>
+      <main className="app-main" key={runtimeState.runtimeKey} style={{ maxWidth: "1600px" }}>{children}</main>
     </div>
   );
 }
