@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node ../../scripts/postbuild-spa-fallbacks.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
     "vercel-build": "npm run build",
