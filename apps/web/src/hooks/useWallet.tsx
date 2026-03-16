@@ -111,51 +111,6 @@ function extractWalletAddressFromEvent(data: unknown): string | null {
   return tryValue(data);
 }
 
-function readStoredWalletAddress(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const value = localStorage.getItem(WALLET_ADDRESS_KEY)?.trim();
-  return value ? value : null;
-}
-
-function readStoredWalletNetwork(): NeoWalletNetwork | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = localStorage.getItem(WALLET_NETWORK_KEY);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as NeoWalletNetwork;
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-
-    if (
-      parsed.network !== "mainnet" &&
-      parsed.network !== "testnet" &&
-      parsed.network !== "private" &&
-      parsed.network !== "unknown"
-    ) {
-      return null;
-    }
-
-    return {
-      network: parsed.network,
-      magic: typeof parsed.magic === "number" ? parsed.magic : null,
-      rpcUrl: typeof parsed.rpcUrl === "string" ? parsed.rpcUrl : undefined,
-      raw: parsed.raw ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function isWalletAccessDeniedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message.trim().toLowerCase() : "";
   if (!message) {
@@ -171,8 +126,8 @@ function isWalletAccessDeniedError(error: unknown): boolean {
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [address, setAddress] = useState<string | null>(() => readStoredWalletAddress());
-  const [network, setNetwork] = useState<NeoWalletNetwork | null>(() => readStoredWalletNetwork());
+  const [address, setAddress] = useState<string | null>(null);
+  const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
   const suppressSilentSyncUntilRef = useRef(0);
@@ -224,8 +179,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const fallbackAddress = address?.trim() || readStoredWalletAddress();
-      const fallbackNetwork = network ?? readStoredWalletNetwork();
+      const fallbackAddress = address?.trim() || null;
+      const fallbackNetwork = network ?? null;
       const currentAccount = await getNeoWalletAccount(silent);
       const providerAddress = currentAccount?.address?.trim() || null;
       // Resolve network after account so the matching provider is preferred.
