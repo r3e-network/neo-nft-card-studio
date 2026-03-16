@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import { getUploadTooLargeMessage } from "./upload-limits";
 
 const UNKNOWN_WALLET_NETWORK_MESSAGE = "Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.";
 const WALLET_SESSION_UNAVAILABLE_MESSAGE = "Wallet session is unavailable. Please reconnect wallet.";
@@ -14,7 +15,24 @@ function normalizeNetworkLabel(value: string): string {
 }
 
 export function toUserErrorMessage(t: TFunction, error: unknown): string {
+  const errorRecord = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
+  const response = typeof errorRecord?.response === "object" && errorRecord.response !== null
+    ? errorRecord.response as Record<string, unknown>
+    : null;
+  const config = typeof errorRecord?.config === "object" && errorRecord.config !== null
+    ? errorRecord.config as Record<string, unknown>
+    : null;
+  const responseStatus = typeof response?.status === "number" ? response.status : null;
+  const requestUrl = typeof config?.url === "string" ? config.url : "";
   const message = error instanceof Error ? error.message.trim() : "";
+
+  if (
+    requestUrl.includes("/meta/neofs/upload")
+    && (responseStatus === 413 || responseStatus === 500)
+  ) {
+    return getUploadTooLargeMessage();
+  }
+
   if (!message) {
     return t("app.generic_error");
   }

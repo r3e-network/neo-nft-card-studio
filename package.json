@@ -22,6 +22,7 @@
     "test:testnet": "node scripts/testnet-flow.mjs",
     "test:testnet:lifecycle": "node scripts/testnet-full-lifecycle.mjs",
     "test:wif-ui": "bash tests/run-all.sh",
+    "test:wif-ui:online-api": "bash tests/run-online-api.sh",
     "audit:production-config": "node scripts/audit-production-config.mjs",
     "audit:security": "node scripts/audit-security-surface.mjs",
     "audit:runtime-contracts": "node scripts/audit-runtime-contracts.mjs",
