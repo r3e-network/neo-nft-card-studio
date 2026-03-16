@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
+import { wallet as neonWallet } from "@cityofzion/neon-js";
 import type { WalletInvokeRequest } from "@platform/neo-sdk";
 
 import {
@@ -57,6 +58,15 @@ function syncSelectedFrontendNetwork(nextNetwork: NeoWalletNetwork | null): void
   }
 
   setRuntimeSelectedFrontendNetwork(nextNetwork.network);
+}
+
+function buildDefaultWalletSigners(address: string): Array<{ account: string; scopes: string }> {
+  return [
+    {
+      account: neonWallet.getScriptHashFromAddress(address),
+      scopes: "CalledByEntry",
+    },
+  ];
 }
 
 function extractWalletAddressFromEvent(data: unknown): string | null {
@@ -408,9 +418,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
 
         const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
+        const invokePayload = devWif || (payload.signers && payload.signers.length > 0)
+          ? payload
+          : {
+              ...payload,
+              signers: buildDefaultWalletSigners(session.address),
+            };
         const result = devWif 
-          ? await invokeNeoWalletWithWif(devWif, payload)
-          : await invokeNeoWallet(payload);
+          ? await invokeNeoWalletWithWif(devWif, invokePayload)
+          : await invokeNeoWallet(invokePayload);
 
         const rawTxId = (result.txid ?? result.transaction ?? result.txId ?? result.transactionId ?? "").toString().trim();
         if (!rawTxId) {

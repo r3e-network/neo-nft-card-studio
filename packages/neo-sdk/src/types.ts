@@ -193,6 +193,10 @@ export interface WalletInvokeRequest {
   scriptHash: string;
   operation: string;
   args: ContractArgument[];
+  signers?: Array<{
+    account: string;
+    scopes: string;
+  }>;
   fee?: string;
   networkFee?: string;
 }

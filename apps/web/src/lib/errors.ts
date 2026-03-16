@@ -14,6 +14,15 @@ function normalizeNetworkLabel(value: string): string {
   return normalized.toUpperCase();
 }
 
+function summarizeRequestPath(url: string): string {
+  try {
+    const parsed = new URL(url, "http://local");
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
 export function toUserErrorMessage(t: TFunction, error: unknown): string {
   const errorRecord = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
   const response = typeof errorRecord?.response === "object" && errorRecord.response !== null
@@ -28,9 +37,25 @@ export function toUserErrorMessage(t: TFunction, error: unknown): string {
 
   if (
     requestUrl.includes("/meta/neofs/upload")
-    && (responseStatus === 413 || responseStatus === 500)
+    && responseStatus === 413
   ) {
     return getUploadTooLargeMessage();
+  }
+
+  if (requestUrl && responseStatus) {
+    const path = summarizeRequestPath(requestUrl);
+
+    if (requestUrl.includes("/meta/neofs/upload")) {
+      return `NeoFS upload request failed (HTTP ${responseStatus}) at ${path}.`;
+    }
+
+    if (requestUrl.includes("/meta/contract")) {
+      return `Contract metadata request failed (HTTP ${responseStatus}) at ${path}.`;
+    }
+
+    if (requestUrl.includes("/collections")) {
+      return `Collection request failed (HTTP ${responseStatus}) at ${path}.`;
+    }
   }
 
   if (!message) {

@@ -1,4 +1,4 @@
-import type { WalletInvokeRequest } from "@platform/neo-sdk";
+import type { ContractArgument, WalletInvokeRequest } from "@platform/neo-sdk";
 
 declare global {
   interface Window {
@@ -144,6 +144,55 @@ function describeValue(value: unknown): string {
   }
   const keys = Object.keys(record);
   return `object(keys=${keys.slice(0, 8).join(",")}${keys.length > 8 ? ",..." : ""})`;
+}
+
+function hexToBase64(hex: string): string {
+  const normalized = hex.trim().replace(/^0x/i, "");
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  const bytes = normalized.match(/.{1,2}/g)?.map((chunk) => Number.parseInt(chunk, 16)) ?? [];
+  if (typeof btoa === "function") {
+    return btoa(String.fromCharCode(...bytes));
+  }
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  return hex;
+}
+
+function normalizeInvokeArgForNeoLine(arg: ContractArgument): ContractArgument {
+  if (arg.type === "ByteArray" && typeof arg.value === "string") {
+    return {
+      ...arg,
+      value: hexToBase64(arg.value),
+    };
+  }
+
+  if (arg.type === "Array" && Array.isArray(arg.value)) {
+    return {
+      ...arg,
+      value: arg.value.map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return entry;
+        }
+        const record = entry as Partial<ContractArgument>;
+        return typeof record.type === "string"
+          ? normalizeInvokeArgForNeoLine(record as ContractArgument)
+          : entry;
+      }) as ContractArgument["value"],
+    };
+  }
+
+  return arg;
+}
+
+function normalizeInvokePayloadForNeoLine(payload: WalletInvokeRequest): WalletInvokeRequest {
+  return {
+    ...payload,
+    args: payload.args.map((arg) => normalizeInvokeArgForNeoLine(arg)),
+  };
 }
 
 function getProviderDebugName(provider: NeoLineN3Provider): string {
@@ -506,6 +555,16 @@ function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
     || typeof provider.getAddress === "function"
     || typeof provider.getWalletAddress === "function"
     || typeof provider.requestAccounts === "function"
+  );
+}
+
+function hasInvokeCapability(provider: NeoLineN3Provider): boolean {
+  return (
+    typeof provider.invoke === "function"
+    || typeof provider.invokeFunction === "function"
+    || typeof provider.request === "function"
+    || typeof provider.send === "function"
+    || typeof provider.sendAsync === "function"
   );
 }
 
@@ -1626,33 +1685,57 @@ export async function getNeoWalletNetworkForAddress(
 }
 
 export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<NeoLineInvokeResult> {
-  const providers = await loadProvidersWithReadySync();
+  const normalizedPayload = normalizeInvokePayloadForNeoLine(payload);
+  const providers = (await loadProvidersWithReadySync()).filter(hasInvokeCapability);
+  walletDebug(
+    "invoke:providers",
+    providers.map((provider) => ({
+      name: getProviderDebugName(provider),
+      invoke: typeof provider.invoke === "function",
+      invokeFunction: typeof provider.invokeFunction === "function",
+      request: typeof provider.request === "function",
+      send: typeof provider.send === "function",
+      sendAsync: typeof provider.sendAsync === "function",
+    })),
+  );
   if (providers.length === 0) {
-    throw new Error(buildNoWalletFoundErrorMessage());
+    throw new Error("Connected wallet does not expose invoke/sign APIs. Switch to NeoLine or another supported Neo N3 wallet.");
   }
 
   let lastError: unknown = null;
 
   for (const provider of providers) {
     try {
+      walletDebug("invoke:attempt", getProviderDebugName(provider));
       if (typeof provider.invoke === "function") {
         rememberProvider(provider);
-        return normalizeInvokeResult(await provider.invoke(payload));
+        const result = normalizeInvokeResult(await provider.invoke(normalizedPayload));
+        walletDebug("invoke:success", getProviderDebugName(provider), describeValue(result));
+        return result;
       }
 
       if (typeof provider.invokeFunction === "function") {
         rememberProvider(provider);
-        return normalizeInvokeResult(await provider.invokeFunction(payload));
+        const result = normalizeInvokeResult(await provider.invokeFunction(normalizedPayload));
+        walletDebug("invoke:success", getProviderDebugName(provider), describeValue(result));
+        return result;
       }
 
       rememberProvider(provider);
-      return normalizeInvokeResult(
+      const result = normalizeInvokeResult(
         await requestProvider(provider, {
           method: "invoke",
-          params: [payload],
+          params: [normalizedPayload],
         }),
       );
+      walletDebug("invoke:success", getProviderDebugName(provider), describeValue(result));
+      return result;
     } catch (error) {
+      walletDebug(
+        "invoke:failed",
+        getProviderDebugName(provider),
+        error instanceof Error ? error.message : String(error),
+      );
       lastError = error;
     }
   }
