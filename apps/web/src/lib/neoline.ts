@@ -408,7 +408,16 @@ function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | n
     return null;
   }
 
-  const initProvider = resolveFactoryProvider(record.Init ?? record.init);
+  const initFactory = record.Init ?? record.init;
+  let initProvider: unknown | null = null;
+  const sharedN3InitFactory = typeof window === "undefined"
+    ? null
+    : asRecord(window.NEOLineN3 ?? window.neoLineN3)?.Init ?? null;
+  if (initFactory && sharedN3InitFactory && initFactory === sharedN3InitFactory && neoLineInitInstance) {
+    initProvider = neoLineInitInstance;
+  } else {
+    initProvider = resolveFactoryProvider(initFactory);
+  }
   if (initProvider && initProvider !== value) {
     const resolved = resolveNestedProvider(initProvider, depth + 1);
     if (resolved) {
