@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Compass, FolderOpen, Search, Sparkles, Wallet, Zap } from "lucide-react";
+import { AlertTriangle, Compass, FolderOpen, Lock, Search, Sparkles, Wallet, Zap } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -81,6 +81,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const hasWalletMismatch = Boolean(walletKnownNetwork && walletKnownNetwork !== runtimeState.selectedNetwork);
 
   useEffect(() => {
+    if (walletKnownNetwork && runtimeState.selectedNetwork !== walletKnownNetwork) {
+      setRuntimeSelectedFrontendNetwork(walletKnownNetwork);
+    }
+  }, [runtimeState.selectedNetwork, walletKnownNetwork]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const syncDialect = async () => {
@@ -149,6 +155,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
     return hasWalletMismatch ? t("app.network_status_mismatch") : t("app.network_status_matched");
   }, [hasWalletMismatch, t, walletKnownNetwork]);
+  const networkSelectionLocked = Boolean(walletKnownNetwork);
 
   return (
     <div className="app-shell">
@@ -270,12 +277,15 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           <span style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
             {availableNetworks.map((network) => {
               const selected = runtimeState.selectedNetwork === network;
+              const disabled = networkSelectionLocked && walletKnownNetwork !== network;
               return (
                 <button
                   key={network}
                   className="btn"
+                  disabled={disabled}
                   onClick={() => setRuntimeSelectedFrontendNetwork(network)}
                   type="button"
+                  title={disabled ? t("app.network_locked_to_wallet") : undefined}
                   style={{
                     padding: "0.2rem 0.55rem",
                     fontSize: "0.72rem",
@@ -284,6 +294,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                     background: selected ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.04)",
                     border: selected ? "1px solid rgba(255,255,255,0.22)" : "1px solid rgba(255,255,255,0.1)",
                     color: "#fff",
+                    opacity: disabled ? 0.45 : 1,
+                    cursor: disabled ? "not-allowed" : "pointer",
                   }}
                 >
                   {formatNetworkNameLabel(network)}
@@ -310,6 +322,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           </span>
         </span>
         <span className="flex-align-center gap-xs"><Sparkles size={12} color="#FFD700" /> GhostMarket Compatible</span>
+        {networkSelectionLocked ? (
+          <span className="flex-align-center gap-xs" style={{ color: "var(--text-muted)" }}>
+            <Lock size={12} color="#F59E0B" /> {t("app.network_locked_to_wallet")}
+          </span>
+        ) : null}
       </div>
 
       {dialectMismatchMessage ? <div className="notice notice-warn">{dialectMismatchMessage}</div> : null}
@@ -332,6 +349,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               {t("app.use_wallet_network")}
             </button>
           ) : null}
+        </div>
+      ) : null}
+      {networkSelectionLocked ? (
+        <div className="notice" style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <Lock size={16} color="#F59E0B" />
+          <span>{t("app.network_switch_requires_wallet_change", { wallet: formatNetworkNameLabel(walletKnownNetwork ?? "unknown") })}</span>
         </div>
       ) : null}
 

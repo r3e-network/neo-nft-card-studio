@@ -460,6 +460,11 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
   const localNeoFsStore = new Map<string, { contentType: string; bodyText?: string; body?: Buffer; byteLength: number }>();
   let localNeoFsStoreTotalBytes = 0;
 
+  function buildMissingLocalDemoResourceSvg(label: string): string {
+    const safeLabel = label.replace(/[<>&"']/g, "");
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-label="${safeLabel}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#1d4ed8"/></linearGradient></defs><rect width="1200" height="1200" fill="url(#g)"/><rect x="84" y="84" width="1032" height="1032" rx="36" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="6"/><text x="110" y="880" font-family="ui-sans-serif,Segoe UI,Arial" font-size="54" fill="rgba(255,255,255,0.82)">NeoFS demo asset unavailable</text><text x="110" y="960" font-family="ui-monospace,SFMono-Regular,Consolas" font-size="32" fill="rgba(255,255,255,0.65)">${safeLabel}</text></svg>`;
+  }
+
   function resolveContextOrReply(req: Request, res: Response): ApiRouteNetworkContext | null {
     const rawNetwork = readNetworkQueryValue(req.query.network);
     const selectedNetwork = rawNetwork ?? config.NEO_DEFAULT_NETWORK;
@@ -993,7 +998,13 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
     if (resolution.containerId === "local_demo") {
       const stored = localNeoFsStore.get(resolution.objectId);
       if (!stored || !stored.body) {
-        res.status(404).json({ message: "Local demo resource not found" });
+        const placeholder = buildMissingLocalDemoResourceSvg(resolution.objectId);
+        res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+        res.setHeader("Cache-Control", "public, max-age=120");
+        res.setHeader("X-NeoFS-Original-Uri", resolution.originalUri);
+        res.setHeader("X-NeoFS-Resolved-Uri", resolution.originalUri);
+        res.setHeader("X-NeoFS-Placeholder", "local-demo-missing");
+        res.status(200).send(placeholder);
         return;
       }
       res.setHeader("Content-Type", stored.contentType);
