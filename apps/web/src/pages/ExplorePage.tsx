@@ -211,7 +211,7 @@ export function ExplorePage() {
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <button className="btn btn-secondary" style={{ display: "flex", alignItems: "center", gap: "0.5rem", borderRadius: "10px" }}>
+            <button className="btn btn-secondary" disabled title="Coming soon" type="button" style={{ display: "flex", alignItems: "center", gap: "0.5rem", borderRadius: "10px" }}>
               <Filter size={18} /> Filters
             </button>
             <span style={{ color: "#8A939B", fontWeight: 500 }}>{visibleCards.length} results</span>

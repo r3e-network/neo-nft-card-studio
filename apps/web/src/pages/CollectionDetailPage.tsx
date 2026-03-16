@@ -14,6 +14,7 @@ import {
 } from "../lib/marketplace";
 import { setPendingMarketState } from "../lib/pending-market";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
+import { isHttpUrl, openTwitterShare, shareOrCopyUrl } from "../lib/share";
 import type { CollectionDto, GhostMarketMetaDto, TokenDto } from "../lib/types";
 import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
 
@@ -266,6 +267,44 @@ export function CollectionDetailPage() {
       void reloadCollection();
     }, delayMs);
   }, [reloadCollection]);
+
+  const shareCollection = useCallback(async () => {
+    if (typeof window === "undefined" || !collection) {
+      return;
+    }
+
+    try {
+      const result = await shareOrCopyUrl({
+        title: collection.name,
+        text: `${collection.name} (${collection.symbol})`,
+        url: window.location.href,
+      });
+      setMessage(result === "shared" ? "Collection shared." : "Collection link copied.");
+    } catch (err) {
+      setError(toUserErrorMessage(t, err));
+    }
+  }, [collection, t]);
+
+  const tweetCollection = useCallback(() => {
+    if (typeof window === "undefined" || !collection) {
+      return;
+    }
+
+    openTwitterShare({
+      text: `Check out ${collection.name} on Neo N3`,
+      url: window.location.href,
+    });
+  }, [collection]);
+
+  const openCollectionWebsite = useCallback(() => {
+    const target = collection?.baseUri?.trim() ?? "";
+    if (!isHttpUrl(target) || typeof window === "undefined") {
+      setError("Collection website is not available.");
+      return;
+    }
+
+    window.open(target, "_blank", "noopener,noreferrer");
+  }, [collection]);
 
   const onMintToken = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -603,9 +642,9 @@ export function CollectionDetailPage() {
           </div>
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Share2 size={20} /></button>
-            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Twitter size={20} /></button>
-            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Globe size={20} /></button>
+            <button className="btn btn-secondary" onClick={() => void shareCollection()} type="button" style={{ borderRadius: "12px", padding: "0.6rem" }}><Share2 size={20} /></button>
+            <button className="btn btn-secondary" onClick={tweetCollection} type="button" style={{ borderRadius: "12px", padding: "0.6rem" }}><Twitter size={20} /></button>
+            <button className="btn btn-secondary" disabled={!isHttpUrl(collection.baseUri)} onClick={openCollectionWebsite} type="button" style={{ borderRadius: "12px", padding: "0.6rem" }}><Globe size={20} /></button>
             {ghostMarket?.enabled && (
               <a className="btn btn-secondary" href={ghostMarket.contractSearchUrl} rel="noreferrer" target="_blank" style={{ borderRadius: "12px", padding: "0.6rem" }}>
                 <ExternalLink size={20} />

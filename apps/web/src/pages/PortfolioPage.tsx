@@ -11,6 +11,7 @@ import { parseGasAmountToInteger, shortHash } from "../lib/marketplace";
 import { mergePendingCollections } from "../lib/pending-collections";
 import { mergePendingMarketState, setPendingMarketState } from "../lib/pending-market";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
+import { openTwitterShare, shareOrCopyUrl } from "../lib/share";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
 
 import { NFTGrid } from "../components/nft/NFTGrid";
@@ -250,6 +251,34 @@ export function PortfolioPage() {
     }
   };
 
+  const sharePortfolio = useCallback(async () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const result = await shareOrCopyUrl({
+        title: "OpenNFT Portfolio",
+        text: wallet.address ? `Neo N3 wallet: ${wallet.address}` : "OpenNFT portfolio",
+        url: window.location.href,
+      });
+      setMessage(result === "shared" ? "Portfolio shared." : "Portfolio link copied.");
+    } catch (err) {
+      setError(toUserErrorMessage(t, err));
+    }
+  }, [t, wallet.address]);
+
+  const tweetPortfolio = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    openTwitterShare({
+      text: wallet.address ? `Tracking my Neo N3 wallet on OpenNFT: ${wallet.address}` : "Tracking my Neo N3 portfolio on OpenNFT",
+      url: window.location.href,
+    });
+  }, [wallet.address]);
+
   const collectedTokens = useMemo(() => collectedListings.map(l => l.token), [collectedListings]);
   const collectedSalesMap = useMemo(() => 
     Object.fromEntries(collectedListings.map(l => [l.token.tokenId, {
@@ -330,9 +359,9 @@ export function PortfolioPage() {
           </div>
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Share2 size={20} /></button>
-            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Twitter size={20} /></button>
-            <button className="btn btn-secondary" style={{ borderRadius: "12px", padding: "0.6rem" }}><Settings size={20} /></button>
+            <button className="btn btn-secondary" onClick={() => void sharePortfolio()} type="button" style={{ borderRadius: "12px", padding: "0.6rem" }}><Share2 size={20} /></button>
+            <button className="btn btn-secondary" onClick={tweetPortfolio} type="button" style={{ borderRadius: "12px", padding: "0.6rem" }}><Twitter size={20} /></button>
+            <button className="btn btn-secondary" disabled title="Coming soon" type="button" style={{ borderRadius: "12px", padding: "0.6rem" }}><Settings size={20} /></button>
           </div>
         </div>
 
