@@ -84,6 +84,9 @@ export const NEOLINE_EVENTS = {
 
 const NEO_MAINNET_MAGIC = 860833102;
 const NEO_TESTNET_MAGIC = 894710606;
+const NEO_N3_MAINNET_CHAIN_ID = 3;
+const NEO_N3_TESTNET_CHAIN_ID = 6;
+const NEO_N3_PRIVATE_CHAIN_ID = 0;
 const NEO_N3_ADDRESS_REGEX = /^N[1-9A-HJ-NP-Za-km-z]{33}$/;
 const N3_READY_EVENT = "NEOLine.N3.EVENT.READY";
 const NEO_READY_EVENT = "NEOLine.NEO.EVENT.READY";
@@ -800,7 +803,7 @@ function parseIntegerLike(value: unknown): number | null {
 
 function extractNetworkMagic(value: unknown): number | null {
   const direct = parseIntegerLike(value);
-  if (direct && direct > 0) {
+  if (direct && direct > 0 && (direct === NEO_MAINNET_MAGIC || direct === NEO_TESTNET_MAGIC)) {
     return direct;
   }
 
@@ -819,9 +822,9 @@ function extractNetworkMagic(value: unknown): number | null {
     return null;
   }
 
-  for (const key of ["magic", "networkMagic", "protocolMagic", "chainId", "networkId", "net"]) {
+  for (const key of ["magic", "networkMagic", "protocolMagic", "net"]) {
     const magic = parseIntegerLike(record[key]);
-    if (magic && magic > 0) {
+    if (magic && magic > 0 && (magic === NEO_MAINNET_MAGIC || magic === NEO_TESTNET_MAGIC)) {
       return magic;
     }
   }
@@ -830,6 +833,44 @@ function extractNetworkMagic(value: unknown): number | null {
     const magic = extractNetworkMagic(record[key]);
     if (magic) {
       return magic;
+    }
+  }
+
+  return null;
+}
+
+function extractChainId(value: unknown): number | null {
+  const direct = parseIntegerLike(value);
+  if (direct !== null) {
+    return direct;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const chainId = extractChainId(item);
+      if (chainId !== null) {
+        return chainId;
+      }
+    }
+    return null;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  for (const key of ["chainId", "networkId", "chain", "chain_id"]) {
+    const chainId = parseIntegerLike(record[key]);
+    if (chainId !== null) {
+      return chainId;
+    }
+  }
+
+  for (const key of ["result", "data", "network", "current", "selected", "detail"]) {
+    const chainId = extractChainId(record[key]);
+    if (chainId !== null) {
+      return chainId;
     }
   }
 
@@ -923,6 +964,7 @@ function extractPreferredNetworkText(value: unknown): string | null {
   for (const key of [
     "currentNetwork",
     "selectedNetwork",
+    "defaultNetwork",
     "network",
     "name",
     "label",
@@ -945,6 +987,7 @@ function extractPreferredNetworkText(value: unknown): string | null {
 function normalizeNetworkName(
   value: unknown,
   magic: number | null,
+  chainId: number | null,
   rpcUrl?: string,
 ): NeoWalletNetworkName {
   if (magic === NEO_MAINNET_MAGIC) {
@@ -953,6 +996,18 @@ function normalizeNetworkName(
 
   if (magic === NEO_TESTNET_MAGIC) {
     return "testnet";
+  }
+
+  if (chainId === NEO_N3_MAINNET_CHAIN_ID) {
+    return "mainnet";
+  }
+
+  if (chainId === NEO_N3_TESTNET_CHAIN_ID) {
+    return "testnet";
+  }
+
+  if (chainId === NEO_N3_PRIVATE_CHAIN_ID) {
+    return "private";
   }
 
   const rpcDerived = inferNetworkNameFromRpcUrl(rpcUrl);
@@ -983,7 +1038,7 @@ function normalizeNetworkName(
     }
   }
 
-  return magic !== null ? "private" : "unknown";
+  return magic !== null || chainId !== null ? "private" : "unknown";
 }
 
 function pickNetworkPayload(value: unknown): unknown {
@@ -1438,10 +1493,11 @@ async function readNetworkFromProvider(provider: NeoLineN3Provider): Promise<Neo
   for (const attempt of attempts) {
     const payload = pickNetworkPayload(attempt);
     const magic = extractNetworkMagic(payload);
+    const chainId = extractChainId(payload);
     const rpcUrl = extractRpcUrl(payload);
-    const network = normalizeNetworkName(payload, magic, rpcUrl);
+    const network = normalizeNetworkName(payload, magic, chainId, rpcUrl);
 
-    if (network !== "unknown" || magic !== null || rpcUrl) {
+    if (network !== "unknown" || magic !== null || chainId !== null || rpcUrl) {
       return {
         network,
         magic,
