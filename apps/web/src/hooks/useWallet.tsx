@@ -11,7 +11,7 @@ import {
   type NeoWalletNetwork,
 } from "../lib/neoline";
 import { APP_CONFIG } from "../lib/config";
-import { setRuntimeWalletNetwork } from "../lib/runtime-network";
+import { setRuntimeSelectedFrontendNetwork, setRuntimeWalletNetwork } from "../lib/runtime-network";
 import { resolveWalletSessionSnapshot } from "../lib/wallet-session";
 import { getWifAccount, invokeNeoWalletWithWif } from "../lib/wifWallet";
 
@@ -47,6 +47,14 @@ function isSameWalletNetwork(a: NeoWalletNetwork | null, b: NeoWalletNetwork | n
 
 function isSameWalletAddress(a: string | null, b: string | null): boolean {
   return (a ?? "").trim() === (b ?? "").trim();
+}
+
+function syncSelectedFrontendNetwork(nextNetwork: NeoWalletNetwork | null): void {
+  if (!nextNetwork || nextNetwork.network === "unknown") {
+    return;
+  }
+
+  setRuntimeSelectedFrontendNetwork(nextNetwork.network);
 }
 
 function extractWalletAddressFromEvent(data: unknown): string | null {
@@ -184,6 +192,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
           setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
           setRuntimeWalletNetwork(nextNetwork);
+          syncSelectedFrontendNetwork(nextNetwork);
           return { address: nextAddress, network: nextNetwork };
         }
       }
@@ -219,6 +228,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
       setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
       setRuntimeWalletNetwork(nextNetwork);
+      syncSelectedFrontendNetwork(nextNetwork);
 
       return {
         address: nextAddress,
@@ -254,6 +264,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
           setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
           setRuntimeWalletNetwork(nextNetwork);
+          syncSelectedFrontendNetwork(nextNetwork);
         });
       };
 
@@ -261,6 +272,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         void getNeoWalletNetwork(true).then((nextNetwork) => {
           setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
           setRuntimeWalletNetwork(nextNetwork);
+          syncSelectedFrontendNetwork(nextNetwork);
         });
       };
 
@@ -349,6 +361,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               }
               setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
               setRuntimeWalletNetwork(nextNetwork);
+              syncSelectedFrontendNetwork(nextNetwork);
             })
             .catch(() => {
               setNetwork((prev) => (prev === null ? prev : null));
