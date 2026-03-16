@@ -4,12 +4,13 @@ import { FolderOpen, ImageOff, Loader2, Settings, Wallet, Copy, Check, Share2, T
 import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
-import { fetchCollections, fetchMarketListings } from "../lib/api";
+import { fetchCollection, fetchCollections, fetchMarketListings, fetchWalletTokens } from "../lib/api";
 import { getCollectionClient, resolveCollectionContractHash } from "../lib/collection-client";
 import { toUserErrorMessage } from "../lib/errors";
 import { parseGasAmountToInteger, shortHash } from "../lib/marketplace";
 import { mergePendingCollections } from "../lib/pending-collections";
 import { mergePendingMarketState, setPendingMarketState } from "../lib/pending-market";
+import { mergePendingTokens } from "../lib/pending-tokens";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import { openTwitterShare, shareOrCopyUrl } from "../lib/share";
 import type { CollectionDto, MarketListingDto, TokenDto } from "../lib/types";
@@ -19,13 +20,27 @@ import { StatusMessage } from "../components/common/StatusMessage";
 
 type Tab = "collected" | "created" | "activity";
 
+const EMPTY_SALE_STATE = {
+  listed: false,
+  seller: "",
+  price: "0",
+  listedAt: "",
+};
+
 export function PortfolioPage() {
   const wallet = useWallet();
   const { t } = useTranslation();
   const contractDialect = useRuntimeContractDialect();
 
   const [tab, setTab] = useState<Tab>("collected");
-  const [collectedListings, setCollectedListings] = useState<MarketListingDto[]>([]);
+  const [collectedTokens, setCollectedTokens] = useState<TokenDto[]>([]);
+  const [collectionsById, setCollectionsById] = useState<Record<string, CollectionDto>>({});
+  const [salesByTokenId, setSalesByTokenId] = useState<Record<string, {
+    listed: boolean;
+    seller: string;
+    price: string;
+    listedAt: string;
+  }>>({});
   const [createdCollections, setCreatedCollections] = useState<CollectionDto[]>([]);
   const [listPriceByTokenId, setListPriceByTokenId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -47,7 +62,9 @@ export function PortfolioPage() {
 
   const reloadPortfolio = useCallback(async () => {
     if (!wallet.address) {
-      setCollectedListings([]);
+      setCollectedTokens([]);
+      setCollectionsById({});
+      setSalesByTokenId({});
       setCreatedCollections([]);
       return;
     }
@@ -56,16 +73,71 @@ export function PortfolioPage() {
     setError("");
 
     try {
-      const [ownedCollections, collected] = await Promise.all([
+      const [ownedCollections, walletTokens, collectedListings] = await Promise.all([
         fetchCollections(wallet.address),
+        fetchWalletTokens(wallet.address),
         fetchMarketListings({ owner: wallet.address, limit: 500 }),
       ]);
 
-      setCreatedCollections(mergePendingCollections(ownedCollections, { owner: wallet.address }));
-      setCollectedListings(mergePendingMarketState(collected).filter((entry) => entry.token.burned !== 1));
+      const mergedOwnedCollections = mergePendingCollections(ownedCollections, { owner: wallet.address });
+      const mergedWalletTokens = mergePendingTokens(walletTokens, { owner: wallet.address }).filter((token) => token.burned !== 1);
+      const mergedListings = mergePendingMarketState(collectedListings).filter((entry) => entry.token.burned !== 1);
+
+      const nextSalesByTokenId: Record<string, {
+        listed: boolean;
+        seller: string;
+        price: string;
+        listedAt: string;
+      }> = Object.fromEntries(
+        mergedWalletTokens.map((token) => [token.tokenId, EMPTY_SALE_STATE]),
+      );
+
+      const nextCollectionsById: Record<string, CollectionDto> = Object.fromEntries(
+        mergedOwnedCollections.map((collection) => [collection.collectionId, collection]),
+      );
+
+      for (const listing of mergedListings) {
+        nextSalesByTokenId[listing.token.tokenId] = {
+          listed: listing.sale.listed,
+          seller: listing.sale.seller,
+          price: listing.sale.price,
+          listedAt: listing.sale.listedAt,
+        };
+        nextCollectionsById[listing.collection.collectionId] = listing.collection;
+      }
+
+      const missingCollectionIds = [...new Set(
+        mergedWalletTokens
+          .map((token) => token.collectionId)
+          .filter((collectionId) => !nextCollectionsById[collectionId]),
+      )];
+
+      if (missingCollectionIds.length > 0) {
+        const fetchedCollections = await Promise.all(
+          missingCollectionIds.map(async (collectionId) => {
+            try {
+              return await fetchCollection(collectionId);
+            } catch {
+              return null;
+            }
+          }),
+        );
+        for (const collection of fetchedCollections) {
+          if (collection) {
+            nextCollectionsById[collection.collectionId] = collection;
+          }
+        }
+      }
+
+      setCreatedCollections(mergedOwnedCollections);
+      setCollectedTokens(mergedWalletTokens);
+      setCollectionsById(nextCollectionsById);
+      setSalesByTokenId(nextSalesByTokenId);
     } catch (err) {
       setError(toUserErrorMessage(t, err));
-      setCollectedListings([]);
+      setCollectedTokens([]);
+      setCollectionsById({});
+      setSalesByTokenId({});
       setCreatedCollections([]);
     } finally {
       setLoading(false);
@@ -93,8 +165,6 @@ export function PortfolioPage() {
   }, [reloadPortfolio]);
 
   const onListToken = async (token: TokenDto) => {
-    const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
-    if (!listing) return;
     if (!isCsharp) {
       setError(t("app.err_marketplace_csharp_required"));
       return;
@@ -110,8 +180,15 @@ export function PortfolioPage() {
       return;
     }
 
-    if (listing.sale.listed) {
+    const sale = salesByTokenId[token.tokenId] ?? EMPTY_SALE_STATE;
+    if (sale.listed) {
       setError(t("app.err_token_already_listed"));
+      return;
+    }
+
+    const collection = collectionsById[token.collectionId];
+    if (!collection) {
+      setError("Collection not available.");
       return;
     }
 
@@ -129,7 +206,7 @@ export function PortfolioPage() {
 
     try {
       await wallet.sync();
-      const client = getCollectionClient(listing.collection);
+      const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing transaction submitted: ${txid}`);
       const nowIso = new Date().toISOString();
@@ -144,22 +221,14 @@ export function PortfolioPage() {
           updatedAt: nowIso,
         },
       });
-      setCollectedListings((prev) => prev.map((entry) => {
-        if (entry.token.tokenId !== token.tokenId) {
-          return entry;
-        }
-
-        return {
-          ...entry,
-          sale: {
-            ...entry.sale,
-            listed: true,
-            seller: connectedAddress,
-            price,
-            listedAt: nowIso,
-            updatedAt: nowIso,
-          },
-        };
+      setSalesByTokenId((prev) => ({
+        ...prev,
+        [token.tokenId]: {
+          listed: true,
+          seller: connectedAddress,
+          price,
+          listedAt: nowIso,
+        },
       }));
       scheduleReloadPortfolio();
     } catch (err) {
@@ -170,8 +239,6 @@ export function PortfolioPage() {
   };
 
   const onCancelListing = async (token: TokenDto) => {
-    const listing = collectedListings.find(l => l.token.tokenId === token.tokenId);
-    if (!listing) return;
     if (!isCsharp) {
       setError(t("app.err_marketplace_csharp_required"));
       return;
@@ -187,8 +254,15 @@ export function PortfolioPage() {
       return;
     }
 
-    if (!listing.sale.listed) {
+    const sale = salesByTokenId[token.tokenId] ?? EMPTY_SALE_STATE;
+    if (!sale.listed) {
       setError(t("app.err_token_not_listed"));
+      return;
+    }
+
+    const collection = collectionsById[token.collectionId];
+    if (!collection) {
+      setError("Collection not available.");
       return;
     }
 
@@ -198,7 +272,7 @@ export function PortfolioPage() {
 
     try {
       await wallet.sync();
-      const client = getCollectionClient(listing.collection);
+      const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Cancel listing transaction submitted: ${txid}`);
       const nowIso = new Date().toISOString();
@@ -213,22 +287,14 @@ export function PortfolioPage() {
           updatedAt: nowIso,
         },
       });
-      setCollectedListings((prev) => prev.map((entry) => {
-        if (entry.token.tokenId !== token.tokenId) {
-          return entry;
-        }
-
-        return {
-          ...entry,
-          sale: {
-            ...entry.sale,
-            listed: false,
-            seller: "",
-            price: "0",
-            listedAt: "",
-            updatedAt: nowIso,
-          },
-        };
+      setSalesByTokenId((prev) => ({
+        ...prev,
+        [token.tokenId]: {
+          listed: false,
+          seller: "",
+          price: "0",
+          listedAt: "",
+        },
       }));
       scheduleReloadPortfolio();
     } catch (err) {
@@ -278,21 +344,6 @@ export function PortfolioPage() {
       url: window.location.href,
     });
   }, [wallet.address]);
-
-  const collectedTokens = useMemo(() => collectedListings.map(l => l.token), [collectedListings]);
-  const collectedSalesMap = useMemo(() => 
-    Object.fromEntries(collectedListings.map(l => [l.token.tokenId, {
-      listed: l.sale.listed,
-      seller: l.sale.seller,
-      price: l.sale.price,
-      listedAt: l.sale.listedAt
-    }])), 
-    [collectedListings]
-  );
-  const collectionsMap = useMemo(() => 
-    Object.fromEntries(collectedListings.map(l => [l.collection.collectionId, l.collection])),
-    [collectedListings]
-  );
 
   if (!wallet.address) {
     return (
@@ -367,8 +418,8 @@ export function PortfolioPage() {
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: "2rem", borderBottom: "1px solid var(--glass-border)", margin: "2.5rem 0" }}>
-          {[
-            { id: "collected", label: "Collected", count: collectedListings.length },
+            {[
+            { id: "collected", label: "Collected", count: collectedTokens.length },
             { id: "created", label: "Created", count: createdCollections.length },
             { id: "activity", label: "Activity", count: 0 }
           ].map(t => (
@@ -401,7 +452,7 @@ export function PortfolioPage() {
               <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
                 {[1, 2, 3, 4].map(i => <div key={i} className="panel skeleton" style={{ height: "400px" }}></div>)}
               </div>
-            ) : collectedListings.length === 0 ? (
+            ) : collectedTokens.length === 0 ? (
               <div className="panel" style={{ textAlign: "center", padding: "5rem" }}>
                 <ImageOff size={48} color="var(--text-muted)" style={{ marginBottom: "1rem" }} />
                 <h3>No items found</h3>
@@ -411,8 +462,8 @@ export function PortfolioPage() {
             ) : (
               <NFTGrid
                 tokens={collectedTokens}
-                collections={collectionsMap}
-                salesByTokenId={collectedSalesMap}
+                collections={collectionsById}
+                salesByTokenId={salesByTokenId}
                 listPriceByTokenId={listPriceByTokenId}
                 onListPriceChange={(id, val) => setListPriceByTokenId(prev => ({ ...prev, [id]: val }))}
                 onList={onListToken}

@@ -13,6 +13,7 @@ import {
   type TokenSaleState,
 } from "../lib/marketplace";
 import { setPendingMarketState } from "../lib/pending-market";
+import { mergePendingTokens, setPendingToken } from "../lib/pending-tokens";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import { isHttpUrl, openTwitterShare, shareOrCopyUrl } from "../lib/share";
 import type { CollectionDto, GhostMarketMetaDto, TokenDto } from "../lib/types";
@@ -221,11 +222,15 @@ export function CollectionDetailPage() {
       }
 
       setCollection(fetchedCollection);
-      setTokens(fetchedTokens);
+      setTokens(mergePendingTokens(fetchedTokens, { collectionId: fetchedCollection.collectionId }));
       setGhostMarket(fetchedGhostMeta);
 
       if (isCsharp) {
-        await reloadSales(fetchedCollection, fetchedTokens, requestId);
+        await reloadSales(
+          fetchedCollection,
+          mergePendingTokens(fetchedTokens, { collectionId: fetchedCollection.collectionId }),
+          requestId,
+        );
       } else {
         setSalesByTokenId({});
       }
@@ -371,6 +376,13 @@ export function CollectionDetailPage() {
         }),
       );
 
+      setPendingToken({
+        txid,
+        collectionId: collection.collectionId,
+        owner: mintForm.to.trim(),
+        uri: tokenUri,
+        propertiesJson,
+      });
       setMessage(`Mint transaction submitted: ${txid}`);
       setMintForm({ to: connectedAddress, name: "", description: "", file: null, tokenClass: "standard" });
       scheduleReloadCollection();

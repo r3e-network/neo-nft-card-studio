@@ -8,6 +8,7 @@ import { fetchCollections, uploadToNeoFs } from "../lib/api";
 import { getCollectionClient } from "../lib/collection-client";
 import { toUserErrorMessage } from "../lib/errors";
 import { mergePendingCollections } from "../lib/pending-collections";
+import { setPendingToken } from "../lib/pending-tokens";
 import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
 import type { CollectionDto } from "../lib/types";
@@ -151,6 +152,13 @@ export function MintNftPage() {
       );
 
       const txid = await wallet.invoke(payload);
+      setPendingToken({
+        txid,
+        collectionId: selectedCollectionId,
+        owner: to.trim(),
+        uri: neofsUri,
+        propertiesJson,
+      });
       setResult(`Mint transaction submitted. Transaction Hash: ${txid}`);
       setStep(3);
     } catch (err) {
