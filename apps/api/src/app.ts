@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import type { Request } from "express";
 
 import { type ApiNetworkName, type ResolvedNetworkAppConfig, loadConfig } from "./config.js";
 import { AppDb } from "./db.js";
@@ -29,13 +30,32 @@ function buildCorsOriginResolver(configuredOrigins: string) {
 
   const loopbackOriginRegex = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
 
-  return (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+  const matchesRequestHost = (origin: string, req: Request): boolean => {
+    try {
+      const parsedOrigin = new URL(origin);
+      const forwardedHost = req.header("x-forwarded-host")?.trim().toLowerCase();
+      const host = req.header("host")?.trim().toLowerCase();
+      const requestHost = forwardedHost || host || "";
+      if (!requestHost) {
+        return false;
+      }
+
+      const forwardedProto = req.header("x-forwarded-proto")?.trim().toLowerCase();
+      const requestProto = forwardedProto || req.protocol || "";
+      return parsedOrigin.host.toLowerCase() === requestHost
+        && (!requestProto || parsedOrigin.protocol === `${requestProto}:`);
+    } catch {
+      return false;
+    }
+  };
+
+  return (origin: string | undefined, req: Request, callback: (error: Error | null, allow?: boolean) => void) => {
     if (!origin) {
       callback(null, true);
       return;
     }
 
-    if (allowSet.has(origin) || loopbackOriginRegex.test(origin)) {
+    if (allowSet.has(origin) || loopbackOriginRegex.test(origin) || matchesRequestHost(origin, req)) {
       callback(null, true);
       return;
     }
@@ -77,10 +97,13 @@ export function createApp() {
 
   const app = express();
   app.use(express.json({ limit: "50mb" }));
+  const corsOriginResolver = buildCorsOriginResolver(config.API_CORS_ORIGIN);
   app.use(
-    cors({
-      origin: buildCorsOriginResolver(config.API_CORS_ORIGIN),
-    }),
+    (req, res, next) => cors({
+      origin: (origin, callback) => corsOriginResolver === true
+        ? callback(null, true)
+        : corsOriginResolver(origin, req, callback),
+    })(req, res, next),
   );
   app.use("/api", createHttpRouter(networkContexts, config));
 
