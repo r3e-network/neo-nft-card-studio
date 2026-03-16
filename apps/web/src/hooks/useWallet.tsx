@@ -156,6 +156,20 @@ function readStoredWalletNetwork(): NeoWalletNetwork | null {
   }
 }
 
+function isWalletAccessDeniedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.trim().toLowerCase() : "";
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes("wallet access was denied")
+    || message.includes("wallet request was cancelled")
+    || message.includes("wallet network does not match")
+    || message.includes("connection denied")
+  );
+}
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(() => readStoredWalletAddress());
   const [network, setNetwork] = useState<NeoWalletNetwork | null>(() => readStoredWalletNetwork());
@@ -382,6 +396,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             });
         } catch (err) {
           console.error("Connect failed:", err);
+          clearWalletSession(true);
           throw err;
         } finally {
           setIsConnecting(false);
@@ -402,9 +417,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
-        const session = address
+        let session = address
           ? await syncWalletSession(true)
           : await syncWalletSession(false);
+
+        const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
+        if (!devWif && session.address) {
+          const liveAccount = await getNeoWalletAccount(true);
+          if (!liveAccount || !isSameWalletAddress(liveAccount.address, session.address)) {
+            session = await syncWalletSession(false);
+          }
+        }
+
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
@@ -424,9 +448,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               ...payload,
               signers: buildDefaultWalletSigners(session.address),
             };
-        const result = devWif 
-          ? await invokeNeoWalletWithWif(devWif, invokePayload)
-          : await invokeNeoWallet(invokePayload);
+        let result;
+        try {
+          result = devWif
+            ? await invokeNeoWalletWithWif(devWif, invokePayload)
+            : await invokeNeoWallet(invokePayload);
+        } catch (err) {
+          if (isWalletAccessDeniedError(err)) {
+            clearWalletSession(true);
+          }
+          throw err;
+        }
 
         const rawTxId = (result.txid ?? result.transaction ?? result.txId ?? result.transactionId ?? "").toString().trim();
         if (!rawTxId) {

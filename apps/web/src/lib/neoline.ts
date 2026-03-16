@@ -146,6 +146,52 @@ function describeValue(value: unknown): string {
   return `object(keys=${keys.slice(0, 8).join(",")}${keys.length > 8 ? ",..." : ""})`;
 }
 
+function summarizeProviderError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    return message || error.name || "error";
+  }
+
+  const record = asRecord(error);
+  if (!record) {
+    return String(error);
+  }
+
+  const type = typeof record.type === "string" ? record.type.trim() : "";
+  const description = typeof record.description === "string" ? record.description.trim() : "";
+  const message = typeof record.message === "string" ? record.message.trim() : "";
+  const parts = [type, description || message].filter((value) => value.length > 0);
+  return parts.join(": ") || describeValue(error);
+}
+
+function toWalletProviderError(error: unknown, fallbackMessage: string): Error {
+  const record = asRecord(error);
+  const type = typeof record?.type === "string" ? record.type.trim().toUpperCase() : "";
+  const description = typeof record?.description === "string" ? record.description.trim() : "";
+
+  if (type === "CONNECTION_DENIED") {
+    return new Error("Wallet access was denied by NeoLine. Approve the NeoLine connection/account prompt and retry.");
+  }
+
+  if (type === "CANCELED" || type === "CANCELLED") {
+    return new Error("Wallet request was cancelled. Please confirm the NeoLine prompt and retry.");
+  }
+
+  if (type === "CHAIN_NOT_MATCH") {
+    return new Error("Wallet network does not match the requested chain. Switch NeoLine to the correct network and retry.");
+  }
+
+  if (description) {
+    return new Error(description);
+  }
+
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error(fallbackMessage);
+}
+
 function hexToBase64(hex: string): string {
   const normalized = hex.trim().replace(/^0x/i, "");
   if (normalized.length === 0) {
@@ -502,6 +548,7 @@ function providerScore(provider: NeoLineN3Provider): number {
     || typeof provider.getAddress === "function"
     || typeof provider.getWalletAddress === "function"
     || typeof provider.requestAccounts === "function"
+    || typeof provider.switchWalletAccount === "function"
   ) {
     score += 16;
   }
@@ -555,6 +602,7 @@ function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
     || typeof provider.getAddress === "function"
     || typeof provider.getWalletAddress === "function"
     || typeof provider.requestAccounts === "function"
+    || typeof provider.switchWalletAccount === "function"
   );
 }
 
@@ -1416,35 +1464,68 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
   });
 
   const pendingConnectedEvent = waitForConnectedEvent();
+  const waitForEventAccount = async (): Promise<NeoLineAccount | null> => {
+    return Promise.race([
+      pendingConnectedEvent,
+      sleep(250).then(() => null),
+    ]);
+  };
 
   const withTimeoutOrEvent = async (
     label: string,
     attempt: () => Promise<unknown | undefined>,
   ): Promise<NeoLineAccount | null> => {
     walletDebug("connect:attempt", providerName, label);
-    const result = await Promise.race<unknown | NeoLineAccount | null>([
-      attempt(),
-      pendingConnectedEvent,
-      sleep(CONNECT_METHOD_TIMEOUT_MS).then(() => null),
-    ]);
+    try {
+      const result = await Promise.race<unknown | { __timeout: true }>([
+        attempt(),
+        sleep(CONNECT_METHOD_TIMEOUT_MS).then(() => ({ __timeout: true as const })),
+      ]);
 
-    const eventAccount = normalizeAccount(result);
-    if (eventAccount) {
-      cachedProvider = provider;
-      diagnostics.push(`${label}=${eventAccount.address}`);
-      walletDebug("connect:success", providerName, label, eventAccount.address);
-      return eventAccount;
+      if (asRecord(result)?.__timeout === true) {
+        const eventAccount = await waitForEventAccount();
+        if (eventAccount) {
+          cachedProvider = provider;
+          diagnostics.push(`${label}=event-timeout(${eventAccount.address})`);
+          walletDebug("connect:success", providerName, label, eventAccount.address);
+          return eventAccount;
+        }
+
+        diagnostics.push(`${label}=timeout`);
+        walletDebug("connect:no-account", providerName, label, "timeout");
+        return null;
+      }
+
+      const account = normalizeAccount(result);
+      if (account) {
+        cachedProvider = provider;
+        diagnostics.push(`${label}=${account.address}`);
+        walletDebug("connect:success", providerName, label, account.address);
+        return account;
+      }
+
+      const eventAccount = await waitForEventAccount();
+      if (eventAccount) {
+        cachedProvider = provider;
+        diagnostics.push(`${label}=event(${eventAccount.address})`);
+        walletDebug("connect:success", providerName, label, eventAccount.address);
+        return eventAccount;
+      }
+
+      diagnostics.push(`${label}=no-account(${describeValue(result)})`);
+      walletDebug("connect:no-account", providerName, label, describeValue(result));
+      return null;
+    } catch (error) {
+      diagnostics.push(`${label}=error(${summarizeProviderError(error)})`);
+      walletDebug("connect:error", providerName, label, summarizeProviderError(error));
+      return null;
     }
-
-    diagnostics.push(`${label}=no-account(${describeValue(result)})`);
-    walletDebug("connect:no-account", providerName, label, describeValue(result));
-
-    return null;
   };
 
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
     "getAccount",
     "requestAccounts",
+    "switchWalletAccount",
     "getAddress",
     "getWalletAddress",
     "getAccounts",
@@ -1474,8 +1555,8 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
         cachedProvider = provider;
         return account;
       }
-    } catch {
-      diagnostics.push(`rpc:${method}=error`);
+    } catch (error) {
+      diagnostics.push(`rpc:${method}=error(${summarizeProviderError(error)})`);
       // try next interactive method
     }
   }
@@ -1734,11 +1815,11 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
       walletDebug(
         "invoke:failed",
         getProviderDebugName(provider),
-        error instanceof Error ? error.message : String(error),
+        summarizeProviderError(error),
       );
       lastError = error;
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Failed to invoke wallet.");
+  throw toWalletProviderError(lastError, "Failed to invoke wallet.");
 }

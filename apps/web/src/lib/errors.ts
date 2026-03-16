@@ -2,6 +2,7 @@ import type { TFunction } from "i18next";
 import { getUploadTooLargeMessage } from "./upload-limits";
 
 const UNKNOWN_WALLET_NETWORK_MESSAGE = "Connected wallet network is unknown. Switch wallet to MainNet/TestNet and reconnect.";
+const WALLET_CONNECTION_DENIED_MESSAGE = "Wallet access was denied by NeoLine. Approve the NeoLine connection/account prompt and retry.";
 const WALLET_SESSION_UNAVAILABLE_MESSAGE = "Wallet session is unavailable. Please reconnect wallet.";
 const WALLET_TXID_MISSING_MESSAGE = "Wallet invoke succeeded but no transaction id was returned. Please check wallet history.";
 const WALLET_TXID_INVALID_MESSAGE = "Wallet returned an invalid transaction id format. Please check wallet history.";
@@ -64,6 +65,10 @@ export function toUserErrorMessage(t: TFunction, error: unknown): string {
 
   if (message === UNKNOWN_WALLET_NETWORK_MESSAGE) {
     return t("app.err_wallet_network_unknown");
+  }
+
+  if (message === WALLET_CONNECTION_DENIED_MESSAGE) {
+    return t("app.err_wallet_connection_denied");
   }
 
   if (message === WALLET_SESSION_UNAVAILABLE_MESSAGE) {
