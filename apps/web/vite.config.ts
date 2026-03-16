@@ -1,8 +1,30 @@
+import { execSync } from "node:child_process";
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+function resolveBuildRevision(): string {
+  const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA?.trim();
+  if (fromEnv) {
+    return fromEnv.slice(0, 7);
+  }
+
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+const buildRevision = resolveBuildRevision();
+const buildTime = new Date().toISOString();
+
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_BUILD_REVISION__: JSON.stringify(buildRevision),
+    __APP_BUILD_TIME__: JSON.stringify(buildTime),
+  },
   build: {
     chunkSizeWarningLimit: 700,
     rollupOptions: {

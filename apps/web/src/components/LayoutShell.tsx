@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchContractMeta } from "../lib/api";
+import { BUILD_INFO } from "../lib/build-info";
 import { APP_CONFIG } from "../lib/config";
 import {
   getRuntimeNetworkConfig,
@@ -74,6 +75,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const [dialectMismatchMessage, setDialectMismatchMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [availableNetworks, setAvailableNetworks] = useState<FrontendNetworkName[]>(() => getFallbackAvailableNetworks());
+  const [apiRevision, setApiRevision] = useState("");
 
   const walletKnownNetwork = runtimeState.walletNetwork && runtimeState.walletNetwork.network !== "unknown"
     ? runtimeState.walletNetwork.network
@@ -97,6 +99,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         }
 
         setRuntimeContractDialect(meta.dialect);
+        setApiRevision(meta.revision?.trim() ?? "");
         const nextAvailableNetworks = meta.availableNetworks?.length
           ? meta.availableNetworks
           : getFallbackAvailableNetworks();
@@ -125,6 +128,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         }
         resetRuntimeContractDialect();
         setAvailableNetworks(getFallbackAvailableNetworks());
+        setApiRevision("");
         setDialectMismatchMessage("");
       }
     };
@@ -327,6 +331,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             <Lock size={12} color="#F59E0B" /> {t("app.network_locked_to_wallet")}
           </span>
         ) : null}
+        <span className="flex-align-center gap-xs" style={{ color: "var(--text-muted)" }}>
+          rev {apiRevision || BUILD_INFO.revision}
+        </span>
       </div>
 
       {dialectMismatchMessage ? <div className="notice notice-warn">{dialectMismatchMessage}</div> : null}

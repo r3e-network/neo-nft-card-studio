@@ -46,6 +46,8 @@ export interface HealthDto {
   network?: "mainnet" | "testnet" | "private";
   defaultNetwork?: "mainnet" | "testnet" | "private";
   availableNetworks?: Array<"mainnet" | "testnet" | "private">;
+  revision?: string;
+  builtAt?: string;
   contract: {
     hash: string;
     dialect: "csharp" | "solidity" | "rust";
@@ -63,6 +65,8 @@ export interface ContractMetaDto {
   network?: "mainnet" | "testnet" | "private";
   defaultNetwork?: "mainnet" | "testnet" | "private";
   availableNetworks?: Array<"mainnet" | "testnet" | "private">;
+  revision?: string;
+  builtAt?: string;
   hash: string;
   dialect: "csharp" | "solidity" | "rust";
   eventIndexingEnabled: boolean;

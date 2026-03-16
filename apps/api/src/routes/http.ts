@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { ApiNetworkName, AppConfig, ResolvedNetworkAppConfig } from "../config.js";
+import { API_BUILD_INFO } from "../build-info.js";
 import type { IndexerService } from "../services/indexer.js";
 import { AppDb } from "../db.js";
 import { resolveNeoFsUri } from "../services/neofs.js";
@@ -694,6 +695,8 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         network: context.network,
         defaultNetwork: config.NEO_DEFAULT_NETWORK,
         availableNetworks,
+        revision: API_BUILD_INFO.revision,
+        builtAt: API_BUILD_INFO.builtAt,
         contract: {
           hash: context.config.NEO_CONTRACT_HASH,
           dialect: context.config.NEO_CONTRACT_DIALECT,
@@ -718,6 +721,8 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
         network: context.network,
         defaultNetwork: config.NEO_DEFAULT_NETWORK,
         availableNetworks,
+        revision: API_BUILD_INFO.revision,
+        builtAt: API_BUILD_INFO.builtAt,
         hash: context.config.NEO_CONTRACT_HASH,
         dialect: context.config.NEO_CONTRACT_DIALECT,
         eventIndexingEnabled: context.indexer.isEventIndexingEnabled(),
