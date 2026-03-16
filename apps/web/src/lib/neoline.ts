@@ -38,6 +38,12 @@ export interface NeoLineInvokeResult {
 }
 
 export interface NeoLineN3Provider {
+  account?: unknown;
+  selectedAddress?: unknown;
+  address?: unknown;
+  network?: unknown;
+  currentNetwork?: unknown;
+  selectedNetwork?: unknown;
   getAccount?: () => Promise<unknown>;
   getAccounts?: () => Promise<unknown>;
   getAddress?: () => Promise<unknown>;
@@ -375,6 +381,12 @@ function normalizeProvider(provider: NeoLineN3Provider): NeoLineN3Provider {
   }
 
   const normalized: NeoLineN3Provider = {
+    account: (provider as Record<string, unknown>).account,
+    selectedAddress: (provider as Record<string, unknown>).selectedAddress,
+    address: (provider as Record<string, unknown>).address,
+    network: (provider as Record<string, unknown>).network,
+    currentNetwork: (provider as Record<string, unknown>).currentNetwork,
+    selectedNetwork: (provider as Record<string, unknown>).selectedNetwork,
     getAccount: provider.getAccount?.bind(provider),
     getAccounts: provider.getAccounts?.bind(provider),
     getAddress: provider.getAddress?.bind(provider),
@@ -862,7 +874,79 @@ function extractRpcUrl(value: unknown): string | undefined {
   return undefined;
 }
 
-function normalizeNetworkName(value: unknown, magic: number | null): NeoWalletNetworkName {
+function inferNetworkNameFromText(text: string): NeoWalletNetworkName | null {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const hasMainnet =
+    normalized.includes("mainnet")
+    || normalized.includes("main_net")
+    || normalized.includes("main net");
+  const hasTestnet =
+    normalized.includes("testnet")
+    || normalized.includes("test_net")
+    || normalized.includes("test net")
+    || normalized.includes("neo3t5")
+    || normalized.includes("t5");
+
+  if (hasTestnet && !hasMainnet) {
+    return "testnet";
+  }
+
+  if (hasMainnet && !hasTestnet) {
+    return "mainnet";
+  }
+
+  return null;
+}
+
+function inferNetworkNameFromRpcUrl(rpcUrl: string | undefined): NeoWalletNetworkName | null {
+  if (!rpcUrl) {
+    return null;
+  }
+
+  return inferNetworkNameFromText(rpcUrl);
+}
+
+function extractPreferredNetworkText(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  for (const key of [
+    "currentNetwork",
+    "selectedNetwork",
+    "network",
+    "name",
+    "label",
+    "chain",
+    "current",
+    "selected",
+    "detail",
+    "result",
+    "data",
+  ]) {
+    const nested = extractPreferredNetworkText(record[key]);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+}
+
+function normalizeNetworkName(
+  value: unknown,
+  magic: number | null,
+  rpcUrl?: string,
+): NeoWalletNetworkName {
   if (magic === NEO_MAINNET_MAGIC) {
     return "mainnet";
   }
@@ -871,23 +955,32 @@ function normalizeNetworkName(value: unknown, magic: number | null): NeoWalletNe
     return "testnet";
   }
 
-  let text = "";
+  const rpcDerived = inferNetworkNameFromRpcUrl(rpcUrl);
+  if (rpcDerived) {
+    return rpcDerived;
+  }
+
+  const preferredText = extractPreferredNetworkText(value);
+  const preferredDerived = preferredText ? inferNetworkNameFromText(preferredText) : null;
+  if (preferredDerived) {
+    return preferredDerived;
+  }
+
   if (typeof value === "string") {
-    text = value.toLowerCase();
+    const direct = inferNetworkNameFromText(value);
+    if (direct) {
+      return direct;
+    }
   } else {
     try {
-      text = JSON.stringify(value ?? "").toLowerCase();
+      const raw = JSON.stringify(value ?? "");
+      const inferred = inferNetworkNameFromText(raw);
+      if (inferred) {
+        return inferred;
+      }
     } catch {
-      text = "";
+      // ignore stringify failures
     }
-  }
-
-  if (text.includes("mainnet") || text.includes("main_net") || text.includes("main net")) {
-    return "mainnet";
-  }
-
-  if (text.includes("testnet") || text.includes("test_net") || text.includes("test net")) {
-    return "testnet";
   }
 
   return magic !== null ? "private" : "unknown";
@@ -1346,7 +1439,7 @@ async function readNetworkFromProvider(provider: NeoLineN3Provider): Promise<Neo
     const payload = pickNetworkPayload(attempt);
     const magic = extractNetworkMagic(payload);
     const rpcUrl = extractRpcUrl(payload);
-    const network = normalizeNetworkName(payload, magic);
+    const network = normalizeNetworkName(payload, magic, rpcUrl);
 
     if (network !== "unknown" || magic !== null || rpcUrl) {
       return {
