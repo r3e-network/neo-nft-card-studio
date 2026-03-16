@@ -85,6 +85,7 @@ const N3_REQUEST_EVENT = "NEOLine.N3.EVENT.REQUEST";
 const NEO_REQUEST_EVENT = "NEOLine.NEO.EVENT.REQUEST";
 const PROVIDER_READY_WAIT_MS = 5000;
 const WALLET_GLOBAL_HINT_REGEX = /(neolinen3|neoline|o3|onegate|n3wallet)/i;
+const PROVIDER_HINT_STORAGE_KEY = "opennft_wallet_provider_hint";
 
 const wrappedProviders = new WeakMap<object, NeoLineN3Provider>();
 const enableAttemptedProviders = new WeakSet<Record<string, unknown>>();
@@ -148,6 +149,30 @@ function getProviderDebugName(provider: NeoLineN3Provider): string {
     }
   }
   return `provider(keys=${Object.keys(record).slice(0, 6).join(",")})`;
+}
+
+function readStoredPreferredProviderHint(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.localStorage.getItem(PROVIDER_HINT_STORAGE_KEY)?.trim();
+  return value || null;
+}
+
+function rememberProvider(provider: NeoLineN3Provider): void {
+  cachedProvider = provider;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(PROVIDER_HINT_STORAGE_KEY, getProviderDebugName(provider));
+  }
+}
+
+export function clearStoredNeoProviderHint(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(PROVIDER_HINT_STORAGE_KEY);
 }
 
 function pushUniqueUnknown(list: unknown[], value: unknown): void {
@@ -471,8 +496,23 @@ function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
 
 function getCandidateProvidersInPriorityOrder(): NeoLineN3Provider[] {
   const providers = collectResolvedProviders();
+  const preferredHint = readStoredPreferredProviderHint();
   if (!cachedProvider) {
-    return providers;
+    if (!preferredHint) {
+      return providers;
+    }
+
+    return providers.sort((left, right) => {
+      const leftMatchesHint = getProviderDebugName(left) === preferredHint;
+      const rightMatchesHint = getProviderDebugName(right) === preferredHint;
+      if (leftMatchesHint && !rightMatchesHint) {
+        return -1;
+      }
+      if (!leftMatchesHint && rightMatchesHint) {
+        return 1;
+      }
+      return providerScore(right) - providerScore(left);
+    });
   }
 
   return providers.sort((left, right) => {
@@ -480,6 +520,14 @@ function getCandidateProvidersInPriorityOrder(): NeoLineN3Provider[] {
       return -1;
     }
     if (right === cachedProvider) {
+      return 1;
+    }
+    const leftMatchesHint = preferredHint ? getProviderDebugName(left) === preferredHint : false;
+    const rightMatchesHint = preferredHint ? getProviderDebugName(right) === preferredHint : false;
+    if (leftMatchesHint && !rightMatchesHint) {
+      return -1;
+    }
+    if (!leftMatchesHint && rightMatchesHint) {
       return 1;
     }
     return providerScore(right) - providerScore(left);
@@ -1326,7 +1374,7 @@ export function getNeoProvider(): NeoLineN3Provider | null {
     return null;
   }
 
-  cachedProvider = directAccountProvider;
+  rememberProvider(directAccountProvider);
   return directAccountProvider;
 }
 
@@ -1361,7 +1409,7 @@ export async function getNeoWalletAccount(silent = true): Promise<NeoLineAccount
     for (const provider of providers) {
       const account = readDirectAccountFromProvider(provider);
       if (account) {
-        cachedProvider = provider;
+        rememberProvider(provider);
         return account;
       }
     }
@@ -1390,7 +1438,7 @@ export async function getNeoWalletNetworkForAddress(
   for (const provider of providers) {
     const network = await readNetworkFromProvider(provider);
     if (network) {
-      cachedProvider = provider;
+      rememberProvider(provider);
       return network;
     }
   }
@@ -1409,16 +1457,16 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
   for (const provider of providers) {
     try {
       if (typeof provider.invoke === "function") {
-        cachedProvider = provider;
+        rememberProvider(provider);
         return normalizeInvokeResult(await provider.invoke(payload));
       }
 
       if (typeof provider.invokeFunction === "function") {
-        cachedProvider = provider;
+        rememberProvider(provider);
         return normalizeInvokeResult(await provider.invokeFunction(payload));
       }
 
-      cachedProvider = provider;
+      rememberProvider(provider);
       return normalizeInvokeResult(
         await requestProvider(provider, {
           method: "invoke",

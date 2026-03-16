@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { WalletInvokeRequest } from "@platform/neo-sdk";
 
 import {
+  clearStoredNeoProviderHint,
   connectNeoWallet,
   getNeoProvider,
   getNeoWalletAccount,
@@ -156,6 +157,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(WALLET_CONNECTED_KEY);
     localStorage.removeItem(WALLET_ADDRESS_KEY);
     localStorage.removeItem(WALLET_NETWORK_KEY);
+    clearStoredNeoProviderHint();
     if (!preserveDevWif) {
       localStorage.removeItem(DEV_WIF_KEY);
     }
