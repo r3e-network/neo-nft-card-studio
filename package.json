@@ -25,6 +25,7 @@
     "audit:production-config": "node scripts/audit-production-config.mjs",
     "audit:security": "node scripts/audit-security-surface.mjs",
     "audit:runtime-contracts": "node scripts/audit-runtime-contracts.mjs",
+    "audit:wallet-session": "node_modules/.bin/tsx scripts/audit-wallet-session-cache.mjs",
     "smoke:trade": "node scripts/smoke-trade-flow.mjs",
     "smoke:e2e": "node scripts/smoke-e2e.mjs",
     "lint": "npm run lint --workspaces",

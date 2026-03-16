@@ -12,6 +12,7 @@ import {
 } from "../lib/neoline";
 import { APP_CONFIG } from "../lib/config";
 import { setRuntimeWalletNetwork } from "../lib/runtime-network";
+import { resolveWalletSessionSnapshot } from "../lib/wallet-session";
 import { getWifAccount, invokeNeoWalletWithWif } from "../lib/wifWallet";
 
 interface WalletState {
@@ -190,23 +191,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Single call to get network/account, prioritized by provider
       const currentNetwork = await getNeoWalletNetwork(silent);
       const currentAccount = await getNeoWalletAccount(silent);
-      
-      const nextAddress = currentAccount?.address?.trim() || null;
-      const nextNetwork = nextAddress ? currentNetwork : null;
-
-      if (silent && !nextAddress) {
-        const fallbackAddress = address?.trim() || readStoredWalletAddress();
-        const fallbackNetwork = network ?? readStoredWalletNetwork();
-        if (fallbackAddress) {
-          setAddress((prev) => (isSameWalletAddress(prev, fallbackAddress) ? prev : fallbackAddress));
-          setNetwork((prev) => (isSameWalletNetwork(prev, fallbackNetwork) ? prev : fallbackNetwork));
-          setRuntimeWalletNetwork(fallbackNetwork);
-          return {
-            address: fallbackAddress,
-            network: fallbackNetwork,
-          };
-        }
-      }
+      const fallbackAddress = address?.trim() || readStoredWalletAddress();
+      const fallbackNetwork = network ?? readStoredWalletNetwork();
+      const providerAddress = currentAccount?.address?.trim() || null;
+      const session = resolveWalletSessionSnapshot({
+        silent,
+        fallbackAddress,
+        fallbackNetwork,
+        providerAddress,
+        providerNetwork: currentNetwork,
+      });
+      const nextAddress = session.address;
+      const nextNetwork = session.network;
 
       if (nextAddress) {
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
@@ -380,21 +376,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
-        if (address) {
-          return;
-        }
-
-        const session = await syncWalletSession(false);
+        const session = address
+          ? await syncWalletSession(true)
+          : await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
       },
       invoke: async (payload: WalletInvokeRequest) => {
         const session = address
-          ? {
-              address,
-              network,
-            }
+          ? await syncWalletSession(true)
           : await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
