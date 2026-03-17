@@ -212,6 +212,77 @@ This gap does **not** invalidate the functional validation already completed, be
 - production API read/write paths were verified
 - chain-level lifecycle scripts passed
 - mainnet write-path transactions succeeded directly
+- full on-chain testnet lifecycle with seller+buyer passed
+
+## Additional Validation Completed Later On 2026-03-18
+
+### Wallet session cache audit
+
+Passed:
+
+- `npm run audit:wallet-session`
+
+Result:
+
+- stale wallet-network cache regression checks passed
+
+### Full testnet lifecycle with seller + buyer
+
+Passed:
+
+- `npm run test:testnet:lifecycle`
+
+This completed a deeper real-chain lifecycle than the basic smoke scripts, including:
+
+- shared collection create
+- shared update
+- shared operator grant + revoke
+- shared mint by operator
+- shared list
+- shared cancel listing
+- shared buy
+- shared transfer
+- shared burn
+- shared drop configuration + whitelist + claim
+- shared check-in configuration + check-in
+- dedicated collection deploy
+- dedicated update
+- dedicated operator grant + revoke
+- dedicated mint by operator
+- dedicated list
+- dedicated cancel listing
+- dedicated buy
+- dedicated transfer
+- dedicated burn
+- dedicated drop configuration + whitelist + claim
+- dedicated check-in configuration + check-in
+- dedicated isolation fault checks
+- template clear + restore
+- deployment fee withdrawal
+
+Important result summary:
+
+- seller: `NTmHjwiadq4g3VHpJ5FQigQcD4fF5m8TyX`
+- buyer: `NR3E4D8NUXh3zhbf5ZkAp3rTxWbQqNih32`
+- shared collection: `1`
+- dedicated collection: `2`
+- dedicated contract hash: `0x3646565563332b1bab95087a17f068a5b3150269`
+
+### Official-site browser automation finding
+
+I attempted to close the final official-site NeoLine gap with a cloned `Profile 5` browser launched under CDP control.
+
+Finding:
+
+- the cloned/profile-driven CDP browser did **not** expose `window.NEOLineN3`
+- it exposed Coinbase-style provider globals only
+- official-site `Connect` therefore failed with:
+  - `No Neo N3 wallet found. Install NeoLine or a compatible Neo N3 wallet and refresh the page.`
+
+Interpretation:
+
+- this appears to be a limitation of the controlled cloned-browser environment rather than a production runtime failure on the user's normal browser profile
+- the real Chrome profile still successfully surfaces NeoLine UI and account selection
 
 ## Recommended Next Step
 
