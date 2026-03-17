@@ -198,6 +198,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setRuntimeWalletNetwork(null);
   }, []);
 
+  const persistWalletSession = useCallback((nextAddress: string, nextNetwork: NeoWalletNetwork | null) => {
+    localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+    localStorage.setItem(WALLET_ADDRESS_KEY, nextAddress);
+    if (nextNetwork) {
+      localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(nextNetwork));
+    } else {
+      localStorage.removeItem(WALLET_NETWORK_KEY);
+    }
+
+    setAddress((prev) => (isSameWalletAddress(prev, nextAddress) ? prev : nextAddress));
+    setNetwork((prev) => (isSameWalletNetwork(prev, nextNetwork) ? prev : nextNetwork));
+    setRuntimeWalletNetwork(nextNetwork);
+    syncSelectedFrontendNetwork(nextNetwork);
+  }, []);
+
   const syncWalletSession = useCallback(async (silent = true): Promise<{
     address: string | null;
     network: NeoWalletNetwork | null;
@@ -280,6 +295,36 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return { address: null, network: null };
     }
   }, [address, clearWalletSession, network]);
+
+  const resolveActionableWalletSession = useCallback(async (): Promise<{
+    address: string | null;
+    network: NeoWalletNetwork | null;
+  }> => {
+    const cachedSession = await syncWalletSession(true);
+    const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
+    if (devWif && cachedSession.address) {
+      return cachedSession;
+    }
+
+    const liveSession = await withTimeout(syncWalletSession(false), 4000);
+    if (liveSession?.address) {
+      return liveSession;
+    }
+
+    const reconnectedAccount = await withTimeout(connectNeoWallet(), 30000);
+    const nextAddress = reconnectedAccount?.address?.trim() || null;
+    if (!nextAddress) {
+      throw new Error("Wallet session could not be refreshed. Unlock NeoLine, confirm the connection prompt, and retry.");
+    }
+
+    const nextNetwork = await getNeoWalletNetworkForAddress(nextAddress, true).catch(() => cachedSession.network ?? null);
+    suppressSilentSyncUntilRef.current = Date.now() + 5000;
+    persistWalletSession(nextAddress, nextNetwork);
+    return {
+      address: nextAddress,
+      network: nextNetwork,
+    };
+  }, [persistWalletSession, syncWalletSession]);
 
   // 1. Initial Readiness & Events Setup
   useEffect(() => {
@@ -427,29 +472,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
-        const cachedSession = await syncWalletSession(true);
-        if (!cachedSession.address) {
-          const forcedSession = await syncWalletSession(false);
-          if (!forcedSession.address) {
-            throw new Error("Wallet session is unavailable. Please reconnect wallet.");
-          }
-
-          return forcedSession;
-        }
-
-        const refreshedSession = await withTimeout(syncWalletSession(false), 4000);
-        const session = refreshedSession?.address ? refreshedSession : cachedSession;
-        if (!session.address) {
-          throw new Error("Wallet session is unavailable. Please reconnect wallet.");
-        }
-
-        return session;
+        return resolveActionableWalletSession();
       },
       invoke: async (payload: WalletInvokeRequest) => {
-        const cachedSession = await syncWalletSession(true);
-        const session = cachedSession.address
-          ? (await withTimeout(syncWalletSession(false), 4000)) ?? cachedSession
-          : await syncWalletSession(false);
+        const session = await resolveActionableWalletSession();
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
@@ -487,7 +513,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           : `0x${rawTxId}`;
       },
     }),
-    [address, clearWalletSession, network, isConnecting, isReady, syncWalletSession],
+    [address, clearWalletSession, network, isConnecting, isReady, resolveActionableWalletSession],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
