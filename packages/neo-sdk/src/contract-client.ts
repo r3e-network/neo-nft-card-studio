@@ -96,6 +96,25 @@ function normalizeExtraDataArg(
   return JSON.stringify(value);
 }
 
+function extraDataArg(
+  value: string | number | boolean | null | Array<unknown> | Record<string, unknown> | undefined,
+): ContractArgument {
+  const normalized = normalizeExtraDataArg(value);
+  if (normalized === null) {
+    return { type: "Any", value: null };
+  }
+
+  if (typeof normalized === "string") {
+    return stringArg(normalized);
+  }
+
+  if (typeof normalized === "number") {
+    return integerArg(normalized);
+  }
+
+  return boolArg(normalized);
+}
+
 export function stringArg(value: string): ContractArgument {
   return {
     type: "String",
@@ -481,7 +500,7 @@ export class NeoNftPlatformClient {
         integerArg(payload.maxSupply),
         integerArg(payload.royaltyBps),
         boolArg(payload.transferable),
-        { type: "Any", value: normalizeExtraDataArg(payload.extraData) },
+        extraDataArg(payload.extraData),
       ],
     };
   }
@@ -807,7 +826,7 @@ export class NeoNftPlatformClient {
     return {
       scriptHash: this.config.contractHash,
       operation: "deployCollectionContractFromTemplate",
-      args: [toByteArrayArg(payload.collectionId), { type: "Any", value: normalizeExtraDataArg(payload.extraData) }],
+      args: [toByteArrayArg(payload.collectionId), extraDataArg(payload.extraData)],
     };
   }
 

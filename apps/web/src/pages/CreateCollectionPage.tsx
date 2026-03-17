@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck, Info, ChevronRight, Check } from "lucide-react";
+import { wallet as neonWallet } from "@cityofzion/neon-js";
 
 import { useWallet } from "../hooks/useWallet";
 import { uploadToNeoFs } from "../lib/api";
@@ -170,6 +171,15 @@ export function CreateCollectionPage() {
             royaltyBps: Number(form.royaltyBps),
             transferable: form.transferable
           });
+
+      if (form.mode === "dedicated") {
+        payload.signers = [
+          {
+            account: neonWallet.getScriptHashFromAddress(wallet.address),
+            scopes: "Global",
+          },
+        ];
+      }
 
       const txid = await wallet.invoke(payload);
       if (import.meta.env.DEV) {
