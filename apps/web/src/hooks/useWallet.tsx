@@ -326,6 +326,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return liveSession;
     }
 
+    if (cachedSession.address) {
+      return cachedSession;
+    }
+
     const reconnectedAccount = await withTimeout(connectNeoWallet(), 30000);
     const nextAddress = reconnectedAccount?.address?.trim() || null;
     if (!nextAddress) {
