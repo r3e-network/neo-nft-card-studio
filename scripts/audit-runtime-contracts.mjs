@@ -8,13 +8,23 @@ import { rpc } from "@cityofzion/neon-js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const LOCAL_FACTORY_MANIFEST_PATH = path.join(
-  ROOT,
-  "contracts",
-  "multi-tenant-nft-platform",
-  "build",
-  "MultiTenantNftPlatform.manifest.json",
-);
+const LOCAL_FACTORY_MANIFEST_CANDIDATES = [
+  path.join(
+    ROOT,
+    "contracts",
+    "multi-tenant-nft-platform",
+    "build",
+    "MultiTenantNftPlatform.manifest.json",
+  ),
+  path.join(
+    ROOT,
+    "contracts",
+    "nft-platform-factory",
+    "bin",
+    "sc",
+    "MultiTenantNftPlatform.manifest.json",
+  ),
+];
 
 const DEFAULT_TARGETS = [
   {
@@ -54,7 +64,12 @@ function methodSignatures(manifest) {
 }
 
 function readLocalManifest() {
-  return JSON.parse(fs.readFileSync(LOCAL_FACTORY_MANIFEST_PATH, "utf8"));
+  const manifestPath = LOCAL_FACTORY_MANIFEST_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+  if (!manifestPath) {
+    throw new Error(`Missing local factory manifest. Checked: ${LOCAL_FACTORY_MANIFEST_CANDIDATES.join(", ")}`);
+  }
+
+  return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 }
 
 async function fetchRemoteManifest(target) {
