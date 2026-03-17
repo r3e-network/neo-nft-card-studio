@@ -36,6 +36,47 @@ const DEV_WIF_KEY = "opennft_wallet_wif";
 const WALLET_ADDRESS_KEY = "opennft_wallet_address";
 const WALLET_NETWORK_KEY = "opennft_wallet_network";
 
+function readStoredWalletAddress(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.localStorage.getItem(WALLET_ADDRESS_KEY)?.trim();
+  return value || null;
+}
+
+function readStoredWalletNetwork(): NeoWalletNetwork | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(WALLET_NETWORK_KEY)?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<NeoWalletNetwork> | null;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    const network = parsed.network;
+    if (network !== "mainnet" && network !== "testnet" && network !== "private" && network !== "unknown") {
+      return null;
+    }
+
+    return {
+      network,
+      magic: typeof parsed.magic === "number" ? parsed.magic : null,
+      rpcUrl: typeof parsed.rpcUrl === "string" ? parsed.rpcUrl : undefined,
+      raw: parsed.raw ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function isSameWalletNetwork(a: NeoWalletNetwork | null, b: NeoWalletNetwork | null): boolean {
   if (!a && !b) {
     return true;
@@ -126,8 +167,8 @@ function isWalletAccessDeniedError(error: unknown): boolean {
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [address, setAddress] = useState<string | null>(null);
-  const [network, setNetwork] = useState<NeoWalletNetwork | null>(null);
+  const [address, setAddress] = useState<string | null>(() => readStoredWalletAddress());
+  const [network, setNetwork] = useState<NeoWalletNetwork | null>(() => readStoredWalletNetwork());
   const [isConnecting, setIsConnecting] = useState(false);
   const [isReady, setIsReady] = useState<boolean>(() => Boolean(getNeoProvider()));
   const suppressSilentSyncUntilRef = useRef(0);
@@ -151,6 +192,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }> => {
     const isConnected = localStorage.getItem(WALLET_CONNECTED_KEY) === "true";
     const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
+    const storedAddress = readStoredWalletAddress();
+    const storedNetwork = readStoredWalletNetwork();
 
     if (!isConnected && silent) {
       clearWalletSession(Boolean(devWif));
@@ -179,8 +222,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const fallbackAddress = address?.trim() || null;
-      const fallbackNetwork = network ?? null;
+      const fallbackAddress = address?.trim() || storedAddress;
+      const fallbackNetwork = network ?? storedNetwork;
       const currentAccount = await getNeoWalletAccount(silent);
       const providerAddress = currentAccount?.address?.trim() || null;
       // Resolve network after account so the matching provider is preferred.

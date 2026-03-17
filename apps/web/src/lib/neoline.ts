@@ -1389,7 +1389,10 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
   if (providerRecord && typeof providerRecord.enable === "function") {
     enableAttemptedProviders.delete(providerRecord);
   }
-  const CONNECT_METHOD_TIMEOUT_MS = 12000;
+  // NeoLine can require a full login + authorization flow before the original
+  // request resolves. Keep the window long enough so we do not incorrectly
+  // fire additional interactive prompts and race the wallet UI.
+  const CONNECT_METHOD_TIMEOUT_MS = 45000;
 
   const waitForConnectedEvent = () => new Promise<NeoLineAccount | null>((resolve) => {
     const connectedEvent = provider.EVENT?.CONNECTED;
@@ -1454,7 +1457,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
       cleanup();
       diagnostics.push("event=timeout");
       resolve(null);
-    }, 30000);
+    }, 45000);
 
     if (canListenProvider) {
       if (connectedEvent) {
@@ -1476,7 +1479,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
   const waitForEventAccount = async (): Promise<NeoLineAccount | null> => {
     return Promise.race([
       pendingConnectedEvent,
-      sleep(250).then(() => null),
+      sleep(1500).then(() => null),
     ]);
   };
 
@@ -1534,7 +1537,6 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
     "getAccount",
     "requestAccounts",
-    "switchWalletAccount",
     "getAddress",
     "getWalletAddress",
     "getAccounts",
