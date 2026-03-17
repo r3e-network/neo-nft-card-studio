@@ -115,11 +115,6 @@ export function CreateCollectionPage() {
     setError("");
     setResult("");
 
-    if (!wallet.address) {
-      setError("Please connect your wallet first.");
-      return;
-    }
-
     if (!form.name || !form.symbol) {
       setError("Name and symbol are required.");
       return;
@@ -135,7 +130,7 @@ export function CreateCollectionPage() {
       const session = await wallet.sync();
       const activeAddress = session.address?.trim() || "";
       if (!activeAddress) {
-        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+        throw new Error("Please connect your wallet first.");
       }
       let neofsUri = form.baseUri;
       if (file) {
@@ -179,7 +174,7 @@ export function CreateCollectionPage() {
       if (form.mode === "dedicated") {
         payload.signers = [
           {
-            account: neonWallet.getScriptHashFromAddress(wallet.address),
+            account: neonWallet.getScriptHashFromAddress(activeAddress),
             scopes: "Global",
           },
         ];
