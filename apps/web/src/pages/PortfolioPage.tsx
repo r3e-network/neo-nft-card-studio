@@ -49,6 +49,10 @@ export function PortfolioPage() {
   const [actionTokenId, setActionTokenId] = useState("");
   const [copied, setCopied] = useState(false);
   const reloadTimerRef = useRef<number | null>(null);
+  const hasPendingTokens = useMemo(
+    () => collectedTokens.some((token) => token.tokenId.startsWith("pending:")),
+    [collectedTokens],
+  );
 
   const isCsharp = contractDialect === "csharp";
   const requireWalletAddress = (): string | null => {
@@ -163,6 +167,14 @@ export function PortfolioPage() {
       void reloadPortfolio();
     }, delayMs);
   }, [reloadPortfolio]);
+
+  useEffect(() => {
+    if (!wallet.address || loading || !hasPendingTokens) {
+      return;
+    }
+
+    scheduleReloadPortfolio(5000);
+  }, [hasPendingTokens, loading, scheduleReloadPortfolio, wallet.address]);
 
   const onListToken = async (token: TokenDto) => {
     if (!isCsharp) {
@@ -442,6 +454,19 @@ export function PortfolioPage() {
 
         {tab === "collected" && (
           <div className="stack-md">
+            {hasPendingTokens && (
+              <div
+                className="panel"
+                style={{
+                  padding: "1rem 1.25rem",
+                  border: "1px solid rgba(32, 129, 226, 0.28)",
+                  background: "rgba(32, 129, 226, 0.08)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Recent mint transactions are still indexing. New items will unlock listing actions automatically once the API catches up.
+              </div>
+            )}
             {loading ? (
               <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
                 {[1, 2, 3, 4].map(i => <div key={i} className="panel skeleton" style={{ height: "400px" }}></div>)}

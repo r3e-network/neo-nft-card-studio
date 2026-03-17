@@ -124,6 +124,23 @@ export function mergePendingCollections(
   return [...unresolvedPending, ...collections];
 }
 
+export function getPendingCollectionById(
+  collectionId: string,
+  options?: { network?: "mainnet" | "testnet" | "private" | "unknown" },
+): CollectionDto | null {
+  const network = options?.network ?? getRuntimeNetworkConfig().network;
+  const normalizedCollectionId = collectionId.trim();
+  if (!normalizedCollectionId) {
+    return null;
+  }
+
+  return (
+    readPendingCollectionRecords().find(
+      (entry) => entry.network === network && entry.collectionId === normalizedCollectionId,
+    ) ?? null
+  );
+}
+
 export async function cachePendingCollectionFromTx(input: {
   txid: string;
   owner: string;

@@ -17,6 +17,7 @@ function readRequiredWif() {
 async function run() {
   const testWif = readRequiredWif();
   const configuredBaseUrl = process.env.WIF_UI_BASE_URL?.trim();
+  const syncApiBaseUrl = process.env.WIF_UI_SYNC_API_BASE_URL?.trim() || "";
   const baseUrl = configuredBaseUrl || "http://127.0.0.1:5173/";
   const collectionName = `Playwright E2E Collection ${Date.now()}`;
   const collectionSymbol = `E${Date.now().toString().slice(-3)}`;
@@ -39,6 +40,30 @@ async function run() {
       errors.push(`Console error: ${msg.text()}`);
     }
   });
+
+  async function triggerIndexerSync(label) {
+    if (!syncApiBaseUrl) {
+      return;
+    }
+
+    try {
+      const syncUrl = new URL("/api/sync", syncApiBaseUrl);
+      syncUrl.searchParams.set("network", "testnet");
+      syncUrl.searchParams.set("reset", "tip");
+      syncUrl.searchParams.set("window", "300");
+      syncUrl.searchParams.set("batch", "300");
+      console.log(`Triggering indexer sync (${label}) via ${syncUrl.origin}...`);
+      const response = await fetch(syncUrl, { method: "POST" });
+      if (!response.ok) {
+        console.warn(`Indexer sync failed (${label}): HTTP ${response.status}`);
+        return;
+      }
+      const payload = await response.json().catch(() => null);
+      console.log(`Indexer sync completed (${label}): ${JSON.stringify(payload)}`);
+    } catch (error) {
+      console.warn(`Indexer sync threw (${label}): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   const url = baseUrl;
   console.log(`Navigating to ${url}`);
@@ -116,6 +141,7 @@ async function run() {
      process.exit(1);
   }
   console.log("Collection transaction submitted.");
+  await triggerIndexerSync("after collection create");
 
   // Wait a few seconds for indexer to catch up
   console.log("Waiting 30s for NeoFS and GraphQL indexer to synchronize...");
@@ -177,6 +203,7 @@ async function run() {
      process.exit(1);
   }
   console.log("Mint transaction submitted.");
+  await triggerIndexerSync("after mint");
 
   // 7. Verify connected state survives cross-page navigation and reloads
   console.log("Checking connected state on Portfolio route...");
@@ -188,7 +215,7 @@ async function run() {
 
   async function waitForTokenCard(tokenName) {
     const tokenCard = page.locator(".panel", { hasText: tokenName }).first();
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {
       if (await tokenCard.count()) {
         try {
           await tokenCard.waitFor({ state: "visible", timeout: 5000 });
@@ -207,11 +234,40 @@ async function run() {
     throw new Error(`Token card not found in portfolio: ${tokenName}`);
   }
 
-  const tokenCard = await waitForTokenCard(mintedTokenName);
+  async function waitForActionableTokenCard(tokenName) {
+    for (let i = 0; i < 18; i++) {
+      const tokenCard = await waitForTokenCard(tokenName);
+      const listPriceInput = tokenCard.locator('input[placeholder="Price in GAS"]');
+      const cancelListingButton = tokenCard.getByRole("button", { name: /cancel listing/i });
+
+      if (await listPriceInput.count()) {
+        await listPriceInput.waitFor({ state: "visible", timeout: 5000 });
+        return tokenCard;
+      }
+
+      if (await cancelListingButton.count()) {
+        await cancelListingButton.waitFor({ state: "visible", timeout: 5000 });
+        return tokenCard;
+      }
+
+      console.log(`Token card '${tokenName}' is visible but still pending indexing; waiting for actionable state...`);
+      if ((i + 1) % 3 === 0) {
+        await triggerIndexerSync(`portfolio actionable wait ${i + 1}`);
+      }
+      await page.waitForTimeout(5000);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await signOutBtn.waitFor({ state: "visible", timeout: 30000 });
+    }
+
+    throw new Error(`Token card did not become actionable in portfolio: ${tokenName}`);
+  }
+
+  const tokenCard = await waitForActionableTokenCard(mintedTokenName);
 
   console.log("Listing minted NFT from portfolio...");
   await tokenCard.locator('input[placeholder=\"Price in GAS\"]').fill("1.25");
   await tokenCard.getByRole("button", { name: /list for sale/i }).click();
+  await triggerIndexerSync("after list");
 
   let listingConfirmed = false;
   for (let i = 0; i < 8; i++) {

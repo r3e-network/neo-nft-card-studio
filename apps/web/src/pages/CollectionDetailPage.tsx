@@ -13,6 +13,7 @@ import {
   shortHash,
   type TokenSaleState,
 } from "../lib/marketplace";
+import { getPendingCollectionById } from "../lib/pending-collections";
 import { setPendingMarketState } from "../lib/pending-market";
 import { mergePendingTokens, setPendingToken } from "../lib/pending-tokens";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
@@ -60,6 +61,7 @@ export function CollectionDetailPage() {
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState("items");
   const [walletCanManageCollection, setWalletCanManageCollection] = useState(false);
+  const [usingPendingCollectionFallback, setUsingPendingCollectionFallback] = useState(false);
   const [mintForm, setMintForm] = useState<MintFormState>({
     to: wallet.address ?? "",
     name: "",
@@ -73,6 +75,10 @@ export function CollectionDetailPage() {
   const isCsharp = contractDialect === "csharp";
   const isDedicatedCollection = collection ? resolveCollectionContractHash(collection) !== null : false;
   const ownerCount = useMemo(() => new Set(tokens.map((token) => token.owner).filter((owner) => owner.length > 0)).size, [tokens]);
+  const hasPendingTokens = useMemo(
+    () => tokens.some((token) => token.tokenId.startsWith("pending:")),
+    [tokens],
+  );
   const requireWalletAddress = (): string | null => {
     const nextAddress = wallet.address?.trim() || null;
     if (!nextAddress) {
@@ -223,6 +229,7 @@ export function CollectionDetailPage() {
       }
 
       setCollection(fetchedCollection);
+      setUsingPendingCollectionFallback(false);
       setTokens(mergePendingTokens(fetchedTokens, { collectionId: fetchedCollection.collectionId }));
       setGhostMarket(fetchedGhostMeta);
 
@@ -240,8 +247,20 @@ export function CollectionDetailPage() {
         return;
       }
 
+      const pendingCollection = getPendingCollectionById(collectionId);
+      if (pendingCollection) {
+        setCollection(pendingCollection);
+        setUsingPendingCollectionFallback(true);
+        setTokens(mergePendingTokens([], { collectionId: pendingCollection.collectionId }));
+        setGhostMarket(null);
+        setSalesByTokenId({});
+        setError("");
+        return;
+      }
+
       setError(toUserErrorMessage(t, err));
       setCollection(null);
+      setUsingPendingCollectionFallback(false);
       setTokens([]);
       setGhostMarket(null);
       setSalesByTokenId({});
@@ -273,6 +292,20 @@ export function CollectionDetailPage() {
       void reloadCollection();
     }, delayMs);
   }, [reloadCollection]);
+
+  useEffect(() => {
+    if (!collectionId || loading || (!usingPendingCollectionFallback && !hasPendingTokens)) {
+      return;
+    }
+
+    scheduleReloadCollection(5000);
+  }, [
+    collectionId,
+    hasPendingTokens,
+    loading,
+    scheduleReloadCollection,
+    usingPendingCollectionFallback,
+  ]);
 
   const shareCollection = useCallback(async () => {
     if (typeof window === "undefined" || !collection) {
@@ -713,6 +746,21 @@ export function CollectionDetailPage() {
 
         {activeTab === "items" && (
           <div className="stack-md">
+            {(usingPendingCollectionFallback || hasPendingTokens) && (
+              <div
+                className="panel"
+                style={{
+                  padding: "1rem 1.25rem",
+                  border: "1px solid rgba(32, 129, 226, 0.28)",
+                  background: "rgba(32, 129, 226, 0.08)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {usingPendingCollectionFallback
+                  ? "This collection transaction is still indexing on the current network. The page will refresh automatically when on-chain data becomes queryable."
+                  : "Recent item activity is still indexing. Token actions will unlock automatically once the API catches up."}
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ color: "var(--text-muted)", fontWeight: 500 }}>{tokens.length} items</div>
               {isCsharp && (

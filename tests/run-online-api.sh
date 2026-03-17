@@ -58,4 +58,6 @@ WEB_PID=$!
 
 wait_for_url "http://127.0.0.1:5173/" 60
 
-WIF_UI_BASE_URL="http://127.0.0.1:5173/" node tests/wif-ui.mjs
+WIF_UI_BASE_URL="http://127.0.0.1:5173/" \
+WIF_UI_SYNC_API_BASE_URL="${ONLINE_API_BASE_URL}" \
+node tests/wif-ui.mjs
