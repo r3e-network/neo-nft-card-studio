@@ -1495,12 +1495,6 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
     }
     return null;
   };
-  const waitForEventAccount = async (): Promise<NeoLineAccount | null> => {
-    return Promise.race([
-      pendingConnectedEvent,
-      sleep(1500).then(() => null),
-    ]);
-  };
 
   const withTimeoutOrEvent = async (
     label: string,
@@ -1510,23 +1504,21 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
     try {
       const result = await Promise.race<unknown | { __timeout: true }>([
         attempt(),
+        pendingConnectedEvent.then((account) => account ? { __account: account } : null),
+        waitForProviderAccountSnapshot(`${label}:snapshot`, CONNECT_METHOD_TIMEOUT_MS).then((account) => account ? { __account: account } : null),
         sleep(CONNECT_METHOD_TIMEOUT_MS).then(() => ({ __timeout: true as const })),
       ]);
 
+      const racedAccount = asRecord(result)?.__account;
+      const normalizedRacedAccount = normalizeAccount(racedAccount);
+      if (normalizedRacedAccount) {
+        cachedProvider = provider;
+        diagnostics.push(`${label}=account(${normalizedRacedAccount.address})`);
+        walletDebug("connect:success", providerName, label, normalizedRacedAccount.address);
+        return normalizedRacedAccount;
+      }
+
       if (asRecord(result)?.__timeout === true) {
-        const eventAccount = await waitForEventAccount();
-        if (eventAccount) {
-          cachedProvider = provider;
-          diagnostics.push(`${label}=event-timeout(${eventAccount.address})`);
-          walletDebug("connect:success", providerName, label, eventAccount.address);
-          return eventAccount;
-        }
-
-        const snapshotAccount = await waitForProviderAccountSnapshot(`${label}:post-timeout`);
-        if (snapshotAccount) {
-          return snapshotAccount;
-        }
-
         diagnostics.push(`${label}=timeout`);
         walletDebug("connect:no-account", providerName, label, "timeout");
         return null;
@@ -1538,19 +1530,6 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
         diagnostics.push(`${label}=${account.address}`);
         walletDebug("connect:success", providerName, label, account.address);
         return account;
-      }
-
-      const eventAccount = await waitForEventAccount();
-      if (eventAccount) {
-        cachedProvider = provider;
-        diagnostics.push(`${label}=event(${eventAccount.address})`);
-        walletDebug("connect:success", providerName, label, eventAccount.address);
-        return eventAccount;
-      }
-
-      const snapshotAccount = await waitForProviderAccountSnapshot(`${label}:post-result`);
-      if (snapshotAccount) {
-        return snapshotAccount;
       }
 
       diagnostics.push(`${label}=no-account(${describeValue(result)})`);
