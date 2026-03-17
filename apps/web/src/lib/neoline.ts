@@ -1535,8 +1535,8 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
   };
 
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
-    "getAccount",
     "requestAccounts",
+    "getAccount",
     "getAddress",
     "getWalletAddress",
     "getAccounts",
@@ -1556,7 +1556,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
     }
   }
 
-  for (const method of ["getAccount", "requestAccounts", "getAddress", "getWalletAddress", "getAccounts"]) {
+  for (const method of ["requestAccounts", "getAccount", "getAddress", "getWalletAddress", "getAccounts"]) {
     try {
       const account = await withTimeoutOrEvent(
         `rpc:${method}`,
