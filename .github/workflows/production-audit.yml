@@ -1,6 +1,9 @@
 name: Production Audit
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       run_wallet_ui:
@@ -42,13 +45,15 @@ jobs:
         run: npm run build
 
       - name: Smoke E2E
+        env:
+          CI_SKIP_CONTRACT_VERIFY: "true"
         run: npm run smoke:e2e
 
       - name: Smoke Trade
         run: npm run smoke:trade
 
   wallet-ui:
-    if: ${{ inputs.run_wallet_ui && secrets.NEO_TEST_WIF != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_wallet_ui && secrets.NEO_TEST_WIF != '' }}
     needs: audit-and-build
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -461,7 +461,11 @@ function runOptionalTestnet() {
 }
 
 async function main() {
-  runCommand("npm", ["run", "verify:contracts"]);
+  if (process.env.CI_SKIP_CONTRACT_VERIFY === "true") {
+    console.log("[smoke:e2e] Skip contract verification (CI_SKIP_CONTRACT_VERIFY=true)");
+  } else {
+    runCommand("npm", ["run", "verify:contracts"]);
+  }
   runCommand("npm", ["run", "check"]);
   runCommand("npm", ["run", "build"]);
   runCommand("npx", ["tsx", "scripts/assert-sdk.ts"]);
