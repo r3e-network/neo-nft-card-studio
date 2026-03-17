@@ -113,6 +113,15 @@ function buildDefaultWalletSigners(address: string): Array<{ account: string; sc
   ];
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => {
+      window.setTimeout(() => resolve(null), timeoutMs);
+    }),
+  ]).catch(() => null);
+}
+
 function extractWalletAddressFromEvent(data: unknown): string | null {
   const tryValue = (value: unknown): string | null => {
     if (typeof value === "string") {
@@ -418,8 +427,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
-        const session = await syncWalletSession(false);
+        const cachedSession = await syncWalletSession(true);
+        if (!cachedSession.address) {
+          const forcedSession = await syncWalletSession(false);
+          if (!forcedSession.address) {
+            throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+          }
 
+          return forcedSession;
+        }
+
+        const refreshedSession = await withTimeout(syncWalletSession(false), 4000);
+        const session = refreshedSession?.address ? refreshedSession : cachedSession;
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
@@ -427,7 +446,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         return session;
       },
       invoke: async (payload: WalletInvokeRequest) => {
-        const session = await syncWalletSession(false);
+        const cachedSession = await syncWalletSession(true);
+        const session = cachedSession.address
+          ? (await withTimeout(syncWalletSession(false), 4000)) ?? cachedSession
+          : await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
