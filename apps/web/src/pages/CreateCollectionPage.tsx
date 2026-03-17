@@ -215,6 +215,25 @@ export function CreateCollectionPage() {
     }
   };
 
+  if (!wallet.address) {
+    return (
+      <div className="flex-center" style={{ minHeight: "60vh", flexDirection: "column", gap: "1.5rem" }}>
+        <Rocket size={64} color="#2081E2" />
+        <h2 style={{ fontSize: "2rem", fontWeight: 800 }}>Connect your wallet</h2>
+        <p className="hint" style={{ fontSize: "1.1rem" }}>
+          Connect your Neo N3 wallet before creating a collection.
+        </p>
+        <button
+          className="btn"
+          onClick={() => void wallet.connect()}
+          style={{ background: "#2081E2", padding: "1rem 2rem", borderRadius: "12px" }}
+        >
+          Connect Wallet
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="fade-in" style={{ maxWidth: "1000px", margin: "0 auto", padding: "2rem 0" }}>
       <div style={{ textAlign: "center", marginBottom: "3rem" }}>
