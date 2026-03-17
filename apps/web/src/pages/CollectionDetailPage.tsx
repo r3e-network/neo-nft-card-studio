@@ -152,7 +152,7 @@ export function CollectionDetailPage() {
     try {
       const listings = await fetchMarketListings({
         collectionId: nextCollection.collectionId,
-        limit: 5000,
+        limit: 500,
       });
 
       const byTokenId: Record<string, TokenSaleState> = Object.fromEntries(
