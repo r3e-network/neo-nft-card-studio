@@ -49,6 +49,7 @@ export interface NeoLineN3Provider {
   getAddress?: () => Promise<unknown>;
   getWalletAddress?: () => Promise<unknown>;
   requestAccounts?: () => Promise<unknown>;
+  pickAddress?: () => Promise<unknown>;
   switchWalletAccount?: () => Promise<unknown>;
   getNetwork?: () => Promise<unknown>;
   getNetworks?: () => Promise<unknown>;
@@ -350,6 +351,7 @@ function hasProviderMethods(value: unknown): value is NeoLineN3Provider {
     "getAddress",
     "getWalletAddress",
     "requestAccounts",
+    "pickAddress",
     "switchWalletAccount",
     "getNetwork",
     "getNetworks",
@@ -499,6 +501,7 @@ function normalizeProvider(provider: NeoLineN3Provider): NeoLineN3Provider {
     getAddress: provider.getAddress?.bind(provider),
     getWalletAddress: provider.getWalletAddress?.bind(provider),
     requestAccounts: provider.requestAccounts?.bind(provider),
+    pickAddress: provider.pickAddress?.bind(provider),
     switchWalletAccount: provider.switchWalletAccount?.bind(provider),
     getNetwork: provider.getNetwork?.bind(provider),
     getNetworks: provider.getNetworks?.bind(provider),
@@ -557,6 +560,7 @@ function providerScore(provider: NeoLineN3Provider): number {
     || typeof provider.getAddress === "function"
     || typeof provider.getWalletAddress === "function"
     || typeof provider.requestAccounts === "function"
+    || typeof provider.pickAddress === "function"
     || typeof provider.switchWalletAccount === "function"
   ) {
     score += 16;
@@ -611,6 +615,7 @@ function hasDirectAccountCapability(provider: NeoLineN3Provider): boolean {
     || typeof provider.getAddress === "function"
     || typeof provider.getWalletAddress === "function"
     || typeof provider.requestAccounts === "function"
+    || typeof provider.pickAddress === "function"
     || typeof provider.switchWalletAccount === "function"
   );
 }
@@ -1536,6 +1541,7 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
 
   const interactiveMethods: Array<keyof NeoLineN3Provider> = [
     "requestAccounts",
+    "pickAddress",
     "getAccount",
     "getAddress",
     "getWalletAddress",
