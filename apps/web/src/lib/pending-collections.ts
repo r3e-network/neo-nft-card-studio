@@ -4,10 +4,12 @@ import { getRuntimeNetworkConfig } from "./runtime-network";
 import type { CollectionDto } from "./types";
 
 const PENDING_COLLECTIONS_KEY = "opennft_pending_collections";
+const PENDING_COLLECTIONS_TTL_MS = 10 * 60 * 1000;
 
 interface PendingCollectionRecord extends CollectionDto {
   network: "mainnet" | "testnet" | "private" | "unknown";
   txid: string;
+  updatedAtMs?: number;
 }
 
 interface RawNotification {
@@ -51,12 +53,67 @@ function writePendingCollectionRecords(records: PendingCollectionRecord[]): void
   localStorage.setItem(PENDING_COLLECTIONS_KEY, JSON.stringify(records));
 }
 
+function getRecordUpdatedAtMs(record: PendingCollectionRecord): number {
+  if (typeof record.updatedAtMs === "number" && Number.isFinite(record.updatedAtMs)) {
+    return record.updatedAtMs;
+  }
+
+  const parsedUpdatedAt = Date.parse(record.updatedAt);
+  if (Number.isFinite(parsedUpdatedAt)) {
+    return parsedUpdatedAt;
+  }
+
+  const parsedCreatedAt = Date.parse(record.createdAt);
+  if (Number.isFinite(parsedCreatedAt)) {
+    return parsedCreatedAt;
+  }
+
+  return 0;
+}
+
+function pruneExpired(records: PendingCollectionRecord[]): PendingCollectionRecord[] {
+  const now = Date.now();
+  return records.filter((record) => now - getRecordUpdatedAtMs(record) <= PENDING_COLLECTIONS_TTL_MS);
+}
+
+function getPrunedPendingCollectionRecords(): PendingCollectionRecord[] {
+  const rawRecords = readPendingCollectionRecords();
+  const prunedRecords = pruneExpired(rawRecords);
+  if (prunedRecords.length !== rawRecords.length) {
+    writePendingCollectionRecords(prunedRecords);
+  }
+  return prunedRecords;
+}
+
 function upsertPendingCollectionRecord(record: PendingCollectionRecord): void {
-  const next = readPendingCollectionRecords().filter(
+  const next = getPrunedPendingCollectionRecords().filter(
     (entry) => !(entry.network === record.network && entry.collectionId === record.collectionId),
   );
-  next.unshift(record);
+  next.unshift({
+    ...record,
+    updatedAtMs: Date.now(),
+  });
   writePendingCollectionRecords(next.slice(0, 50));
+}
+
+export function clearPendingCollectionById(
+  collectionId: string,
+  options?: { network?: "mainnet" | "testnet" | "private" | "unknown" },
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const network = options?.network ?? getRuntimeNetworkConfig().network;
+  const normalizedCollectionId = collectionId.trim();
+  if (!normalizedCollectionId) {
+    return;
+  }
+
+  const next = getPrunedPendingCollectionRecords().filter(
+    (entry) => !(entry.network === network && entry.collectionId === normalizedCollectionId),
+  );
+  writePendingCollectionRecords(next);
 }
 
 function normalizeHashCandidate(input: string): string {
@@ -101,7 +158,7 @@ export function mergePendingCollections(
 ): CollectionDto[] {
   const network = options?.network ?? getRuntimeNetworkConfig().network;
   const owner = options?.owner?.trim() ?? "";
-  const pending = readPendingCollectionRecords().filter((entry) => {
+  const pending = getPrunedPendingCollectionRecords().filter((entry) => {
     if (entry.network !== network) {
       return false;
     }
@@ -135,7 +192,7 @@ export function getPendingCollectionById(
   }
 
   return (
-    readPendingCollectionRecords().find(
+    getPrunedPendingCollectionRecords().find(
       (entry) => entry.network === network && entry.collectionId === normalizedCollectionId,
     ) ?? null
   );
@@ -206,6 +263,7 @@ export async function cachePendingCollectionFromTx(input: {
         updatedAt: new Date().toISOString(),
         network: runtime.network,
         txid: input.txid,
+        updatedAtMs: Date.now(),
       };
 
       upsertPendingCollectionRecord(collection);

@@ -13,7 +13,10 @@ import {
   shortHash,
   type TokenSaleState,
 } from "../lib/marketplace";
-import { getPendingCollectionById } from "../lib/pending-collections";
+import {
+  clearPendingCollectionById,
+  getPendingCollectionById,
+} from "../lib/pending-collections";
 import { setPendingMarketState } from "../lib/pending-market";
 import { mergePendingTokens, setPendingToken } from "../lib/pending-tokens";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
@@ -229,6 +232,7 @@ export function CollectionDetailPage() {
       }
 
       setCollection(fetchedCollection);
+      clearPendingCollectionById(fetchedCollection.collectionId);
       setUsingPendingCollectionFallback(false);
       setTokens(mergePendingTokens(fetchedTokens, { collectionId: fetchedCollection.collectionId }));
       setGhostMarket(fetchedGhostMeta);
