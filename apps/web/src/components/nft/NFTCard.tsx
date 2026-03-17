@@ -36,6 +36,7 @@ export function NFTCard({
 }: NFTCardProps) {
   const properties = parseTokenProperties(token.propertiesJson);
   const media = pickTokenMediaUri(token, properties);
+  const isPendingToken = token.tokenId.startsWith("pending:");
   const displayName =
     typeof properties.name === "string" && properties.name.trim().length > 0
       ? properties.name.trim()
@@ -72,13 +73,17 @@ export function NFTCard({
             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600 }}>Price</div>
             <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>{formatGasAmount(sale.price)} GAS</div>
           </div>
+        ) : isPendingToken ? (
+          <div style={{ marginBottom: "1rem", height: "38px", display: "flex", alignItems: "center", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+            Pending indexing
+          </div>
         ) : (
           <div style={{ marginBottom: "1rem", height: "38px", display: "flex", alignItems: "center", color: "var(--text-muted)", fontSize: "0.9rem" }}>
             Not listed
           </div>
         )}
 
-        {isCsharp && (
+        {isCsharp && !isPendingToken && (
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "1rem" }}>
             {isOwner ? (
               sale.listed ? (
