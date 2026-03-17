@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ImageOff, Loader2, Search, ShoppingCart, Tag, Filter } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { wallet as neonWallet } from "@cityofzion/neon-js";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchMarketListings } from "../lib/api";
@@ -140,7 +141,14 @@ export function ExplorePage() {
     try {
       await wallet.sync();
       const client = getCollectionClient(card.collection);
-      await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: card.token.tokenId }));
+      const payload = client.buildBuyTokenInvoke({ tokenId: card.token.tokenId });
+      payload.signers = [
+        {
+          account: neonWallet.getScriptHashFromAddress(connectedAddress),
+          scopes: "Global",
+        },
+      ];
+      await wallet.invoke(payload);
       const nowIso = new Date().toISOString();
       setPendingMarketState({
         tokenId: card.token.tokenId,

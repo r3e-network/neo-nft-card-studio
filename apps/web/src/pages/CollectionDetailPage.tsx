@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Link, useParams } from "react-router-dom";
 import { ExternalLink, Globe, Loader2, Share2, Twitter } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { wallet as neonWallet } from "@cityofzion/neon-js";
 
 import { useWallet } from "../hooks/useWallet";
 import { fetchCollection, fetchCollectionTokens, fetchGhostMarketMeta, fetchMarketListings, uploadToNeoFs } from "../lib/api";
@@ -563,7 +564,14 @@ export function CollectionDetailPage() {
     try {
       await wallet.sync();
       const client = getCollectionClient(collection);
-      const txid = await wallet.invoke(client.buildBuyTokenInvoke({ tokenId: token.tokenId }));
+      const payload = client.buildBuyTokenInvoke({ tokenId: token.tokenId });
+      payload.signers = [
+        {
+          account: neonWallet.getScriptHashFromAddress(connectedAddress),
+          scopes: "Global",
+        },
+      ];
+      const txid = await wallet.invoke(payload);
       setMessage(`Purchase transaction submitted: ${txid}`);
       const nowIso = new Date().toISOString();
       setPendingMarketState({
