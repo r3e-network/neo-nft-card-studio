@@ -33,6 +33,8 @@ Use it as the first entry point when onboarding a new engineer, preparing a rele
 
 - Checklist:
   - [docs/wallet-release-checklist.md](/Users/jinghuiliao/git/NFT/docs/wallet-release-checklist.md)
+- Recovery runbook:
+  - [docs/production-wallet-marketplace-recovery.md](/Users/jinghuiliao/git/NFT/docs/production-wallet-marketplace-recovery.md)
 
 ## 2. Most Important Commands
 
