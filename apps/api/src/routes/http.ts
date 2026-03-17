@@ -664,8 +664,20 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
           ? Math.min(Math.max(requestedBatch, 1), 2000)
           : Math.min(Math.max(context.config.INDEXER_BATCH_SIZE * 8, 80), 400);
 
+        const resetMode = typeof req.query.reset === "string" ? req.query.reset.trim().toLowerCase() : "";
+        const requestedWindow = Number.parseInt((req.query.window as string | undefined) ?? "", 10);
+
         const chainHeight = await context.indexer.getChainBlockHeight();
-        const startBlock = await context.indexer.getCurrentSyncBlock();
+        let startBlock = await context.indexer.getCurrentSyncBlock();
+
+        if (chainHeight !== null && resetMode === "tip") {
+          const resetWindow = Number.isFinite(requestedWindow)
+            ? Math.min(Math.max(requestedWindow, 1), 50000)
+            : Math.min(Math.max(context.config.INDEXER_BOOTSTRAP_BLOCK_WINDOW, 1), 50000);
+          const resetFrom = Math.max(0, chainHeight - resetWindow + 1);
+          await context.indexer.setCurrentSyncBlock(resetFrom);
+          startBlock = resetFrom;
+        }
 
         await context.indexer.runSyncBatch(batchSize);
 
@@ -678,6 +690,7 @@ export function createHttpRouter(networkContexts: ApiRouteNetworkContextMap, con
           targetHeight: chainHeight,
           syncedCount: newHeight - startBlock,
           batchSize,
+          reset: resetMode || null,
         });
       } catch (error) {
         res.status(500).json({ status: "error", message: error instanceof Error ? error.message : String(error) });

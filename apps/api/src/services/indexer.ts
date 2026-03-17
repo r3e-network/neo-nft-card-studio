@@ -367,6 +367,11 @@ export class IndexerService {
     return Number(saved);
   }
 
+  async setCurrentSyncBlock(blockIndex: number): Promise<void> {
+    const normalized = Number.isFinite(blockIndex) && blockIndex >= 0 ? Math.floor(blockIndex) : 0;
+    await this.db.setSyncState(this.getSyncStateKey(), normalized.toString());
+  }
+
   private async resolveSyncCursor(chainHeight: number): Promise<number> {
     const syncStateKey = this.getSyncStateKey();
     const saved = await this.db.getSyncState(syncStateKey);
