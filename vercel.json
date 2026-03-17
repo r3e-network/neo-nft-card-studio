@@ -8,8 +8,8 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/).*)",
-      "destination": "/$1"
+      "source": "/((?!api/|assets/|favicon\\.ico$|404\\.html$).*)",
+      "destination": "/index.html"
     }
   ],
   "crons": [
