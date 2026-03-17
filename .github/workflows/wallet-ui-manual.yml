@@ -1,11 +1,21 @@
 name: Wallet UI Manual
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
+  noop:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip wallet UI on push
+        run: echo "Wallet UI workflow is manual-only; push event acknowledged."
+
   wallet-ui:
-    if: ${{ secrets.NEO_TEST_WIF != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && secrets.NEO_TEST_WIF != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

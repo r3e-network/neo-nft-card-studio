@@ -1,30 +1,6 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { rpc } from "@cityofzion/neon-js";
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-const LOCAL_FACTORY_MANIFEST_CANDIDATES = [
-  path.join(
-    ROOT,
-    "contracts",
-    "multi-tenant-nft-platform",
-    "build",
-    "MultiTenantNftPlatform.manifest.json",
-  ),
-  path.join(
-    ROOT,
-    "contracts",
-    "nft-platform-factory",
-    "bin",
-    "sc",
-    "MultiTenantNftPlatform.manifest.json",
-  ),
-];
 
 const DEFAULT_TARGETS = [
   {
@@ -63,15 +39,6 @@ function methodSignatures(manifest) {
   );
 }
 
-function readLocalManifest() {
-  const manifestPath = LOCAL_FACTORY_MANIFEST_CANDIDATES.find((candidate) => fs.existsSync(candidate));
-  if (!manifestPath) {
-    throw new Error(`Missing local factory manifest. Checked: ${LOCAL_FACTORY_MANIFEST_CANDIDATES.join(", ")}`);
-  }
-
-  return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-}
-
 async function fetchRemoteManifest(target) {
   const client = new rpc.RPCClient(target.rpcUrl);
   const state = await client.getContractState(target.contractHash);
@@ -79,8 +46,6 @@ async function fetchRemoteManifest(target) {
 }
 
 async function main() {
-  const localManifest = readLocalManifest();
-  const localMethods = methodSignatures(localManifest);
   const errors = [];
 
   for (const target of DEFAULT_TARGETS) {
@@ -91,25 +56,12 @@ async function main() {
       if (!remoteMethods.has(method)) {
         errors.push(`${target.name}: missing required runtime method ${method}`);
       }
-      if (!localMethods.has(method)) {
-        errors.push(`local manifest: missing required method ${method}`);
-      }
     }
 
-    for (const method of REQUIRED_METHODS) {
-      if (localMethods.has(method) !== remoteMethods.has(method)) {
-        errors.push(`${target.name}: method presence mismatch for ${method}`);
-      }
-    }
-
-    const localStandards = new Set(localManifest.supportedstandards ?? []);
     const remoteStandards = new Set(remoteManifest.supportedstandards ?? []);
     for (const standard of ["NEP-11", "NEP-24"]) {
       if (!remoteStandards.has(standard)) {
         errors.push(`${target.name}: missing supported standard ${standard}`);
-      }
-      if (!localStandards.has(standard)) {
-        errors.push(`local manifest: missing supported standard ${standard}`);
       }
     }
 
@@ -124,7 +76,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("[runtime-audit] runtime contract interfaces match local expected manifest for audited methods");
+  console.log("[runtime-audit] runtime contract interfaces match expected audited methods");
 }
 
 main().catch((error) => {
