@@ -127,7 +127,16 @@ export function CreateCollectionPage() {
 
     try {
       setSubmitting(true);
-      const session = await wallet.sync();
+      if (!wallet.address) {
+        await wallet.connect();
+      }
+
+      let session = await wallet.sync().catch(() => null);
+      if (!session?.address) {
+        await wallet.connect();
+        session = await wallet.sync();
+      }
+
       const activeAddress = session.address?.trim() || "";
       if (!activeAddress) {
         throw new Error("Please connect your wallet first.");
