@@ -1779,6 +1779,7 @@ export async function getNeoWalletNetworkForAddress(
 export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<NeoLineInvokeResult> {
   const normalizedPayload = normalizeInvokePayloadForNeoLine(payload);
   const providers = (await loadProvidersWithReadySync()).filter(hasInvokeCapability);
+  const INVOKE_TIMEOUT_MS = 30000;
   walletDebug(
     "invoke:providers",
     providers.map((provider) => ({
@@ -1797,37 +1798,69 @@ export async function invokeNeoWallet(payload: WalletInvokeRequest): Promise<Neo
   let lastError: unknown = null;
 
   for (const provider of providers) {
-    try {
-      walletDebug("invoke:attempt", getProviderDebugName(provider));
-      if (typeof provider.invoke === "function") {
+    const providerName = getProviderDebugName(provider);
+    const invokeWithTimeout = async (
+      label: string,
+      attempt: () => Promise<NeoLineInvokeResult>,
+    ): Promise<NeoLineInvokeResult | null> => {
+      try {
+        walletDebug("invoke:attempt", providerName, label);
+        const result = await Promise.race<NeoLineInvokeResult | { __timeout: true }>([
+          attempt(),
+          sleep(INVOKE_TIMEOUT_MS).then(() => ({ __timeout: true as const })),
+        ]);
+
+        if (asRecord(result)?.__timeout === true) {
+          const error = new Error(`Wallet invoke timed out after ${INVOKE_TIMEOUT_MS}ms (${label})`);
+          walletDebug("invoke:failed", providerName, label, error.message);
+          lastError = error;
+          return null;
+        }
+
+        walletDebug("invoke:success", providerName, label, describeValue(result));
         rememberProvider(provider);
-        const result = normalizeInvokeResult(await provider.invoke(normalizedPayload));
-        walletDebug("invoke:success", getProviderDebugName(provider), describeValue(result));
         return result;
+      } catch (error) {
+        walletDebug("invoke:failed", providerName, label, summarizeProviderError(error));
+        lastError = error;
+        return null;
+      }
+    };
+
+    try {
+      if (typeof provider.invoke === "function") {
+        const result = await invokeWithTimeout(
+          "provider.invoke",
+          async () => normalizeInvokeResult(await provider.invoke!(normalizedPayload)),
+        );
+        if (result) {
+          return result;
+        }
       }
 
       if (typeof provider.invokeFunction === "function") {
-        rememberProvider(provider);
-        const result = normalizeInvokeResult(await provider.invokeFunction(normalizedPayload));
-        walletDebug("invoke:success", getProviderDebugName(provider), describeValue(result));
-        return result;
+        const result = await invokeWithTimeout(
+          "provider.invokeFunction",
+          async () => normalizeInvokeResult(await provider.invokeFunction!(normalizedPayload)),
+        );
+        if (result) {
+          return result;
+        }
       }
 
-      rememberProvider(provider);
-      const result = normalizeInvokeResult(
-        await requestProvider(provider, {
-          method: "invoke",
-          params: [normalizedPayload],
-        }),
+      const result = await invokeWithTimeout(
+        "provider.request(invoke)",
+        async () => normalizeInvokeResult(
+          await requestProvider(provider, {
+            method: "invoke",
+            params: [normalizedPayload],
+          }),
+        ),
       );
-      walletDebug("invoke:success", getProviderDebugName(provider), describeValue(result));
-      return result;
+      if (result) {
+        return result;
+      }
     } catch (error) {
-      walletDebug(
-        "invoke:failed",
-        getProviderDebugName(provider),
-        summarizeProviderError(error),
-      );
       lastError = error;
     }
   }
