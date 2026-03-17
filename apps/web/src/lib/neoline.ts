@@ -1481,6 +1481,20 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
   });
 
   const pendingConnectedEvent = waitForConnectedEvent();
+  const waitForProviderAccountSnapshot = async (label: string, timeoutMs = 12000): Promise<NeoLineAccount | null> => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const directAccount = readDirectAccountFromProvider(provider);
+      if (directAccount) {
+        cachedProvider = provider;
+        diagnostics.push(`${label}=snapshot(${directAccount.address})`);
+        walletDebug("connect:success", providerName, label, directAccount.address);
+        return directAccount;
+      }
+      await sleep(300);
+    }
+    return null;
+  };
   const waitForEventAccount = async (): Promise<NeoLineAccount | null> => {
     return Promise.race([
       pendingConnectedEvent,
@@ -1508,6 +1522,11 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
           return eventAccount;
         }
 
+        const snapshotAccount = await waitForProviderAccountSnapshot(`${label}:post-timeout`);
+        if (snapshotAccount) {
+          return snapshotAccount;
+        }
+
         diagnostics.push(`${label}=timeout`);
         walletDebug("connect:no-account", providerName, label, "timeout");
         return null;
@@ -1527,6 +1546,11 @@ async function connectSingleProvider(provider: NeoLineN3Provider, diagnostics: s
         diagnostics.push(`${label}=event(${eventAccount.address})`);
         walletDebug("connect:success", providerName, label, eventAccount.address);
         return eventAccount;
+      }
+
+      const snapshotAccount = await waitForProviderAccountSnapshot(`${label}:post-result`);
+      if (snapshotAccount) {
+        return snapshotAccount;
       }
 
       diagnostics.push(`${label}=no-account(${describeValue(result)})`);
