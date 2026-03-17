@@ -1,4 +1,4 @@
-import { FormEvent, useState, useRef } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { PlusCircle, UploadCloud, Rocket, Layers, ShieldCheck, Info, ChevronRight, Check } from "lucide-react";
@@ -9,6 +9,7 @@ import { toUserErrorMessage } from "../lib/errors";
 import { cachePendingCollectionFromTx } from "../lib/pending-collections";
 import { getPlatformClient } from "../lib/platformClient";
 import { useRuntimeContractDialect } from "../lib/runtime-dialect";
+import { useRuntimeNetworkState } from "../lib/runtime-network";
 import { getUploadTooLargeMessage, isFileTooLarge, NEOFS_UPLOAD_MAX_MB } from "../lib/upload-limits";
 
 interface FormState {
@@ -39,17 +40,74 @@ export function CreateCollectionPage() {
   const { t } = useTranslation();
   const wallet = useWallet();
   const contractDialect = useRuntimeContractDialect();
+  const runtimeNetwork = useRuntimeNetworkState();
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [step, setStep] = useState(1);
+  const [dedicatedModeStatus, setDedicatedModeStatus] = useState<"checking" | "available" | "unavailable" | "unsupported">(
+    contractDialect === "csharp" ? "checking" : "unsupported",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (contractDialect !== "csharp") {
+      setDedicatedModeStatus("unsupported");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setDedicatedModeStatus("checking");
+    void (async () => {
+      try {
+        const client = getPlatformClient();
+        const [templateReady, templateSegmentsReady] = await Promise.all([
+          client.hasCollectionContractTemplate(),
+          client.hasCollectionContractTemplateNameSegments().catch(() => false),
+        ]);
+
+        if (!cancelled) {
+          setDedicatedModeStatus(templateReady && templateSegmentsReady ? "available" : "unavailable");
+        }
+      } catch {
+        if (!cancelled) {
+          setDedicatedModeStatus("unavailable");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [contractDialect, runtimeNetwork.runtimeKey]);
+
+  useEffect(() => {
+    if (form.mode !== "dedicated") {
+      return;
+    }
+
+    if (dedicatedModeStatus === "unavailable" || dedicatedModeStatus === "unsupported") {
+      setForm((prev) => ({ ...prev, mode: "shared" }));
+    }
+  }, [dedicatedModeStatus, form.mode]);
+
+  const dedicatedModeSelectable = dedicatedModeStatus === "available";
+  const dedicatedModeMessage = contractDialect !== "csharp"
+    ? "C# Dialect required"
+    : dedicatedModeStatus === "checking"
+      ? "Checking dedicated template..."
+      : dedicatedModeStatus === "unavailable"
+        ? "Not configured on this network"
+        : null;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -204,19 +262,23 @@ export function CreateCollectionPage() {
             </div>
 
             <div 
-              onClick={() => update("mode", "dedicated")}
+              onClick={() => {
+                if (dedicatedModeSelectable) {
+                  update("mode", "dedicated");
+                }
+              }}
               style={{ 
                 padding: "2.5rem", 
                 borderRadius: "24px", 
-                cursor: "pointer",
+                cursor: dedicatedModeSelectable ? "pointer" : "not-allowed",
                 border: form.mode === "dedicated" ? "2px solid #00E599" : "2px solid rgba(255, 255, 255, 0.1)",
                 background: form.mode === "dedicated" ? "rgba(0, 229, 153, 0.05)" : "rgba(255, 255, 255, 0.02)",
                 transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
                 position: "relative",
-                opacity: contractDialect === "csharp" ? 1 : 0.6,
-                pointerEvents: contractDialect === "csharp" ? "auto" : "none"
+                opacity: dedicatedModeSelectable ? 1 : 0.6,
+                pointerEvents: dedicatedModeSelectable ? "auto" : "none"
               }}
-              onMouseOver={(e) => !form.mode.includes("dedicated") && (e.currentTarget.style.borderColor = "rgba(0, 229, 153, 0.5)")}
+              onMouseOver={(e) => dedicatedModeSelectable && !form.mode.includes("dedicated") && (e.currentTarget.style.borderColor = "rgba(0, 229, 153, 0.5)")}
               onMouseOut={(e) => e.currentTarget.style.borderColor = form.mode === "dedicated" ? "#00E599" : "rgba(255, 255, 255, 0.1)"}
             >
               {form.mode === "dedicated" && <div style={{ position: "absolute", top: "1.5rem", right: "1.5rem", background: "#00E599", borderRadius: "50%", padding: "4px" }}><Check size={16} /></div>}
@@ -230,7 +292,11 @@ export function CreateCollectionPage() {
                 <li style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}><Check size={16} color="#00E599" /> Unique contract hash</li>
                 <li style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><Check size={16} color="#00E599" /> Full ownership & isolation</li>
               </ul>
-              {contractDialect !== "csharp" && <div style={{ marginTop: "1rem", color: "#F43F5E", fontSize: "0.85rem", fontWeight: 600 }}>C# Dialect required</div>}
+              {dedicatedModeMessage && (
+                <div style={{ marginTop: "1rem", color: "#F43F5E", fontSize: "0.85rem", fontWeight: 600 }}>
+                  {dedicatedModeMessage}
+                </div>
+              )}
             </div>
           </div>
 
