@@ -221,8 +221,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const devWif = import.meta.env.DEV ? localStorage.getItem(DEV_WIF_KEY) : null;
     const storedAddress = readStoredWalletAddress();
     const storedNetwork = readStoredWalletNetwork();
+    const persistedAddress = address?.trim() || storedAddress;
+    const persistedNetwork = network ?? storedNetwork;
 
     if (!isConnected && silent) {
+      if (persistedAddress) {
+        localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+        localStorage.setItem(WALLET_ADDRESS_KEY, persistedAddress);
+        if (persistedNetwork) {
+          localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(persistedNetwork));
+        }
+        setAddress((prev) => (isSameWalletAddress(prev, persistedAddress) ? prev : persistedAddress));
+        setNetwork((prev) => (isSameWalletNetwork(prev, persistedNetwork) ? prev : persistedNetwork));
+        setRuntimeWalletNetwork(persistedNetwork);
+        syncSelectedFrontendNetwork(persistedNetwork);
+        return { address: persistedAddress, network: persistedNetwork };
+      }
+
       clearWalletSession(Boolean(devWif));
       return { address: null, network: null };
     }
@@ -249,8 +264,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const fallbackAddress = address?.trim() || storedAddress;
-      const fallbackNetwork = network ?? storedNetwork;
+      const fallbackAddress = persistedAddress;
+      const fallbackNetwork = persistedNetwork;
       const currentAccount = await getNeoWalletAccount(silent);
       const providerAddress = currentAccount?.address?.trim() || null;
       // Resolve network after account so the matching provider is preferred.
@@ -451,7 +466,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             });
         } catch (err) {
           console.error("Connect failed:", err);
-          clearWalletSession(true);
+          const persistedAddress = readStoredWalletAddress() || address;
+          const persistedNetwork = readStoredWalletNetwork() ?? network;
+          if (persistedAddress) {
+            localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+            localStorage.setItem(WALLET_ADDRESS_KEY, persistedAddress);
+            if (persistedNetwork) {
+              localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(persistedNetwork));
+            }
+            setAddress((prev) => (isSameWalletAddress(prev, persistedAddress) ? prev : persistedAddress));
+            setNetwork((prev) => (isSameWalletNetwork(prev, persistedNetwork) ? prev : persistedNetwork));
+            setRuntimeWalletNetwork(persistedNetwork);
+            syncSelectedFrontendNetwork(persistedNetwork);
+          } else {
+            clearWalletSession(true);
+          }
           throw err;
         } finally {
           setIsConnecting(false);
