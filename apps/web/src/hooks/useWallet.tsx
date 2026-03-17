@@ -26,7 +26,10 @@ interface WalletState {
   connect: () => Promise<void>;
   connectWif: (wif: string) => Promise<void>;
   disconnect: () => void;
-  sync: () => Promise<void>;
+  sync: () => Promise<{
+    address: string | null;
+    network: NeoWalletNetwork | null;
+  }>;
   invoke: (payload: WalletInvokeRequest) => Promise<string>;
 }
 
@@ -415,18 +418,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         clearWalletSession(false);
       },
       sync: async () => {
-        const session = address
-          ? await syncWalletSession(true)
-          : await syncWalletSession(false);
+        const session = await syncWalletSession(false);
 
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }
+
+        return session;
       },
       invoke: async (payload: WalletInvokeRequest) => {
-        const session = address
-          ? await syncWalletSession(true)
-          : await syncWalletSession(false);
+        const session = await syncWalletSession(false);
         if (!session.address) {
           throw new Error("Wallet session is unavailable. Please reconnect wallet.");
         }

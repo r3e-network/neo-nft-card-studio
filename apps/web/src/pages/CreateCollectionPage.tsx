@@ -132,7 +132,11 @@ export function CreateCollectionPage() {
 
     try {
       setSubmitting(true);
-      await wallet.sync();
+      const session = await wallet.sync();
+      const activeAddress = session.address?.trim() || "";
+      if (!activeAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
       let neofsUri = form.baseUri;
       if (file) {
         const uploadRes = await uploadToNeoFs(file);
@@ -187,7 +191,7 @@ export function CreateCollectionPage() {
       }
       await cachePendingCollectionFromTx({
         txid,
-        owner: wallet.address,
+        owner: activeAddress,
         fallback: {
           name: form.name,
           symbol: form.symbol,

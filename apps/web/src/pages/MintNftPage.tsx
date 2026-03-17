@@ -109,7 +109,14 @@ export function MintNftPage() {
 
     try {
       setSubmitting(true);
-      await wallet.sync();
+      const session = await wallet.sync();
+      const activeAddress = session.address?.trim() || "";
+      if (!activeAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (collection.owner !== activeAddress) {
+        throw new Error("Active NeoLine account does not own the selected collection. Refresh wallet connection and try again.");
+      }
 
       // 1. Upload to NeoFS
       const uploadRes = await uploadToNeoFs(file);

@@ -120,18 +120,8 @@ export function ExplorePage() {
       return;
     }
 
-    const connectedAddress = requireWalletAddress();
-    if (!connectedAddress) {
-      return;
-    }
-
     if (!card.sale.listed) {
       setError(t("app.err_token_not_listed"));
-      return;
-    }
-
-    if (connectedAddress === card.token.owner) {
-      setError(t("app.err_cannot_buy_own_token"));
       return;
     }
 
@@ -139,7 +129,14 @@ export function ExplorePage() {
     setError("");
 
     try {
-      await wallet.sync();
+      const session = await wallet.sync();
+      const connectedAddress = session.address?.trim() || "";
+      if (!connectedAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (connectedAddress === card.token.owner) {
+        throw new Error(t("app.err_cannot_buy_own_token"));
+      }
       const client = getCollectionClient(card.collection);
       const payload = client.buildBuyTokenInvoke({ tokenId: card.token.tokenId });
       payload.signers = [

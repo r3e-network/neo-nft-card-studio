@@ -404,16 +404,6 @@ export function CollectionDetailPage() {
       return;
     }
 
-    const connectedAddress = requireWalletAddress();
-    if (!connectedAddress) {
-      return;
-    }
-
-    if (token.owner !== connectedAddress) {
-      setError(t("app.err_token_owner_required"));
-      return;
-    }
-
     const sale = salesByTokenId[token.tokenId];
     if (sale?.listed) {
       setError(t("app.err_token_already_listed"));
@@ -435,7 +425,14 @@ export function CollectionDetailPage() {
     setMessage("");
 
     try {
-      await wallet.sync();
+      const session = await wallet.sync();
+      const connectedAddress = session.address?.trim() || "";
+      if (!connectedAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (token.owner !== connectedAddress) {
+        throw new Error(t("app.err_token_owner_required"));
+      }
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing transaction submitted: ${txid}`);
@@ -478,16 +475,6 @@ export function CollectionDetailPage() {
       return;
     }
 
-    const connectedAddress = requireWalletAddress();
-    if (!connectedAddress) {
-      return;
-    }
-
-    if (token.owner !== connectedAddress) {
-      setError(t("app.err_token_owner_required"));
-      return;
-    }
-
     const sale = salesByTokenId[token.tokenId];
     if (!sale?.listed) {
       setError(t("app.err_token_not_listed"));
@@ -499,7 +486,14 @@ export function CollectionDetailPage() {
     setMessage("");
 
     try {
-      await wallet.sync();
+      const session = await wallet.sync();
+      const connectedAddress = session.address?.trim() || "";
+      if (!connectedAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (token.owner !== connectedAddress) {
+        throw new Error(t("app.err_token_owner_required"));
+      }
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Cancel listing transaction submitted: ${txid}`);
@@ -541,19 +535,9 @@ export function CollectionDetailPage() {
       return;
     }
 
-    const connectedAddress = requireWalletAddress();
-    if (!connectedAddress) {
-      return;
-    }
-
     const sale = salesByTokenId[token.tokenId];
     if (!sale?.listed) {
       setError(t("app.err_token_not_listed"));
-      return;
-    }
-
-    if (token.owner === connectedAddress) {
-      setError(t("app.err_cannot_buy_own_token"));
       return;
     }
 
@@ -562,7 +546,14 @@ export function CollectionDetailPage() {
     setMessage("");
 
     try {
-      await wallet.sync();
+      const session = await wallet.sync();
+      const connectedAddress = session.address?.trim() || "";
+      if (!connectedAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (token.owner === connectedAddress) {
+        throw new Error(t("app.err_cannot_buy_own_token"));
+      }
       const client = getCollectionClient(collection);
       const payload = client.buildBuyTokenInvoke({ tokenId: token.tokenId });
       payload.signers = [

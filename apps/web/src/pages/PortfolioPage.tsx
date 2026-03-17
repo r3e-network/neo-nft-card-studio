@@ -170,16 +170,6 @@ export function PortfolioPage() {
       return;
     }
 
-    const connectedAddress = requireWalletAddress();
-    if (!connectedAddress) {
-      return;
-    }
-
-    if (token.owner !== connectedAddress) {
-      setError(t("app.err_token_owner_required"));
-      return;
-    }
-
     const sale = salesByTokenId[token.tokenId] ?? EMPTY_SALE_STATE;
     if (sale.listed) {
       setError(t("app.err_token_already_listed"));
@@ -205,7 +195,14 @@ export function PortfolioPage() {
     setMessage("");
 
     try {
-      await wallet.sync();
+      const session = await wallet.sync();
+      const connectedAddress = session.address?.trim() || "";
+      if (!connectedAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (token.owner !== connectedAddress) {
+        throw new Error(t("app.err_token_owner_required"));
+      }
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildListTokenForSaleInvoke({ tokenId: token.tokenId, price }));
       setMessage(`Listing transaction submitted: ${txid}`);
@@ -244,16 +241,6 @@ export function PortfolioPage() {
       return;
     }
 
-    const connectedAddress = requireWalletAddress();
-    if (!connectedAddress) {
-      return;
-    }
-
-    if (token.owner !== connectedAddress) {
-      setError(t("app.err_token_owner_required"));
-      return;
-    }
-
     const sale = salesByTokenId[token.tokenId] ?? EMPTY_SALE_STATE;
     if (!sale.listed) {
       setError(t("app.err_token_not_listed"));
@@ -271,7 +258,14 @@ export function PortfolioPage() {
     setMessage("");
 
     try {
-      await wallet.sync();
+      const session = await wallet.sync();
+      const connectedAddress = session.address?.trim() || "";
+      if (!connectedAddress) {
+        throw new Error("Wallet session is unavailable. Please reconnect wallet.");
+      }
+      if (token.owner !== connectedAddress) {
+        throw new Error(t("app.err_token_owner_required"));
+      }
       const client = getCollectionClient(collection);
       const txid = await wallet.invoke(client.buildCancelTokenSaleInvoke({ tokenId: token.tokenId }));
       setMessage(`Cancel listing transaction submitted: ${txid}`);
