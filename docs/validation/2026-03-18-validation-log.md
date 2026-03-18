@@ -18,6 +18,7 @@ The following local checks passed on 2026-03-18:
 - `npm run smoke:e2e`
 - `npm run smoke:trade`
 - `npm run test:testnet`
+- `node scripts/comprehensive-test.mjs` (after updating it to wrap the maintained lifecycle scripts)
 
 ### `test:testnet` chain results
 
@@ -41,6 +42,21 @@ Important outputs:
 - Token ID: `1:1`
 - Check-in proof token ID: `1:2`
 - Dedicated collection contract hash: `0x84bf271cea5ec11a6e750d9687cda4dfcfc48b2d`
+
+### `comprehensive-test.mjs` maintenance
+
+The legacy `scripts/comprehensive-test.mjs` was outdated:
+
+- it pointed at a mainnet contract hash while using testnet RPC
+- it attempted to fund users via the NFT platform `transfer` method instead of a maintained lifecycle path
+
+It was replaced with a thin wrapper over the maintained testnet lifecycle scripts.
+
+After that refactor, running:
+
+- `node scripts/comprehensive-test.mjs`
+
+with seller + buyer WIFs successfully executed the maintained full lifecycle path again.
 
 ## Production Testnet Validation Completed
 
