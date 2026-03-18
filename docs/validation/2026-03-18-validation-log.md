@@ -19,6 +19,7 @@ The following local checks passed on 2026-03-18:
 - `npm run smoke:trade`
 - `npm run test:testnet`
 - `node scripts/comprehensive-test.mjs` (after updating it to wrap the maintained lifecycle scripts)
+- local `tests/wif-ui.mjs` passed against a clean local API + local web environment
 
 ### `test:testnet` chain results
 
@@ -57,6 +58,36 @@ After that refactor, running:
 - `node scripts/comprehensive-test.mjs`
 
 with seller + buyer WIFs successfully executed the maintained full lifecycle path again.
+
+### Local WIF UI full flow
+
+A clean local UI environment was also validated successfully by running:
+
+- local API on `127.0.0.1:19081`
+- local web on `127.0.0.1:5176`
+- `tests/wif-ui.mjs` with:
+  - `WIF_UI_BASE_URL=http://127.0.0.1:5176/`
+  - `WIF_UI_SYNC_API_BASE_URL=http://127.0.0.1:19081`
+
+This passed the same end-to-end flow as the production WIF test:
+
+- connect
+- create collection
+- mint
+- portfolio load
+- list
+- explore reflect listed state
+- cancel
+- created -> mint handoff
+- reload preserve wallet state
+- explore preserve wallet state
+
+Important finding:
+
+- an older local dev setup using a stale API DB and proxy-based `/api` forwarding could fail with:
+  - `NeoFS upload request failed (HTTP 404) at /meta/neofs/upload.`
+  - or perpetual pending token state
+- the clean local environment with explicit `VITE_API_BASE_URL=http://127.0.0.1:19081/api` and a fresh DB removed that issue
 
 ## Production Testnet Validation Completed
 
