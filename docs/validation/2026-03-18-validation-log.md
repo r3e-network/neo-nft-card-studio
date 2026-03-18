@@ -89,6 +89,34 @@ Important finding:
   - or perpetual pending token state
 - the clean local environment with explicit `VITE_API_BASE_URL=http://127.0.0.1:19081/api` and a fresh DB removed that issue
 
+### Playwright-specific verification
+
+Playwright validation completed on 2026-03-18 included:
+
+- production page sweep against `https://nft.neomini.app`
+  - `/`
+  - `/explore`
+  - `/collections/60`
+  - `/collections/56`
+  - `/mint`
+  - `/collections/new`
+- local clean-environment full flow against:
+  - local API `127.0.0.1:19081`
+  - local web `127.0.0.1:5176`
+
+The local clean-environment Playwright flow passed fully:
+
+- connect
+- create collection
+- mint
+- portfolio load
+- list
+- explore reflects listed state
+- cancel
+- created -> mint handoff
+- reload preserves wallet state
+- explore preserves wallet state
+
 ## Production Testnet Validation Completed
 
 ### Browser-driven WIF flow
