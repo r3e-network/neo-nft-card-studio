@@ -171,6 +171,37 @@ Production API readback after sync confirmed:
 - listing state is `listed = false` after cancel
 - route `/collections/2` resolves to SPA page successfully
 
+### Additional mainnet write-path completion
+
+Using both available mainnet-capable wallets:
+
+- seller: `NR3E4D8NUXh3zhbf5ZkAp3rTxWbQqNih32`
+- buyer/recipient: `NTmHjwiadq4g3VHpJ5FQigQcD4fF5m8TyX`
+
+the remaining mainnet write-paths were also completed successfully for token `2:1`:
+
+- fund buyer GAS:
+  - `0xe49db52771077b666312fe3a4b35d4729f491577b9f0b96b659946805535f3c1`
+- list for buy:
+  - `0x57b44799393818e75d974d3be5fbcefda4b097a15ff2f3f8478f9a2a48d69f9f`
+- buy token:
+  - `0x481642ea13c50b0832743877b3dfaa14ed46109530064b0a710a2711d7238fa3`
+- transfer token back:
+  - `0x8092e09d712aec4ee7932ae896991339a6d0b729d9710f671d07d7c0ace9040f`
+- burn token:
+  - `0xc4dd42336897ee1c87342659a077745d14eb66c380eb681b1884d56f22d17553`
+
+Production API readback after sync confirmed:
+
+- seller mainnet wallet tokens: empty after burn
+- buyer mainnet wallet tokens: empty after transfer-back + burn
+- collection `2` listings: empty after final burn
+- transfer history for `2:1` shows:
+  - mint
+  - buy transfer to `NTm...`
+  - transfer back to `NR3...`
+  - burn (`toAddress = null`)
+
 ## Route and SPA Validation
 
 Production routes confirmed to resolve correctly:
