@@ -304,6 +304,27 @@ Interpretation:
 - this appears to be a limitation of the controlled cloned-browser environment rather than a production runtime failure on the user's normal browser profile
 - the real Chrome profile still successfully surfaces NeoLine UI and account selection
 
+### Additional root-cause detail for the official-site browser gap
+
+Further investigation on the cloned, CDP-controllable `Profile 5` environment showed:
+
+- other wallet extensions such as MetaMask and Coinbase exposed background targets normally
+- NeoLine did not expose a service worker target
+- `window.NEOLineN3` was absent on `https://nft.neomini.app/collections/60`
+- directly navigating the cloned browser to:
+  - `chrome-extension://cphhlgmgameodnhkjdmkpanlelnlohao/index.html`
+  resulted in:
+  - `ERR_BLOCKED_BY_CLIENT`
+
+Interpretation:
+
+- even after copying real-profile extension files and local extension state into the cloned browser, Chrome still blocks the NeoLine extension page in the controlled clone
+- because of that block, cloned-browser CDP automation cannot be treated as authoritative for final official-site NeoLine injection behavior
+- the reliable validations remain:
+  - real-profile NeoLine popup and account list are present
+  - WIF flow passes end-to-end
+  - API and chain-level business flows pass
+
 ## CI Status
 
 Latest GitHub Actions runs for the current pushed validation state passed:
