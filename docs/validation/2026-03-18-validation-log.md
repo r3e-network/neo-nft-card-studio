@@ -6,8 +6,8 @@ This log captures the latest automated and browser-driven validation work for th
 
 ## Current Production Revision
 
-- Production API revision: `febe2b2`
-- Production frontend revision: `febe2b2`
+- Production API revision: `fdfedd3`
+- Production frontend revision: `fdfedd3`
 
 ## Local Validation Completed
 
@@ -75,7 +75,7 @@ Confirmed via production API:
 
 Latest observed production health on 2026-03-18:
 
-- testnet revision: `febe2b2`
+- testnet revision: `fdfedd3`
 - testnet stats:
   - `collectionCount = 20`
   - `tokenCount = 30`
@@ -102,7 +102,7 @@ Production mainnet health is healthy:
 
 Latest observed mainnet production snapshot on 2026-03-18:
 
-- mainnet revision: `febe2b2`
+- mainnet revision: `fdfedd3`
 - mainnet stats:
   - `collectionCount = 2`
   - `tokenCount = 2`
@@ -308,11 +308,12 @@ Interpretation:
 
 Latest GitHub Actions runs for the current pushed validation state passed:
 
-- `Production Audit` for `febe2b2`
-- `Wallet UI Manual` push placeholder for `febe2b2`
+- `Production Audit` for `fdfedd3`
+- `Wallet UI Manual` push placeholder for `fdfedd3`
 
 Recent related validation-log commits also passed CI:
 
+- `fdfedd3` `Refresh validation log with latest production status`
 - `2275e5b` `Add 2026-03-18 validation log`
 - `febe2b2` `Update validation log with lifecycle and browser findings`
 
