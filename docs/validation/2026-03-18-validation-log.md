@@ -6,8 +6,8 @@ This log captures the latest automated and browser-driven validation work for th
 
 ## Current Production Revision
 
-- Production API revision: `3a1feca`
-- Production frontend revision: `3a1feca`
+- Production API revision: `febe2b2`
+- Production frontend revision: `febe2b2`
 
 ## Local Validation Completed
 
@@ -71,6 +71,17 @@ Confirmed via production API:
 - Token: `60:1`
 - Listing state: `listed = false`
 
+### Latest production health snapshot
+
+Latest observed production health on 2026-03-18:
+
+- testnet revision: `febe2b2`
+- testnet stats:
+  - `collectionCount = 20`
+  - `tokenCount = 30`
+  - `transferCount = 30`
+- testnet chain height observed: `14467661`
+
 ### Testnet max supply check
 
 `collection 56` was validated as a max-supply case:
@@ -88,6 +99,15 @@ Production mainnet health is healthy:
 
 - Contract hash: `0xc1868eba3ce06ad93962378537f8a59f3cae1548`
 - RPC: `https://mainnet1.neo.coz.io:443`
+
+Latest observed mainnet production snapshot on 2026-03-18:
+
+- mainnet revision: `febe2b2`
+- mainnet stats:
+  - `collectionCount = 2`
+  - `tokenCount = 2`
+  - `transferCount = 1`
+- mainnet chain height observed: `9040788`
 
 Mainnet currently indexes at least:
 
@@ -283,6 +303,18 @@ Interpretation:
 
 - this appears to be a limitation of the controlled cloned-browser environment rather than a production runtime failure on the user's normal browser profile
 - the real Chrome profile still successfully surfaces NeoLine UI and account selection
+
+## CI Status
+
+Latest GitHub Actions runs for the current pushed validation state passed:
+
+- `Production Audit` for `febe2b2`
+- `Wallet UI Manual` push placeholder for `febe2b2`
+
+Recent related validation-log commits also passed CI:
+
+- `2275e5b` `Add 2026-03-18 validation log`
+- `febe2b2` `Update validation log with lifecycle and browser findings`
 
 ## Recommended Next Step
 
