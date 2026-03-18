@@ -82,6 +82,18 @@ Latest observed production health on 2026-03-18:
   - `transferCount = 30`
 - testnet chain height observed: `14467661`
 
+### Additional production readback checks
+
+Additional readback checks on 2026-03-18 confirmed:
+
+- seller testnet wallet `NTmHjwiadq4g3VHpJ5FQigQcD4fF5m8TyX` returns the expected token inventory
+- buyer testnet wallet `NR3E4D8NUXh3zhbf5ZkAp3rTxWbQqNih32` returns the expected dedicated token inventory
+- buyer mainnet wallet `NR3E4D8NUXh3zhbf5ZkAp3rTxWbQqNih32` returns the expected mainnet token inventory
+- `GET /api/transfers?tokenId=60:1&network=testnet` returns the mint transfer
+- `GET /api/transfers?tokenId=2:1&network=mainnet` returns the mint transfer
+- `GET /api/market/listings?collectionId=60&network=testnet` returns `listed = false`
+- `GET /api/market/listings?collectionId=2&network=mainnet` returns the expected post-cancel inactive sale state
+
 ### Testnet max supply check
 
 `collection 56` was validated as a max-supply case:
