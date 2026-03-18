@@ -94,6 +94,27 @@ Additional readback checks on 2026-03-18 confirmed:
 - `GET /api/market/listings?collectionId=60&network=testnet` returns `listed = false`
 - `GET /api/market/listings?collectionId=2&network=mainnet` returns the expected post-cancel inactive sale state
 
+### Additional chain readback checks
+
+Direct contract readbacks confirmed:
+
+- testnet token `60:1`
+  - `ownerOf` returns the expected owner
+  - `getTokenClass` returns `0`
+  - `getTokenSale` reports inactive sale state
+- mainnet token `2:1`
+  - `ownerOf` returns the expected owner
+  - `getTokenClass` returns `0`
+  - `getTokenSale` reports inactive sale state
+
+### Additional NeoFS resolve checks
+
+Production API `meta/neofs/resolve` checks confirmed:
+
+- testnet NFT media URI `neofs://local_demo/koa08h3p9mmurijf8` resolves as NeoFS-formatted URI
+- testnet collection base URI `neofs://local_demo/v7dw53xk7mmurgv5a` resolves as NeoFS-formatted URI
+- mainnet non-NeoFS metadata URL is preserved as non-NeoFS URL and returned unchanged
+
 ### Testnet max supply check
 
 `collection 56` was validated as a max-supply case:
