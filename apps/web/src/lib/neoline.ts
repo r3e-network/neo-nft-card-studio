@@ -96,11 +96,30 @@ const NEO_REQUEST_EVENT = "NEOLine.NEO.EVENT.REQUEST";
 const PROVIDER_READY_WAIT_MS = 5000;
 const WALLET_GLOBAL_HINT_REGEX = /(neolinen3|neoline|o3|onegate|n3wallet)/i;
 const PROVIDER_HINT_STORAGE_KEY = "opennft_wallet_provider_hint";
+const BRIDGE_REQUEST_TIMEOUT_MS = 3000;
+const BRIDGE_INTERACTIVE_TIMEOUT_MS = 45000;
+const BRIDGE_CHAIN_TYPE = "Neo3";
+const BRIDGE_TARGETS_N3 = {
+  Provider: "neoline.target_provider_n3",
+  Networks: "neoline.target_networks_n3",
+  Account: "neoline.target_account_n3",
+  PickAddress: "neoline.target_pick_address_n3",
+  WalletSwitchAccount: "neoline.target_wallet_switch_account_n3",
+  Invoke: "neoline.target_invoke_n3",
+} as const;
+const BRIDGE_TARGETS_COMMON = {
+  Connect: "neoline.target_connect",
+  Login: "neoline.target_login",
+  SwitchRequestChain: "neoline.target_switch_request_chain",
+} as const;
 
 const wrappedProviders = new WeakMap<object, NeoLineN3Provider>();
 const enableAttemptedProviders = new WeakSet<Record<string, unknown>>();
 
 let cachedProvider: NeoLineN3Provider | null = null;
+let cachedBridgeProvider: NeoLineN3Provider | null = null;
+let bridgeProviderDetected = false;
+let bridgeProbePromise: Promise<boolean> | null = null;
 let neoLineInitInstance: unknown = null;
 let readyListenersInstalled = false;
 
@@ -240,6 +259,226 @@ function normalizeInvokePayloadForNeoLine(payload: WalletInvokeRequest): WalletI
     ...payload,
     args: payload.args.map((arg) => normalizeInvokeArgForNeoLine(arg)),
   };
+}
+
+function getPageIconUrl(): string {
+  if (typeof document === "undefined") {
+    return "";
+  }
+
+  const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
+  return icon?.href || `${window.location.origin}/favicon.ico`;
+}
+
+async function requestPostMessageBridge(
+  target: string,
+  parameter?: unknown,
+  timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS,
+): Promise<unknown> {
+  if (typeof window === "undefined") {
+    throw new Error("Bridge is unavailable outside the browser.");
+  }
+
+  const id = `${target}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      window.removeEventListener("message", onMessage as EventListener);
+      reject(new Error(`Bridge request timed out: ${target}`));
+    }, timeoutMs);
+
+    const onMessage = (event: MessageEvent) => {
+      const payload = asRecord(event.data);
+      if (!payload || payload.return !== target || payload.ID !== id) {
+        return;
+      }
+
+      window.clearTimeout(timeoutId);
+      window.removeEventListener("message", onMessage as EventListener);
+
+      if (payload.error !== undefined && payload.error !== null) {
+        reject(payload.error);
+        return;
+      }
+
+      resolve(payload.data);
+    };
+
+    window.addEventListener("message", onMessage as EventListener);
+    window.postMessage(
+      parameter === undefined
+        ? { target, ID: id }
+        : { target, parameter, ID: id },
+      window.location.origin,
+    );
+  });
+}
+
+async function probePostMessageBridge(): Promise<boolean> {
+  if (bridgeProviderDetected) {
+    return true;
+  }
+
+  if (bridgeProbePromise) {
+    return bridgeProbePromise;
+  }
+
+  bridgeProbePromise = requestPostMessageBridge(BRIDGE_TARGETS_N3.Provider, undefined, 1200)
+    .then(() => {
+      bridgeProviderDetected = true;
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      bridgeProbePromise = null;
+    });
+
+  return bridgeProbePromise;
+}
+
+function getPostMessageBridgeProvider(): NeoLineN3Provider {
+  if (cachedBridgeProvider) {
+    return cachedBridgeProvider;
+  }
+
+  const provider: NeoLineN3Provider & { name: string } = {
+    name: "neoline-postmessage-bridge",
+    EVENT: {
+      READY: N3_READY_EVENT,
+      ACCOUNT_CHANGED: "NEOLine.N3.EVENT.ACCOUNT_CHANGED",
+      NETWORK_CHANGED: "NEOLine.N3.EVENT.NETWORK_CHANGED",
+      CONNECTED: "NEOLine.N3.EVENT.CONNECTED",
+      DISCONNECTED: "NEOLine.N3.EVENT.DISCONNECTED",
+    },
+  };
+
+  const syncAccountState = (value: unknown) => {
+    const account = normalizeAccount(value);
+    if (!account) {
+      return value;
+    }
+
+    provider.account = account;
+    provider.address = account.address;
+    provider.selectedAddress = account.address;
+    return value;
+  };
+
+  const syncNetworkState = (value: unknown) => {
+    provider.network = value;
+    provider.currentNetwork = value;
+    provider.selectedNetwork = value;
+    return value;
+  };
+
+  const getAccountDirect = async () => syncAccountState(
+    await requestPostMessageBridge(BRIDGE_TARGETS_N3.Account),
+  );
+
+  const getNetworksDirect = async () => syncNetworkState(
+    await requestPostMessageBridge(BRIDGE_TARGETS_N3.Networks),
+  );
+
+  provider.getAccount = async () => getAccountDirect();
+  provider.getAccounts = async () => getAccountDirect();
+  provider.getAddress = async () => getAccountDirect();
+  provider.getWalletAddress = async () => getAccountDirect();
+  provider.getNetworks = async () => getNetworksDirect();
+  provider.getNetwork = async () => {
+    const value = await getNetworksDirect();
+    if (Array.isArray(value) && value.length > 0) {
+      return value[0];
+    }
+    return value;
+  };
+  provider.pickAddress = async () => syncAccountState(
+    await requestPostMessageBridge(
+      BRIDGE_TARGETS_N3.PickAddress,
+      { hostname: window.location.hostname },
+      BRIDGE_INTERACTIVE_TIMEOUT_MS,
+    ),
+  );
+  provider.requestAccounts = async () => {
+    const picked = await provider.pickAddress?.();
+    if (normalizeAccount(picked)) {
+      return picked;
+    }
+
+    await requestPostMessageBridge(
+      BRIDGE_TARGETS_COMMON.SwitchRequestChain,
+      {
+        icon: getPageIconUrl(),
+        hostname: window.location.hostname,
+        title: document.title,
+        connectChain: BRIDGE_CHAIN_TYPE,
+      },
+      BRIDGE_INTERACTIVE_TIMEOUT_MS,
+    );
+    await requestPostMessageBridge(
+      BRIDGE_TARGETS_COMMON.Connect,
+      {
+        icon: getPageIconUrl(),
+        hostname: window.location.hostname,
+        title: document.title,
+        connectChain: BRIDGE_CHAIN_TYPE,
+      },
+      BRIDGE_INTERACTIVE_TIMEOUT_MS,
+    );
+    await requestPostMessageBridge(
+      BRIDGE_TARGETS_COMMON.Login,
+      undefined,
+      BRIDGE_INTERACTIVE_TIMEOUT_MS,
+    );
+    return getAccountDirect();
+  };
+  provider.enable = async () => provider.requestAccounts?.();
+  provider.switchWalletAccount = async () => syncAccountState(
+    await requestPostMessageBridge(
+      BRIDGE_TARGETS_N3.WalletSwitchAccount,
+      {
+        hostname: window.location.hostname,
+        icon: getPageIconUrl(),
+        chainType: BRIDGE_CHAIN_TYPE,
+      },
+      BRIDGE_INTERACTIVE_TIMEOUT_MS,
+    ),
+  );
+  provider.invoke = async (payload: WalletInvokeRequest) => requestPostMessageBridge(
+    BRIDGE_TARGETS_N3.Invoke,
+    { ...payload, hostname: window.location.hostname },
+    BRIDGE_INTERACTIVE_TIMEOUT_MS,
+  );
+  provider.invokeFunction = provider.invoke;
+  provider.request = async (payloadOrMethod, params) => {
+    const payload = typeof payloadOrMethod === "string"
+      ? { method: payloadOrMethod, params }
+      : (payloadOrMethod as { method: string; params?: unknown });
+    const method = payload.method;
+    const bridgeParams = payload.params;
+
+    switch (method) {
+      case "getAccount":
+      case "getAccounts":
+      case "getAddress":
+      case "getWalletAddress":
+        return getAccountDirect();
+      case "getNetwork":
+      case "getNetworks":
+        return provider.getNetworks?.();
+      case "requestAccounts":
+        return provider.requestAccounts?.();
+      case "pickAddress":
+        return provider.pickAddress?.();
+      case "invoke":
+        return provider.invoke?.((Array.isArray(bridgeParams) ? bridgeParams[0] : bridgeParams) as WalletInvokeRequest);
+      default:
+        throw new Error(`Unsupported bridge request method: ${method}`);
+    }
+  };
+  provider.send = provider.request;
+
+  cachedBridgeProvider = provider;
+  return cachedBridgeProvider;
 }
 
 function getProviderDebugName(provider: NeoLineN3Provider): string {
@@ -398,6 +637,14 @@ function hasReadyEventOnlyShape(value: unknown): boolean {
 
 function resolveNestedProvider(value: unknown, depth = 0): NeoLineN3Provider | null {
   if (!value || depth > 3) {
+    return null;
+  }
+
+  if (typeof value === "function") {
+    const instantiated = resolveFactoryProvider(value);
+    if (instantiated && instantiated !== value) {
+      return resolveNestedProvider(instantiated, depth + 1);
+    }
     return null;
   }
 
@@ -602,6 +849,15 @@ function collectResolvedProviders(): NeoLineN3Provider[] {
 
     seen.add(key);
     resolved.push(normalizeProvider(provider));
+  }
+
+  if (bridgeProviderDetected) {
+    const bridgeProvider = getPostMessageBridgeProvider();
+    const bridgeKey = bridgeProvider as unknown as object;
+    if (!seen.has(bridgeKey)) {
+      seen.add(bridgeKey);
+      resolved.push(bridgeProvider);
+    }
   }
 
   resolved.sort((left, right) => providerScore(right) - providerScore(left));
@@ -1678,22 +1934,37 @@ async function loadProvidersWithReadySync(): Promise<NeoLineN3Provider[]> {
     return providers;
   }
 
+  if (await probePostMessageBridge()) {
+    return getCandidateProvidersInPriorityOrder();
+  }
+
   await forceInitNeoLineProviders();
   providers = getCandidateProvidersInPriorityOrder();
   if (providers.length > 0) {
     return providers;
   }
 
+  if (await probePostMessageBridge()) {
+    return getCandidateProvidersInPriorityOrder();
+  }
+
   await warmUpFactoryProviders();
   providers = getCandidateProvidersInPriorityOrder();
   if (providers.length > 0) {
     return providers;
+  }
+
+  if (await probePostMessageBridge()) {
+    return getCandidateProvidersInPriorityOrder();
   }
 
   await waitForNeoProviderReady();
   await forceInitNeoLineProviders();
   await warmUpFactoryProviders();
   cachedProvider = null;
+  if (await probePostMessageBridge()) {
+    return getCandidateProvidersInPriorityOrder();
+  }
   return getCandidateProvidersInPriorityOrder();
 }
 

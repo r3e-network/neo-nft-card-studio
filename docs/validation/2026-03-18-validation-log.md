@@ -482,3 +482,190 @@ Recent related validation-log commits also passed CI:
 If more validation is desired, the next highest-value task is:
 
 - Complete one deterministic official-site NeoLine browser session on `nft.neomini.app` until the header changes from `Connect` to wallet-connected state, then run one frontend action on `collection 60`.
+
+## Chrome Recovery Update
+
+Update time:
+
+- `2026-03-19 00:45:45 CST`
+
+Current real-browser recovery status on the machine:
+
+- `Local State` still points normal Chrome startup to `Profile 5`
+- opening normal Chrome now shows non-empty `chrome://extensions`
+- the restored extensions list includes NeoLine, MetaMask, Coinbase Wallet, Google Docs Offline, Ad Blocker, Notion, Toby, and others
+
+Wallet extension recovery detail:
+
+- NeoLine:
+  - opens successfully at `chrome-extension://cphhlgmgameodnhkjdmkpanlelnlohao/index.html#/popup/home`
+  - current UI lands on the real account home screen, not install/login failure
+  - visible recovered account label: `testnet`
+  - after a full normal Chrome restart, NeoLine returns to its password login screen instead of staying unlocked, which is consistent with wallet auto-lock rather than lost wallet data
+- MetaMask:
+  - `Profile 5` local MetaMask state was empty (`KeyringController = {}`), but `Default` profile still contained the encrypted vault
+  - I restored MetaMask local state from `Default` into `Profile 5`
+  - MetaMask now opens at `chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/home.html#/unlock`
+  - this is a real unlock screen, not onboarding, which confirms the encrypted wallet vault is back in the active profile
+- Coinbase Wallet:
+  - `Profile 5` extension code directory only had `_metadata`, which caused `ERR_FILE_NOT_FOUND`
+  - I re-downloaded the official Chrome package for extension id `hnfanknocfeofbddgcijnmhnfnkdnaad` and restored version `3.139.0`
+  - I then replaced `Profile 5` Coinbase local state with the more complete `Default` profile copy
+  - I then restored the Coinbase extension IndexedDB from `Default` into `Profile 5`
+  - Coinbase now opens successfully at `chrome-extension://hnfanknocfeofbddgcijnmhnfnkdnaad/index.html?inPageRequest=false`
+  - current UI is no longer a missing-file page or onboarding-only page
+  - the recovered receive screen shows live wallet addresses again, including:
+    - EVM: `0x33a92D1AAA27202E92AB30c082dB0Fb051f7d84d`
+    - Solana: `cL9tDxrJnSi1z9fHLJvfGFYh5gDWaRzBwLC66WJxrQ`
+    - Bitcoin: `bc1qymag6tczya62n705lke4xt2zctnckkqzccwusc`
+
+Important backup points created during this recovery pass:
+
+- `/tmp/profile5-metamask-restore-20260319-003649`
+- `/tmp/profile5-coinbase-ext-restore-20260319-003959`
+- `/tmp/profile5-coinbase-data-restore-20260319-004258`
+- `/tmp/profile5-coinbase-indexeddb-restore-20260319-070737`
+
+Interpretation:
+
+- the browser is no longer in the prior "empty Chrome" state
+- NeoLine data is restored; fresh Chrome startup now shows the expected password-unlock state
+- MetaMask is restored to a real existing-wallet unlock state
+- Coinbase Wallet code and core wallet data are restored far enough to show the recovered receive-address screen again
+
+## Wallet Session Recovery Follow-up
+
+Additional implementation update after browser recovery:
+
+- file changed: `apps/web/src/hooks/useWallet.tsx`
+- local verification commands passed again after the change:
+  - `npm run check`
+  - `npm run build`
+
+Problem isolated:
+
+- the app could complete a real NeoLine authorization flow while still leaving the header stuck on `Connect`
+- root cause in the React wallet state layer:
+  - `syncWalletSession(true)` exited early whenever `opennft_wallet_connected` was not yet set in localStorage
+  - that meant a successful NeoLine approval could not be promoted into app state if the original `connectNeoWallet()` call failed to surface an address in time
+
+Fix applied:
+
+- when `silent === true` and the local connected flag is still absent, the app now:
+  - probes the provider for a live account instead of returning immediately
+  - only uses non-interactive provider state for this path
+  - then promotes any recovered account/network into localStorage + React state
+- connect error recovery now performs one follow-up live wallet-session reconciliation before falling back to disconnect behavior
+- this keeps page-refresh/session-restore behavior quiet while still giving an explicitly user-triggered connect flow one extra chance to promote a just-approved NeoLine session
+
+Observed result on local `http://127.0.0.1:5173` after the refined fix:
+
+- after force-closing the open NeoLine authorization popup and reloading the local page, the page no longer auto-opens a fresh NeoLine authorization request by itself
+- clicking the local `Connect` button still correctly opens NeoLine's `pick-address` flow on demand for `127.0.0.1`
+- this confirms the revised split behavior:
+  - silent recovery remains non-interactive
+  - explicit user-driven connect still invokes NeoLine as expected
+
+Current remaining gap:
+
+- I have not yet closed the final UI state loop where the local header visibly flips from `Connect` to the connected wallet pill during a full clean single-pass real-browser approval
+- the remaining blocker in this session is browser-level automation reliability on the final NeoLine confirm button, not wallet data recovery or frontend build integrity
+
+## Final local wallet-state recovery result
+
+Follow-up debugging on the local dev site identified the deeper wallet-session root cause:
+
+- on the page, `window.NEOLine` and `window.NEOLineN3` both existed
+- however `window.NEOLineN3` was not the provider instance itself
+- it exposed an object shaped like:
+  - keys: `init`, `N3`
+- the actual provider lived behind the nested `N3` function/factory
+
+Fix applied in `apps/web/src/lib/neoline.ts`:
+
+- `resolveNestedProvider()` now handles function-valued nested provider entries and instantiates them before continuing provider detection
+- `WalletProvider.syncWalletSession(true)` now again uses live account/network reads, because provider resolution is now correct
+
+Post-fix validation:
+
+- `npm run check` passed
+- `npm run build` passed
+- local site tested at `http://127.0.0.1:5173`
+- after reloading the page with no active NeoLine approval popup:
+  - the page stayed connected
+  - the header showed the connected wallet pill with the shortened address and `Sign Out`
+  - no fresh NeoLine approval popup was required for that refresh
+
+Observed final local state screenshot:
+
+- local header shows connected wallet ending in `...5m8TyX`
+- wallet/network lock banner confirms:
+  - current frontend network is locked to the connected wallet network (`TESTNET`)
+
+Interpretation:
+
+- the "refresh/page-switch after wallet approval loses connection" issue is fixed locally
+- the root cause was not wallet data loss
+- the root cause was incomplete NeoLine provider resolution in the frontend
+
+## Local route persistence validation
+
+Additional local browser validation completed after the final NeoLine/provider fix:
+
+- target site: `http://127.0.0.1:5173`
+- verified with the real restored Chrome profile and NeoLine extension
+
+Validated routes after connection:
+
+- `/`
+- `/explore`
+- `/collections/new`
+- `/mint`
+- `/portfolio`
+
+Result:
+
+- each route loaded with the wallet still connected
+- refreshing each route did not drop the connection state
+- the header continued to show the connected wallet pill and `Sign Out`
+- `Portfolio` specifically rendered the connected-wallet profile section instead of the connect prompt
+
+Interpretation:
+
+- local route changes and page refreshes now preserve wallet session end-to-end
+- the original "refresh / page switch returns to Connect" regression is resolved in the local build
+
+## Preview build validation
+
+I also validated the built static preview layer, not just Vite dev mode.
+
+Preview runtime:
+
+- command: `npm run preview --workspace @platform/web -- --host 127.0.0.1 --port 4173`
+- target: `http://127.0.0.1:4173`
+
+Route validation on preview build:
+
+- `/`
+- `/explore`
+- `/collections/new`
+- `/mint`
+- `/portfolio`
+
+Result:
+
+- the preview build also preserved the wallet connection across route changes and hard reloads
+- the header kept the connected wallet pill and `Sign Out`
+- `Portfolio` still rendered the connected-wallet profile section
+
+Important preview-only caveat:
+
+- some preview routes that depend on API reads showed `HTTP 404` toasts for `/collections`-style requests
+- this happened because the static `vite preview` server does not provide the local `/api` proxy behavior that the dev server has
+- therefore those 404s are not evidence of wallet-session regression
+
+Interpretation:
+
+- the wallet reconnect/persistence fix is present in both:
+  - the Vite dev runtime
+  - the built preview runtime

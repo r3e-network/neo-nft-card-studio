@@ -225,6 +225,29 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const persistedNetwork = network ?? storedNetwork;
 
     if (!isConnected && silent) {
+      // A successful NeoLine approval can leave the provider with a live
+      // account before our local "connected" flag is written. Probe the
+      // provider once so page refresh/focus recovery can promote that session.
+      const providerAccount = await withTimeout(getNeoWalletAccount(false), 2500);
+      const providerAddress = providerAccount?.address?.trim() || null;
+
+      if (providerAddress) {
+        const providerNetwork = await withTimeout(getNeoWalletNetworkForAddress(providerAddress, false), 2500)
+          .catch(() => persistedNetwork);
+        localStorage.setItem(WALLET_CONNECTED_KEY, "true");
+        localStorage.setItem(WALLET_ADDRESS_KEY, providerAddress);
+        if (providerNetwork) {
+          localStorage.setItem(WALLET_NETWORK_KEY, JSON.stringify(providerNetwork));
+        } else {
+          localStorage.removeItem(WALLET_NETWORK_KEY);
+        }
+        setAddress((prev) => (isSameWalletAddress(prev, providerAddress) ? prev : providerAddress));
+        setNetwork((prev) => (isSameWalletNetwork(prev, providerNetwork) ? prev : providerNetwork));
+        setRuntimeWalletNetwork(providerNetwork);
+        syncSelectedFrontendNetwork(providerNetwork);
+        return { address: providerAddress, network: providerNetwork };
+      }
+
       if (persistedAddress) {
         localStorage.setItem(WALLET_CONNECTED_KEY, "true");
         localStorage.setItem(WALLET_ADDRESS_KEY, persistedAddress);
@@ -470,6 +493,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             });
         } catch (err) {
           console.error("Connect failed:", err);
+          // The user explicitly initiated the connection flow, so one follow-up
+          // live sync is acceptable here to promote a wallet session that was
+          // approved in NeoLine but did not surface quickly enough to the
+          // original connect call.
+          const recoveredSession = await withTimeout(syncWalletSession(false), 5000);
+          if (recoveredSession?.address) {
+            return;
+          }
           const persistedAddress = readStoredWalletAddress() || address;
           const persistedNetwork = readStoredWalletNetwork() ?? network;
           if (persistedAddress) {
